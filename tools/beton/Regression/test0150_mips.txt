@@ -1,0 +1,28 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Regression/test0150_mips.txt $
+# $Revision: #6 $
+# $DateTime: 2016/04/08 08:55:16 $
+# $Author: dgubanov $
+#
+# All MIPS uCP related tests
+#
+testSetUp    = $(PWD)/helpers/testSetUp.txt
+testRunner   = $(PWD)/helpers/testRun.txt
+testTearDown = $(PWD)/helpers/testTearDown.txt
+path = $(PWD)/Mips/                            #Path to test scripts, for real could be Mngif2/ or Mips/ etc
+
+exec $testSetUp                                #Copy&Paste as many sections between test-separator-s as you need tests
+#------------------test-separator--------------------
+testName = mipsMemory.txt                      #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------                                             
+testName = mcpInterruptException.txt           #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = mipsFirmware.txt                    #Test file name, will be displayed 
+loopbackType = 0
+#queue = 0
+#extType = tx
+#injType = rx
+exec $testRunner
+#------------------test-separator--------------------
+exec $testTearDown

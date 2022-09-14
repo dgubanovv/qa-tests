@@ -1,0 +1,94 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Offloads/rxRssHash.txt $
+# $Revision: #4 $
+# $DateTime: 2016/07/22 01:35:19 $
+# $Author: dgubanov $
+#
+# Sends few packets and verifies their RSS hash /*https://msdn.microsoft.com/en-us/library/windows/hardware/ff571021(v=vs.85).aspx*/
+finalReport = []
+
+# WW stuf {
+finalReport = []
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    logTag = -l cli
+    givenVlan = 5 
+    givenPriority = 1
+    txRing = 0
+else:
+    ifndef givenVlan:
+        givenVlan = 5
+    ifndef givenPriority:
+        givenPriority = 1
+    ifndef txRing:
+        txRing = 0
+    ifndef logTag:
+        logTag = -l cli
+# WW stuf }
+
+
+#Parameters
+mac.set rxDcbTcCount rxTc $logTag
+
+#Prepare test packet
+pkt.new -n pkt0
+pkt.layer -i $pkt0 -L 50 -t IP dst=[161,142,100,85] src="66.9.149.187"
+pkt.layer -i $pkt0 -L 25 -t Ether src=[0x01,0x02,0x03,0x04,0x05,0x06] dst="11:22:33:44:55:66"
+#pkt.layer -i $pkt0 -L 30 -t Dot1Q prio=$givenPriority id=3 vlan=0x123
+#pkt.dump -i $pkt0
+expectedRssHash = 0
+pkt.rss -i $pkt0 -n expectedRssHash
+expectedRssRing = $givenPriority*(4 if $rxTc > 4 else 8) + ($expectedRssHash & (0x3 if $rxTc > 4 else 0x7))
+
+#Only deep loopback
+mac.set loopback System Packet $logTag
+#Enable rss
+mac.rfc.rss.enable
+
+#Initialize HW
+mac.init
+mac.txinit
+mac.rxinit
+
+#Enable expected rx ring
+mac.rxring[$expectedRssRing].set batchFill 0 $logTag #Disable autofill after interrupt
+mac.rxring[$expectedRssRing].enable
+mac.rxring[$expectedRssRing].fill 1
+mac.rxring[$expectedRssRing].commit
+
+#Enable tx ring
+mac.txring[$txRing].set PacketMark None $logTag
+mac.txring[$txRing].enable
+
+#Insert packet in tx ring
+givenVlanTagFull = $givenVlan | ($givenPriority << 13)
+#mac.txring[$txRing].insertcontext -I 0 -V $givenVlanTagFull
+mac.txring[$txRing].insert -i $pkt0 -C 0 -v 1
+#mac.txring[$txRing].dumpdesc -T 2:1 $logTag
+mac.txring[$txRing].dumpdesc -T 1    $logTag
+mac.txring[$txRing].dumpbuf -T 1     $logTag --size 80
+mac.txring[$txRing].commit
+pause 100 ms
+
+#Receive data
+mac.txring[$txRing].clean
+mac.rxring[$expectedRssRing].clean
+mac.txring[$txRing].status
+mac.rxring[$expectedRssRing].status
+mac.txring[$txRingNo].getdescval $segment -f RSS_HASH -n actualRssHash $logTag
+mac.rxring[$expectedRssRing].dumpdesc -H 1   $logTag
+mac.rxring[$expectedRssRing].dumpbuf -H 1    $logTag --size 80
+
+if actualRssHash!=expectedRssHash:
+    finalReport += ['(0)actualRssHash!=expectedRssHash $actualRssHash!=$expectedRssHash']
+
+#Display test result
+exec $(PWD)/helpers/showTestResult.txt
+#Close HW
+mac.uninit

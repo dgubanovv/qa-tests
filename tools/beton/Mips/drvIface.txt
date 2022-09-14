@@ -1,0 +1,40 @@
+BASEADDR = 0
+
+#writereg 0x3a8 1
+
+readreg 0x334 -n BASEADDR
+
+# Write MSG ID
+val = 2
+addr = $BASEADDR + 0
+mac.mcp.writemem $addr $val
+
+# write MAC address
+# 0.0x17.0xB6.0xAA.0x5.0x6
+val = 0xAAB61700
+addr = $BASEADDR + 4
+mac.mcp.writemem $addr $val
+
+val = 0x00000605
+addr = $BASEADDR + 8
+mac.mcp.writemem $addr $val
+
+# write IP addr: 169.254.14.14
+val = 0xFEA90000
+addr = $BASEADDR + 24
+mac.mcp.writemem $addr $val
+
+val = 0x00000E0E
+addr = $BASEADDR + 28
+mac.mcp.writemem $addr $val
+
+# write IP mask: 255.255.0.0
+val = 0xFFFF0000
+addr = $BASEADDR + 40
+mac.mcp.writemem $addr $val
+
+# run transaction
+readreg 0x33c -n id
+id = $id + 1
+writereg 0x338 $id
+readreg 0x33c

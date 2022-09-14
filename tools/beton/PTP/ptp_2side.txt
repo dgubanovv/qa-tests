@@ -1,0 +1,452 @@
+ts_list = []
+
+exec $(PWD)/PTP/get_current_ts.txt
+
+# List of rings:
+# - Tx Ring 0 - usual traffic
+# - Tx Ring 8 - AVB (IEEE1722 packets) [Max TX TC Count 4]
+# - Tx Ring 16 - PTP (IEEE1588 packets) [Max TX TC Count 4]
+# - Tx Ring 24 - AVB timestamps (when to start DMA)
+
+# - Rx Ring 0 - usual traffic
+# - Rx Ring 8 - AVB (IEEE1722 packets) [Max TX TC Count 4]
+# - Rx Ring 16 - PTP with Ingress TS (IEEE1588 packets) [Max TX TC Count 4]
+# - Rx Ring 29 - TS for Egress AVB
+# - Rx Ring 30 - TS for Ingress AVB
+# - Rx Ring 31 - TS for Egress PTP
+
+tx_desc_0 = Usual traffic
+tx_desc_8 = AVB - IEEE1722 packets
+tx_desc_16 = PTP - IEEE1588 packets
+
+rx_desc_0 = usual traffic
+rx_desc_8 = AVB - IEEE1722 packets
+rx_desc_16 = PTP with Ingress TS - IEEE1588 packets
+rx_desc_29 = TS for Egress AVB
+rx_desc_30 = TS for Ingress AVB
+rx_desc_31 = TS for Egress PTP
+
+#loopback   = RJ45
+
+undefine = undefine link_speed real_link_speed loopback tx_desc_0 tx_desc_8 tx_desc_16 rx_desc_0 rx_desc_8 rx_desc_16 rx_desc_29 rx_desc_30 rx_desc_31 i rx_ring timestamp_offset value last_ts ts ts_list ts_tmp
+finalReport = []
+
+# Packet type
+# Possible values 'ptp_sync', 'ptp_delay_req', 'avb', 'regular'
+ifndef pkt_type:
+    pkt_type = ptp_sync
+    undefine = $undefine pkt_type
+echo pkt_type = $pkt_type
+
+# PTP direction
+# Possible values 'egress', 'ingress', 'bidir'
+ifndef ptp_direction:
+    ptp_direction = ingress
+    undefine = $undefine ptp_direction
+echo ptp_direction = $ptp_direction
+
+ifndef exit_script:
+    exit_script = True
+    undefine = $undefine exit_script
+
+ifndef pkt_count:
+    pkt_count = 4
+    undefine = $undefine pkt_count
+echo pkt_count = $pkt_count
+
+ifndef loopback:
+    loopback = RJ45
+    undefine = $undefine loopback
+echo loopback = $loopback
+
+# Possible values: 'before_link_up', 'after_link_up'
+ifndef when_enable_ptp:
+    when_enable_ptp = before_link_up
+    undefine = $undefine when_enable_ptp
+echo when_enable_ptp = $when_enable_ptp
+
+avb_et = 0x22f0
+ptp_et = 0x88f7
+vlan_et = 0x8100
+
+# ptp_timestamp_precision = 0.0000002
+
+max_tx_wait_count = 5
+max_rx_wait_count = 50
+
+tx_wait_interval = 200
+rx_wait_interval = 200
+
+undefine = $undefine avb_et ptp_et vlan_et 
+
+exec $(PWD)/PTP/get_current_ts.txt
+
+if '$ptp_direction' == 'egress' or '$loopback' == 'RJ45':
+    if '$pkt_type' == 'ptp_sync':
+        for i = 0; $i < $pkt_count; i += 1:
+            pkt.new -n pkt$i -f None
+            pkt.layer -i $(pkt$i) -L 10 -t Ether type=$ptp_et dst=[0x01,0x1B,0x19,00,00,00]
+            #pkt.layer -i $(pkt$i) -L 20 -t Dot1Q vlan=0x123 prio=1 type=$ptp_et
+            pkt.layer -i $(pkt$i) -L 30 -t ptp -T sync
+            pkt.layer -i $(pkt$i) -L 30 --corf 0x23 --orig_ts [0x12,0] --seqId 0x1231 --spi [0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0x00]
+            
+            undefine = $undefine pkt$i
+    elif '$pkt_type' == 'ptp_delay_req':
+        for i in range($pkt_count):
+            pkt.new -n pkt$i -f None
+            pkt.layer -i $(pkt$i) -L 10 -t Ether type=$ptp_et dst=[0x01,0x1B,0x19,00,00,00]
+            #pkt.layer -i $(pkt$i) -L 20 -t Dot1Q vlan=0x123 prio=1 type=$ptp_et
+            pkt.layer -i $(pkt$i) -L 30 -t ptp -T delay_req
+            pkt.layer -i $(pkt$i) -L 30 --li_61 1 --cur_utc_of 0x12124 --seqId 0x1231234
+    elif '$pkt_type' == 'avb':
+        for i in range($pkt_count):
+            pkt.new -n pkt$i -p 256 -f ramp
+            pkt.layer -i $(pkt$i) -L 10 -t Ether type=$avb_et dst=[0x01,0x1B,0x19,00,00,00]
+    elif '$pkt_type' == 'regular':
+        for i in range($pkt_count):
+            pkt.new -n pkt$i -p 256 -f ramp
+            pkt.layer -i $(pkt$i) -L 40 -t TCP
+            pkt.layer -i $(pkt$i) -L 30 -t IP
+            pkt.layer -i $(pkt$i) -L 20 -t Ether
+
+exec $(PWD)/PTP/get_current_ts.txt
+
+mac.set -l nul no_mcp_link False
+mac.init
+
+exec $(PWD)/PTP/get_current_ts.txt
+
+mac.isr.disable
+
+echo Checking link speed $link_speed
+echo $newline
+
+#Set link/loopback/fc settings
+mac.set -l nul link        $link_speed # None, 100M, 1G, 2.5G, 5G, 10G, Auto
+mac.set -l nul loopback    $loopback
+mac.set -l nul fc          None # None, link, pfc
+
+exec $(PWD)/PTP/get_current_ts.txt
+
+# mac.mcp.set -l nul CAPS_HI_EXT_LOOPBACK 1
+# mac.mcp.apply CAPS_HI_EXT_LOOPBACK
+# mac.mcp.set -l nul CAPS_HI_PTP_AVB_EN 1
+# mac.mcp.apply CAPS_HI_PTP_AVB_EN
+
+mac.rfc.et[0].set -l cli action Host
+mac.rfc.et[0].set -l cli et_rxq_en True
+mac.rfc.et[0].set -l cli queue 8
+mac.rfc.et[0].set -l cli etherType $avb_et
+mac.rfc.et[0].set -l cli enable True
+
+mac.rfc.et[1].set -l cli action Host
+mac.rfc.et[1].set -l cli et_rxq_en True
+mac.rfc.et[1].set -l cli queue 16
+mac.rfc.et[1].set -l cli etherType $ptp_et
+mac.rfc.et[1].set -l cli enable True
+
+mac.rfc.set vl_inner_tpid $vlan_et -l nul
+
+exec $(PWD)/PTP/get_current_ts.txt
+
+mac.txinit
+mac.rxinit
+
+exec $(PWD)/PTP/get_current_ts.txt
+
+mac.rxring[0:32].enable
+
+exec $(PWD)/PTP/get_current_ts.txt
+
+undefine = $undefine setlink linkstate
+
+if '$when_enable_ptp' == 'before_link_up':
+    echo Enabling PTP/AVB...
+    mac.mcp.ptp_avb_enable -e
+
+mac.get -l cli -n setlink link
+mac.link Up -n linkstate -l cli --timeout 50000
+
+if '$when_enable_ptp' == 'after_link_up':
+    echo Enabling PTP/AVB...
+    readreg 0x36c -n existing_caps -l cli
+    value_to_apply = $existing_caps | 0x100000
+    writereg 0x36C $value_to_apply # enable PTP without transaction ID bit
+    readreg 0x36C
+    readreg 0x374 -n caps_applied -l cli
+    for i = 0; $i < 20; i += 1:
+        if ($caps_applied & 0x00100000) != 0x00100000:
+            pause 500 ms
+            readreg 0x374 -n caps_applied -l cli
+    echo "CAPS APPLIED:"
+    readreg 0x374
+    if ($caps_applied & 0x00100000) != 0x00100000:
+        finalReport += ['PTP/AVB is not enabled in capabilities register 0x374']
+    else:
+        echo PTP/AVB has been enabled OK
+
+if '$setlink' != 'None' and '$linkstate' == 'None':
+    finalReport += ['Speed: $link_speed. (-1) No link!']
+else:
+    exec $(PWD)/PTP/get_current_ts.txt
+    
+    if '$ptp_direction' == 'ingress' or '$loopback' == 'RJ45':
+        
+        if 'ptp' in '$pkt_type':
+            ing_rx_ring = 16
+            ing_rx_ring_list = [$ing_rx_ring]
+            ing_timestamp_offset = 58
+        elif 'avb' in '$pkt_type':
+            ing_rx_ring = 8
+            ing_rx_ring_fifo = 30
+            ing_rx_ring_list = [$ing_rx_ring_fifo]
+            ing_timestamp_offset = 68
+        elif '$pkt_type' == 'regular':
+            ing_rx_ring = 0
+            ing_rx_ring_list = [$ing_rx_ring]
+    
+        undefine = $undefine ing_rx_ring ing_rx_ring_fifo ing_rx_ring_list ing_timestamp_offset
+        
+        mac.rxring[0:32].fill $pkt_count
+        mac.rxring[0:32].commit
+    
+    exec $(PWD)/PTP/get_current_ts.txt
+    
+    undefine = $undefine ts0_msw ts0_lsw ts1_msw ts1_lsw ts0 ts1
+    
+    ts_tx_eg       = []
+    ts_rx_eg       = []
+    ts_rx_ing      = []
+    ts_rx_ing_fifo = []
+    
+    ts_tx_eg_ns       = []
+    ts_rx_eg_ns       = []
+    ts_rx_ing_ns      = []
+    ts_rx_ing_fifo_ns = []
+    
+    undefine = $undefine ts_tx_eg ts_rx_eg ts_rx_ing ts_rx_ing_fifo
+    
+    # wait up to 4 seconds while PHY PTP counter starts ticking
+    phy_ptp_counter = 0
+    mac.phy.ptp.ts
+    max_wait_for_ptp_enable = 80
+    wait_interval_ptp_enable = 50
+    for i = 0; $i < $max_wait_for_ptp_enable; i += 1:
+        mac.phy.ptp.ts --varname phy_ptp_counter -l nul
+        if $phy_ptp_counter != 0:
+            startup_time = $i * $wait_interval_ptp_enable
+            echo PHY PTP counter startup time is ~$startup_time milliseconds.
+            mac.phy.ptp.ts
+            break
+        pause $wait_interval_ptp_enable ms
+    if $phy_ptp_counter == 0:
+        finalReport += ['Speed: $link_speed. (init) PHY PTP counter has not been started!']
+    
+    
+    if '$ptp_direction' == 'egress' or '$loopback' == 'RJ45':
+        undefine = $undefine eg_tx_ring eg_rx_ring eg_tx_timestamp_offset eg_rx_timestamp_offset
+        
+        if 'ptp' in '$pkt_type':
+            eg_tx_ring = 16
+            eg_rx_ring = 31
+            eg_tx_timestamp_offset = 64
+            eg_rx_timestamp_offset = 64
+        elif 'avb' in '$pkt_type':
+            eg_tx_ring = 8
+            eg_rx_ring = 29
+            eg_tx_timestamp_offset = 34
+            eg_rx_timestamp_offset = 34
+        elif '$pkt_type' == 'regular':
+            eg_tx_ring = 0
+        
+        mac.txring[$eg_tx_ring].enable
+        
+        if '$loopback' != 'RJ45':
+            ifdef eg_rx_ring:
+                mac.rxring[0:32].fill $pkt_count
+                mac.rxring[0:32].commit
+                # mac.rxring[0:32].enable # enabled above
+                mac.rxring[0:32].clean
+        
+        for i = 0; $i < $pkt_count; i += 1:
+            mac.txring[$eg_tx_ring].insert -i $(pkt$i)
+            mac.txring[$eg_tx_ring].commit
+            #pause 1
+        mac.txring[$eg_tx_ring].clean
+    
+    exec $(PWD)/PTP/get_current_ts.txt
+    
+    echo TEST PARAMETERS
+    echo LINK:            $linkstate
+    echo PACKET TYPE:     $pkt_type
+    echo DIRECTION:       $ptp_direction
+    echo LOOPBACK:        $loopback
+    if '$ptp_direction' == 'egress' or '$loopback' == 'RJ45':
+        echo EGRESS TX RING:  $eg_tx_ring
+        echo EGRESS RX RING:  $eg_rx_ring
+    if '$ptp_direction' == 'ingress' or '$loopback' == 'RJ45':
+        echo INGRESS RX RING: $ing_rx_ring_list
+    echo $newline
+    
+    
+    if '$ptp_direction' == 'ingress' or '$loopback' == 'RJ45':
+        pause 5
+        mac.rxring[0:32].clean
+        # mac.rxring[0:32].status
+        
+        echo INGRESS RX
+        for rx_ring in $ing_rx_ring_list:
+            undefine = $undefine ing_rx_head_$rx_ring
+            
+            echo RING $rx_ring $(rx_desc_$rx_ring)
+            mac.llh rdmRxDescriptorHeadPointerGet $rx_ring -v ing_rx_head_$rx_ring
+            
+            index = 0
+            for i in range($(ing_rx_head_$rx_ring), 0, -1):
+                if $rx_ring in (29, 30, 31):
+                    #echo Reading timestamp
+                    mac.rxring[$rx_ring].dumpdesc -H $i -l cli
+                    mac.rxring[$rx_ring].getdescval -H $i -f qwords --field_idx 0 -n wb_desc_val_lsqw -l nul
+                    mac.rxring[$rx_ring].getdescval -H $i -f qwords --field_idx 1 -n wb_desc_val_msqw -l nul
+                    wb_desc_dump = ($wb_desc_val_msqw << 64) + $wb_desc_val_lsqw
+                    
+                    undefine = $undefine wb_desc_val_msqw wb_desc_val_lsqw wb_desc_dump
+                    
+                    exec $(PWD)/PTP/read_timestamp.txt
+                    ts_rx_ing_fifo += [$timestamp]
+                    ts_rx_ing_fifo_ns += [$timestamp_ns_int]
+                    echo Rx ingress FIFO timestamp = $timestamp, index = $index
+                else:
+                    #echo Getting timestamp
+                    mac.rxring[$rx_ring].dumpbuf -H $i -l cli
+                    mac.rxring[$rx_ring].getdescval -H $i -f bufferAddress -n buffer_address -l nul
+                    timestamp_offset = $ing_timestamp_offset
+                    exec $(PWD)/PTP/get_timestamp.txt
+                    ts_rx_ing += [$timestamp]
+                    ts_rx_ing_ns += [$timestamp_ns_int]
+                    if $timestamp < 0.0000002:
+                        finalReport += ['Speed: $link_speed. (11) Null ingress timestamp[$index]: $timestamp']
+                    echo Rx ingress timestamp = $timestamp, index = $index, int nanosec = $timestamp_ns_int
+                    undef -n timestamp -l nul
+                index += 1
+    
+    exec $(PWD)/PTP/get_current_ts.txt
+    
+    if '$ptp_direction' == 'egress' or '$loopback' == 'RJ45':
+        undefine = $undefine eg_tx_head_$eg_tx_ring
+        
+        #mac.txring[$eg_tx_ring].status
+        mac.llh tdmTxDescriptorHeadPointerGet $eg_tx_ring -v eg_tx_head_$eg_tx_ring
+        
+        ifdef eg_rx_ring:
+            echo EGRESS RX
+            #mac.rxring[0:32].status
+            mac.rxring[$eg_rx_ring].status
+            if '$loopback' != 'RJ45':
+                mac.rxring[$eg_rx_ring].clean
+                mac.rxring[$eg_rx_ring].status
+            #mac.rxring[$eg_rx_ring].dumpdesc -H 1:$pkt_count -l cli
+            #mac.rxring[$eg_rx_ring].dumpbuf  -H 1:$pkt_count -l cli
+            echo RING $eg_rx_ring $(rx_desc_$eg_rx_ring)
+            
+            mac.llh rdmRxDescriptorHeadPointerGet $eg_rx_ring -v eg_rx_head_$eg_rx_ring
+            
+            undefine = $undefine eg_rx_head_$eg_rx_ring
+            
+            index = 0
+            for i in range($(eg_rx_head_$eg_rx_ring), 0, -1):
+                mac.rxring[$eg_rx_ring].dumpdesc -H $i
+                #mac.txring[$eg_tx_ring].dumpbuf -H $i
+                mac.rxring[$eg_rx_ring].getdescval -H $i -f qwords --field_idx 0 -n wb_desc_val_lsqw -l nul
+                mac.rxring[$eg_rx_ring].getdescval -H $i -f qwords --field_idx 1 -n wb_desc_val_msqw -l nul
+                wb_desc_dump = ($wb_desc_val_msqw << 64) + $wb_desc_val_lsqw
+                
+                undefine = $undefine wb_desc_val_msqw wb_desc_val_lsqw wb_desc_dump
+                
+                timestamp_offset = $eg_rx_timestamp_offset
+                exec $(PWD)/PTP/read_timestamp.txt
+                ts_rx_eg += [$timestamp]
+                ts_rx_eg_ns += [$timestamp_ns_int]
+                echo Rx egress timestamp = $timestamp, index = $index, int nanosec = $timestamp_ns_int
+                undef -n timestamp -l nul
+                index += 1
+    
+    if '$ptp_direction' == 'bidir':
+        echo Not supported
+    
+    exec $(PWD)/PTP/get_current_ts.txt
+    
+    ifdef eg_tx_ring:
+        mac.llh tdmTxDescriptorHeadPointerGet $eg_tx_ring -v value
+        if $value != $pkt_count:
+            finalReport += ['Speed: $link_speed. (0) Wrong head point on tx ring $eg_tx_ring: $value']
+    
+    ifdef eg_rx_ring:
+        mac.llh rdmRxDescriptorHeadPointerGet $eg_rx_ring -v value
+        if $value != $pkt_count:
+            finalReport += ['Speed: $link_speed. (1) Wrong head point on rx ring $eg_rx_ring: $value']
+    
+    ifdef ing_rx_ring:
+        mac.llh rdmRxDescriptorHeadPointerGet $ing_rx_ring -v value
+        if $value != $pkt_count:
+            finalReport += ['Speed: $link_speed. (2) Wrong head point on rx ring $ing_rx_ring: $value']
+    
+    ifdef ing_rx_ring_fifo:
+        mac.llh rdmRxDescriptorHeadPointerGet $ing_rx_ring_fifo -v value
+        if $value != $pkt_count:
+            finalReport += ['Speed: $link_speed. (3) Wrong head point on rx ring $ing_rx_ring_fifo: $value']
+
+    # TODO: ts_list is always empty
+    # last_ts = 0
+    # for ts in ts_list:
+    #     if ts >= last_ts:
+    #         finalReport += ['Speed: $link_speed. (4) Something is wrong with PTP counter in registers 0x378, 0x37c: $ts_list']
+
+    ifdef eg_rx_ring:
+        for i = 0; $i < $pkt_count; i += 1:
+            if 'ptp' in '$pkt_type':
+                # can't use $ptp_timestamp_precision here because of reaching minimal float precision
+                # This behaves incorrectly: $ts_rx_eg[$i] - $ts_rx_ing[$i] + $ptp_timestamp_precision >= 0.0
+                if '$loopback' == 'RJ45' and $ts_rx_eg_ns[$i] >= $ts_rx_ing_ns[$i]:
+                    finalReport += ['Speed: $link_speed. (5) $pkt_type packet: Egress timestamp is bigger than ingress one: $ts_rx_eg_ns, $ts_rx_ing_ns']
+                    break
+                if $i > 0:
+                    if $ts_rx_eg_ns[$i - 1] >= $ts_rx_eg_ns[$i]:
+                        finalReport += ['Speed: $link_speed. (6) Egress timestamps on RX are not monotonically increasing: $ts_rx_eg_ns']
+                    if $ts_rx_ing_ns[$i - 1] >= $ts_rx_ing_ns[$i]:
+                        finalReport += ['Speed: $link_speed. (7) Ingress timestamps on RX are not monotonically increasing: $ts_rx_ing_ns']
+            if 'avb' in '$pkt_type':
+                if $ts_rx_eg_ns[$i] >= $ts_rx_ing_fifo_ns[$i]:
+                    finalReport += ['Speed: $link_speed. (8) $pkt_type packet: Egress timestamp is bigger than ingress one: $ts_rx_eg_ns, $ts_rx_ing_fifo_ns']
+                    break
+                if $i > 0:
+                    if $ts_rx_eg_ns[$i - 1] >= $ts_rx_eg_ns[$i]:
+                        finalReport += ['Speed: $link_speed. (9) Egress timestamps on RX are not monotonically increasing: $ts_rx_eg_ns']
+                    if $ts_rx_ing_fifo_ns[$i - 1] >= $ts_rx_ing_fifo_ns[$i]:
+                        finalReport += ['Speed: $link_speed. (10) Ingress timestamps on RX are not monotonically increasing: $ts_rx_ing_fifo_ns']
+
+echo Making link down...
+mac.link Down -l cli
+
+ifdef eg_tx_ring:
+    if '$ptp_direction' == 'egress' or '$loopback' == 'RJ45':
+        mac.txring[$eg_tx_ring].disable
+
+mac.rxring[0:32].disable
+mac.txuninit
+mac.rxuninit
+
+mac.uninit
+
+exec $(PWD)/helpers/showTestResult.txt
+
+if $exit_script == True:
+    echo DEBUG REGISTERS:
+    readreg 0x5700
+    readreg 0x7900
+    writereg 0x36c 0x0
+    undef -n $undefine -l nul
+    exit
+else:
+    undef -n $undefine -l nul
+    cmd

@@ -1,0 +1,92 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/PM/eee_test.txt $
+# $Revision: #1 $
+# $DateTime: 2017/02/17 06:49:21 $
+# $Author: nikolayp $
+#
+# sample auto-test script sample, ready to copy&paste
+#
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+
+
+# allow the RKL/TKL to process LPIs (EEE enable)
+regAddr    = 0x40b4
+readreg -n readedReg $regAddr
+checkedBit = 4
+if ($readedReg) & (1 << $checkedBit) != (1 << $checkedBit):
+	finalReport = $finalReport + ['(1) FAIL: register 0x40b4.8 has wrong value'] 
+
+checkedBit = 8
+if ($readedReg) & (1 << $checkedBit) != (1 << $checkedBit):
+	finalReport = $finalReport + ['(2) FAIL: register 0x40b4.8 has wrong value'] 
+
+regAddr    = 0x405c
+readreg -n readedReg $regAddr
+checkedBit = 0
+if ($readedReg) & (1 << $checkedBit) != (1 << $checkedBit):
+	finalReport = $finalReport + ['(3) FAIL: register 0x405c.0 has wrong value'] 
+
+checkedBit = 1
+if ($readedReg) & (1 << $checkedBit) != (1 << $checkedBit ):
+	finalReport = $finalReport + ['(4) FAIL: register 0x405c.1 has wrong value'] 
+
+checkedBit = 8
+value      = 2
+if (($readedReg) & ($value << $checkedBit)) != ($value << $checkedBit ):
+	finalReport = $finalReport + ['(5) FAIL: register 0x405c.a:8 has wrong value'] 
+
+
+regAddr    = 0x3.0xc866
+readphyreg -n readedReg $regAddr
+checkedBit = 4
+if ($readedReg) & (1 << $checkedBit) != (1 << $checkedBit):
+	finalReport = $finalReport + ['(6) FAIL: register 0x3.0xc866.4 has wrong value'] 
+
+checkedBit = 9
+if ($readedReg) & (1 << $checkedBit) != (1 << $checkedBit):
+	finalReport = $finalReport + ['(7) FAIL: register 0x3.0xc866.9 has wrong value'] 
+
+regAddr    = 0x3.0xe834
+readphyreg -n readedReg $regAddr
+checkedBit = 0
+if ($readedReg) & (1 << $checkedBit) != (1 << $checkedBit):
+	finalReport = $finalReport + ['(8) FAIL: register 0x3.0xe834.0 has wrong value']
+
+checkedBit = 8
+if ($readedReg) & (1 << $checkedBit) == (1 << $checkedBit):
+	finalReport = $finalReport + ['(9) FAIL: register 0x3.0xe834.8 has wrong value'] 
+
+checkedBit = 9
+if ($readedReg) & (1 << $checkedBit) == (1 << $checkedBit):
+	finalReport = $finalReport + ['(10) FAIL: register 0x3.0xe834.9 has wrong value'] 
+
+regAddr    = 0x3.0xe835
+readphyreg -n readedReg $regAddr
+checkedBit = 0
+value      = 5
+if (($readedReg) & ($value << $checkedBit)) != ($value << $checkedBit):
+	finalReport = $finalReport + ['(11) FAIL: register 0x3.0xe835 2:0 has wrong value'] 
+
+regAddr    = 0x3.0xe86a
+readphyreg -n readedReg $regAddr
+checkedBit = 8
+value      = 1
+if (($readedReg) & ($value << $checkedBit)) != ($value << $checkedBit):
+	finalReport = $finalReport + ['(12) FAIL: register  0x3.0xe86a.A:8 has wrong value'] 
+
+regAddr    = 0x3.0xc830
+readphyreg -n readedReg $regAddr
+checkedBit = 8
+value      = 3
+if (($readedReg) & ($value << $checkedBit)) != ($value << $checkedBit):
+	finalReport = $finalReport + ['(13) FAIL: register  0x3.0xc830.A:8 has wrong value'] 
+
+checkedBit = 4
+value      = 1
+if (($readedReg) & ($value << $checkedBit)) != ($value << $checkedBit):
+	finalReport = $finalReport + ['(14) FAIL: register  0x3.0xc830.4 has wrong value']
+
+
+
+for report in  $finalReport:
+	echo $report

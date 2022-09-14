@@ -1,0 +1,9 @@
+exec testFW/wol/tests/wolMagicPacket.txt
+exec testFW/wol/tests/wolFilterIPv4Ping.txt
+exec testFW/wol/tests/wolFilterIPv4Syn.txt
+exec testFW/wol/tests/wolFilterIPv6Ping.txt
+exec testFW/wol/tests/wolFilterIPv6Syn.txt
+exec testFW/wol/tests/wolFilterArp.txt
+exec testFW/wol/tests/wolLinkUp.txt
+exec testFW/wol/tests/wolLinkDown.txt
+exec testFW/wol/tests/wolFilterPatternMask.txt

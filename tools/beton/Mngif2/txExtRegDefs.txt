@@ -1,0 +1,48 @@
+txExtCtrl1Reg = 0x7860
+txExtCtrl2Reg = 0x7864
+txExtMACFilter0LSWReg = 0x7870
+txExtMACFilter0MSWReg = 0x7874
+txExtMACFilter1LSWReg = 0x7878
+txExtMACFilter1MSWReg = 0x787C
+txExtIPFilter0Reg1 = 0x7880
+txExtIPFilter0Reg2 = 0x7884
+txExtIPFilter0Reg3 = 0x7888
+txExtIPFilter0Reg4 = 0x788c
+txExtStatus1Reg = 0x78B0
+txExtStatus2Reg = 0x78B4
+txExtStatus3Reg = 0x78B8
+txExtDataReg = 0x78BC
+
+txExtCtrlReg = [ $txExtCtrl1Reg , $txExtCtrl2Reg ]
+txExtStatusReg = [ $txExtStatus1Reg , $txExtStatus2Reg ]
+txExtSelectReg = $txExtCtrl1Reg
+
+
+
+
+txExtResetMasks =     [ 0x80000000, 0x80000000 ]
+txExtLimitMasks =     [ 0x20000000, 0x20000000 ]
+txExtReplicateMasks = [ 0x10000000, 0x10000000 ]
+txExtMACFilterMasks = [ 0x08000000, 0x08000000 ]
+txExtIPFilterMasks =  [ 0x04000000, 0x04000000 ]
+txExtARPFilterMasks = [ 0x02000000, 0x02000000 ]
+
+txExtSelectQueueMask = 0x00000002
+txExtReadMask =        0x00000001
+
+txExtRdyMasks =   [ 0x00002000, 0x00002000 ]
+txExtTruncMasks = [ 0x00000400, 0x00000400 ]
+txExtOfMasks =    [ 0x00000200, 0x00000200 ]
+txExtPerrMasks =  [ 0x00000100, 0x00000100 ]
+
+txExtDataValidMask = 0x0F000000
+txExtDataValidShift = 24
+txExtChksumErrMask = 0x00040000
+txExtChksumErrShift = 18
+txExtEopMask = 0x00020000
+txExtSopMask = 0x00010000
+txExtOffsetMask = 0x00000FFF
+
+txExtCntMasks = [0x0000000F, 0x000000F]
+txExtCntShifts = [0, 0]
+

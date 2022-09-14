@@ -1,0 +1,146 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mngif2/extLargeTrafficTest.txt $
+# $Revision: #3 $
+# $DateTime: 2016/08/11 02:22:39 $
+# $Author: dgubanov $
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    extType = tx
+    logTag = -l cli
+else:
+    ifndef extType:
+        extType = tx
+    ifndef logTag:
+        logTag = -l cli
+
+txRings = 32
+packetForEachRingCount = 512
+packetMatchesFilterCount = 16
+packetSize = 1514
+
+macAddressSrc = "00:01:02:03:04:05"
+macAddressDstInvalid = "AA:AA:AA:AA:AA:AA"
+macAddressDstValid0 = "BB:BB:BB:BB:BB:BB"
+macAddressDstValid1 = "CC:CC:CC:CC:CC:CC"
+
+# Uncomment next line to generate random sequence of packets that should match extraction filter. Uncommenting this in current implementation will cause faulse negative test case result. It's needed to change RSS settings to support random sequence
+#packetMatchesFilterList = random.sample(range(0, $txRings * $packetForEachRingCount), $packetMatchesFilterCount)
+packetMatchesFilterList = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+
+for ring in range(0, $txRings):
+    tmp$ring = 0
+
+for packet in $packetMatchesFilterList:
+    ring = ($packet // $packetForEachRingCount)
+    tmp$ring += 1
+
+expectedPacketCountForEachRing = []
+
+for ring in range(0, $txRings):
+    expectedPacketCountForEachRing += [$(tmp$ring)]
+
+mac.set loopback System Packet $logTag
+mac.init
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+
+for txRingNo in range(0, $txRings):
+    mac.txring[$txRingNo].set size 2048 -l $logTag
+    mac.rxring[$txRingNo].set size 2048 -l $logTag
+
+mac.txinit
+mac.rxinit
+
+for txRingNo in range(0, $txRings):
+    mac.txring[$txRingNo].enable
+
+for rxRingNo in range(0, $txRings):
+    mac.rxring[$rxRingNo].enable
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+mac.isr.disable
+
+if ('$extType' == 'tx'):
+    exec $(PWD)/helpers/tpoExtractorLlhNames.txt
+else:
+    exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+
+for i in range(0, 2):
+    macAddrFilter$i = []
+    macAddrFilter$i += [int('0x' + elem, 16) for elem in $(macAddressDstValid$i).split(":")]
+
+if ('$extType' == 'tx'):
+    for queue = 0; $queue < 2; queue += 1:
+        mac.llhcache on
+        mac.llh -C $extractionQueueLimitSet 1 $queue
+        mac.llh -C $extractionQueueModeSet 0 $queue
+        mac.llh -C $extractionMacFilterEnableSet 1 $queue
+        mac.llh -C $extractionIpFilterEnableSet 0 $queue
+        mac.llh -C $extractionArpFilterEnableSet 0 $queue
+        mac.llhcache off
+else:
+    for queue = 0; $queue < 2; queue += 1:
+        mac.llhcache on
+        mac.llh -C rpfL2UnicastFilterEnableSet 1 $queue
+        mac.llh -C rpfL2UnicastFilterActionSet 3 $queue
+        mac.llhcache off
+
+for queue = 0; $queue < 2; queue += 1:
+    macAddrFilterStr$(queue) = ' '.join([hex(elem) for elem in $(macAddrFilter$queue)])
+    macFilterLSW$(queue) = (($(macAddrFilter$queue)[2] << 24) & 0xFF000000) | (($(macAddrFilter$queue)[3] << 16) & 0xFF0000) | (($(macAddrFilter$queue)[4] << 8) & 0xFF00) | ($(macAddrFilter$queue)[5] & 0xFF)
+    macFilterMSW$(queue) = (($(macAddrFilter$queue)[0] << 8) & 0xFF00) | ($(macAddrFilter$queue)[1] & 0xFF)
+    mac.llhcache on
+    if ('$extType' == 'tx'):
+        mac.llh -C $extractionMacDestinationAddressLSW_Set $(macFilterLSW$queue) $queue
+        mac.llh -C $extractionMacDestinationAddressMSW_Set $(macFilterMSW$queue) $queue
+    else:
+        mac.llh -C rpfL2UnicastManagementQueueSet $queue $queue
+        mac.llh -C rpfL2UnicastDestinationAddressLSW_Set $(macFilterLSW$queue) $queue
+        mac.llh -C rpfL2UnicastDestinationAddressMSW_Set $(macFilterMSW$queue) $queue
+    mac.llhcache off
+
+validPacketsGenerated = 0
+payloadLen = ($packetSize - 54)
+
+for packetNo in range(0, $txRings * $packetForEachRingCount):
+    currentRing = ($packetNo // $packetForEachRingCount)
+    pkt.new -n pkt$packetNo -p $payloadLen
+    pkt.layer -i $(pkt$packetNo) -L 30 -t TCP sport=5000 dport=5050
+    pkt.layer -i $(pkt$packetNo) -L 20 -t IP ttl=1 dst="192.168.0.2" src="192.168.0.1" #dst="$ip0" src="$ip1"
+    if ($packetNo in $packetMatchesFilterList):
+        if ($validPacketsGenerated >= ($packetMatchesFilterCount / 2)):
+            pkt.layer -i $(pkt$packetNo) -L 10 -t Ether type=0x800 src=$macAddressSrc dst=$macAddressDstValid0
+        else:
+            pkt.layer -i $(pkt$packetNo) -L 10 -t Ether type=0x800 src=$macAddressSrc dst=$macAddressDstValid1
+        validPacketsGenerated = $validPacketsGenerated + 1
+    else:
+        pkt.layer -i $(pkt$packetNo) -L 10 -t Ether type=0x800 src=$macAddressSrc dst=$macAddressDstInvalid
+    mac.txring[$currentRing].insert -i $(pkt$packetNo) -b $packetSize
+
+mac.llhcache invalidate
+for txRingNo in range(0, $txRings):
+    mac.txring[$txRingNo].commit -c
+mac.llhcache flush
+
+finalCount = 0
+for i in range(0, 2):
+    mac.llh -v packetCount -C $extractionQueuePacketCountGet $i
+    finalCount += $packetCount
+
+if ($finalCount != $packetMatchesFilterCount):
+    finalReport += ['Packet count on MIF ($finalCount) does not match expectation ($packetMatchesFilterCount).']
+
+readreg 0x7040	
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

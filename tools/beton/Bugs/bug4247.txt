@@ -1,0 +1,112 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4247.txt $
+# $Revision: #6 $
+# $DateTime: 2015/11/06 04:16:19 $
+# $Author: oxy $
+#
+#Legacy INTx comes only after a bunch of packets sent by DMA LoopBack FPGA v0.9.8.3 
+finalReport = []                               #mandatory clear, empty means tests passed.
+ifndef logTag:
+    logTag = -l cli
+
+mvm = False
+serialMapping = True
+
+mac.set loopback System DMA      $logTag
+mac.init
+mac.txinit
+mac.rxinit
+
+numOfRings = 1
+ring_lst = [i for i in range($numOfRings)]
+
+wait_count = 5
+wait_timeout = 100
+
+#Set interrupt mode
+intmode = 'Multi-Vector' if ($mvm) else 'Single'
+mac.isr.set Mode $intmode        $logTag
+
+for ring in $ring_lst:
+	if $ring < 10:
+		tx_src$ring = tx0$ring
+		rx_src$ring = rx0$ring
+	else:
+		tx_src$ring = tx$ring
+		rx_src$ring = rx$ring
+		
+	if $serialMapping:
+		tx_vect$ring = $ring
+		rx_vect$ring = $ring
+	else:
+		tx_vect$ring = random.randint(0,($numOfRings-1))
+		rx_vect$ring = random.randint(0,($numOfRings-1))
+	tx_cause$ring = $ring
+	rx_cause$ring = $ring
+		
+	mac.txring[$ring].set map2cause $(tx_cause$ring) $logTag
+	mac.txring[$ring].set map2vector $(tx_vect$ring) $logTag
+    mac.isr.regHandler -s $(tx_src$ring) -c $(tx_cause$ring) -v $(tx_vect$ring) -t 10000000 -n tx_interrupt$ring
+    tx_interrupt$ring = 0
+	
+	mac.rxring[$ring].set map2cause $(rx_cause$ring) $logTag
+	mac.rxring[$ring].set map2vector $(rx_vect$ring) $logTag
+    mac.isr.regHandler -s $(rx_src$ring) -c $(rx_cause$ring) -v $(rx_vect$ring) -t 10000000 -n rx_interrupt$ring
+    rx_interrupt$ring = 0
+	
+	
+    
+#mac.isr.set iacmEnable False
+mac.isr.enable
+
+for ring in $ring_lst:
+	if $(tx_interrupt$ring) != 0:
+            finalReport = $finalReport + ['(1)Tx$ring Interrupt is $tx_res (val = $(tx_interrupt$ring))']
+	if $(rx_interrupt$ring) != 0:
+	    finalReport = $finalReport + ['(2)Rx$ring Interrupt is $rx_res (val = $(rx_interrupt$ring))']
+
+for ring in $ring_lst:
+	mac.rxring[$ring].enable
+	mac.rxring[$ring].fill 1
+	mac.rxring[$ring].commit
+
+	mac.txring[$ring].enable
+	mac.txring[$ring].insert
+	mac.txring[$ring].commit
+	
+	mac.txring[$ring].isEmpty -n txempty $logTag
+	mac.rxring[$ring].isEmpty -n rxempty $logTag
+	for i = 0; $i < 5 and not $txempty and not $rxempty; i += 1:
+		pause 50 ms
+		mac.txring[$ring].isEmpty -n txempty $logTag
+		mac.rxring[$ring].isEmpty -n rxempty $logTag
+		
+	mac.txring[$ring].disable
+	mac.rxring[$ring].disable
+
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for ring in $ring_lst:
+        if $(tx_interrupt$ring) != 1 or $(rx_interrupt$ring) != 1:
+            finalReport = $finalReport + ['(3)$(tx_interrupt$ring) != 1 or $(rx_interrupt$ring) != 1']
+            break
+    if $error == 0:
+        break
+        
+    pause $wait_timeout ms
+
+mac.isr.disable
+for ring in $ring_lst:
+    mac.isr.unregHandler -s $(tx_src$ring) -c $(tx_cause$ring) -v $(tx_vect$ring)
+    mac.isr.unregHandler -s $(rx_src$ring) -c $(rx_cause$ring) -v $(rx_vect$ring)
+	
+for ring in $ring_lst:
+	if $(tx_interrupt$ring) == 0:
+            finalReport = $finalReport + ['(4)Tx$ring Interrupt is $tx_res (val = $(tx_interrupt$ring))']
+	if $(rx_interrupt$ring) == 0:
+	    finalReport = $finalReport + ['(5)Rx$ring Interrupt is $rx_res (val = $(rx_interrupt$ring))']
+
+exec $(PWD)/helpers/showTestResult.txt #to show results [] in manual run mode
+
+mac.txuninit
+mac.rxuninit
+mac.uninit

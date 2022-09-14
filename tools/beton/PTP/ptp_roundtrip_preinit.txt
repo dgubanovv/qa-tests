@@ -1,0 +1,154 @@
+#use_block_in = mac
+l2src = "30:e0:3e:11:22:33"
+l2dst = "30:e0:3e:99:88:77"
+l3Gen = 1
+l3Src = "169.254.1.2"
+l3Dst = "169.254.9.8"
+noPayLoad = True
+l4Gen = -1
+l4Src = 0x1234
+
+#Range for RSS
+minl4Dst = 0x5678
+maxl4Dst = 0x6789
+
+avb_et = 0x22F0
+ptp_et = 0x88F7
+vlan_et = 0x8100
+
+base_ring = 0
+eg_avb_ring = 8
+ing_avb_ring = 8
+ing_ts_ring = 16
+eg_ptp_ring = 16
+ing_ptp_ring = 16
+
+eg_avb_ts_ring = 24
+eg_ts_ring = 31
+
+ptp_pkt_ts_offset = 66
+
+#send ptp packet
+pkt.new -n pkt0 -f None
+pkt.layer -i $pkt0 -L 10 -t Ether type=$ptp_et dst=[0x01,0x1B,0x19,00,00,00]
+
+
+pkt.layer -i $pkt0 -L 30 -t ptp -T signalling #sync
+pkt.layer -i $pkt0 -L 30  --seqId 0x1234
+
+pkt.new -n pkt1 -f None
+pkt.layer -i $pkt1 -L 10 -t Ether type=$avb_et dst=[0x01,0x1B,0x19,00,00,00]
+pkt.layer -i $pkt1 -L 20 -t HEX --pay_len=0xe4
+
+pkt.new -n pktATS -f None
+eg_avb_ring_2hex = hex($eg_avb_ring)[2:].zfill(2)
+pkt.layer -i $pktATS -L 10 -t HEX --raw=defec3000000$(eg_avb_ring_2hex)01
+
+#Set link/loopback/fc settings
+mac.set -l nul no_mcp_link False
+mac.set -l nul link        $link_speed # None, 100M, 1G, 2.5G, 5G, 10G, Auto
+mac.set -l nul loopback    None # None, Shallow, Deep, Msm, Serdes, PHY SIF, PHY NET. PHY SIF, PHY NET - stubs for future
+mac.set -l nul fc          None # None, link, pfc
+
+mac.init
+mac.isr.disable
+
+mac.rfc.et[0].set -l nul action Host
+mac.rfc.et[0].set -l nul et_rxq_en True
+mac.rfc.et[0].set -l nul queue $ing_avb_ring
+mac.rfc.et[0].set -l nul etherType $avb_et
+mac.rfc.et[0].set -l nul enable True
+
+mac.rfc.et[1].set -l nul action Host
+mac.rfc.et[1].set -l nul et_rxq_en True
+mac.rfc.et[1].set -l nul queue $ing_ptp_ring
+mac.rfc.et[1].set -l nul etherType $ptp_et
+mac.rfc.et[1].set -l nul enable True
+
+mac.rfc.set vl_inner_tpid $vlan_et -l nul
+
+mac.txinit
+mac.rxinit
+
+mac.txring[$base_ring].set -l nul size 4096
+mac.txring[$eg_ptp_ring].set -l nul size 4096
+mac.rxring[$ing_ptp_ring].set -l nul size 64
+mac.rxring[$ing_avb_ring].set -l nul size 64
+mac.rxring[$eg_ts_ring].set -l nul size 64
+mac.txring[$eg_avb_ts_ring].set -l nul size 64
+
+#pause
+mac.rxring[$base_ring].set -l nul size 4096
+mac.rxring[$base_ring].enable
+mac.rxring[$ing_avb_ring].enable
+mac.rxring[$ing_ptp_ring].enable
+
+#Send packet
+mac.rxring[$eg_ts_ring].enable
+mac.txring[$eg_avb_ts_ring].enable
+mac.txring[$base_ring].enable
+mac.txring[$eg_avb_ring].enable
+mac.txring[$eg_ptp_ring].enable
+
+mac.rxring[$base_ring].fill
+mac.rxring[$ing_avb_ring].fill
+mac.rxring[$ing_ptp_ring].fill
+mac.rxring[$eg_ts_ring].fill
+mac.rxring[$base_ring].commit
+mac.rxring[$ing_avb_ring].commit
+mac.rxring[$ing_ptp_ring].commit
+mac.rxring[$eg_ts_ring].commit
+
+mac.phy.counters -i
+
+mac.llh -v egPtpTsD8Size rdmRxDescriptorLengthGet $eg_ts_ring -l nul
+mac.llh -v ingPtpTsD8Size rdmRxDescriptorLengthGet $ing_ptp_ring -l nul
+mac.llh -v ingAvbPktD8Size rdmRxDescriptorLengthGet $ing_avb_ring -l nul
+mac.llh -v egAvbPktD8Size tdmTxDescriptorLengthGet $eg_avb_ring -l nul
+mac.llh -v avbTsD8Size tdmTxDescriptorLengthGet $eg_avb_ts_ring -l nul
+
+egPtpTsSize = ($egPtpTsD8Size*8)
+ingPtpTsSize = ($ingPtpTsD8Size*8)
+ingAvbPktSize = ($ingAvbPktD8Size*8)
+egAvbPktSize = ($egAvbPktD8Size*8)
+egAvbTsSize = ($avbTsD8Size*8)
+
+# mac.get -l nul -n setlink link
+# mac.link Up -n linkstate -l nul
+# mac.get -l nul -n loopback loopback
+# if $setlink != 'None' and '$linkstate' == 'None' and not $loopback in ['Shallow', 'Deep', 'PHY NET']:
+#     echo Error! No link!
+#     mac.uninit
+#     exit
+# echo Link                           : $setlink/$linkstate
+
+val_368 = 0x20
+if '$link_speed' == '1G':
+	val_368 = 0x100
+if '$link_speed' == '2.5G':
+	val_368 = 0x200
+if '$link_speed' == '5G':
+	val_368 = 0x400
+if '$link_speed' == '10G':
+	val_368 = 0x800
+
+wr 0x368 $val_368
+
+for i = 0; $i < 300; i += 1:
+    rr 0x370 -n val_370
+    if $val_370 & 0xf20 == $val_368:
+        break
+    pause 100 ms
+
+if $val_370 & 0xf20 != $val_368:
+    echo ERROR! No link
+    exit
+else:
+    echo Link $link_speed is UP
+
+mac.mcp.ptp_avb_enable -e
+
+id = 0
+pause 3
+mac.phy.ptp.ts
+mac.mpi.ptp.ts

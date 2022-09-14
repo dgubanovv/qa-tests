@@ -1,0 +1,107 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4761.txt $
+# $Revision: #2 $
+# $DateTime: 2016/04/11 22:35:17 $
+# $Author: oxy $
+#
+# Bug4761: rx DMA Drop Packet Counter must work
+
+finalReport = [] #mandatory clear, empty means tests passed.
+
+ifndef logTag:
+    logTag = -l cli
+ifndef rxRingNo:
+    rxRingNo = 0
+ifndef txRingNo:
+    txRingNo = 0
+    
+mac.set loopback System Packet $logTag #deep loopback
+
+mac.init
+mac.isr.disable
+mac.txinit
+mac.txring[$txRingNo].enable
+
+mac.rxinit
+mac.rxring[$rxRingNo].enable
+mac.rxring[$rxRingNo].fill 1
+mac.rxring[$rxRingNo].commit
+
+mac.llh macEnableSystemLoopbackSet 1
+
+
+mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+for i = 0; $i < 100; i+=1:
+    mac.txring[$txRingNo].insert -p 1024 -b 1024
+
+
+#send next 32 packets (total 32)
+mac.txring[$txRingNo].commit 32
+mac.txring[$txRingNo].clean
+mac.rxring[$rxRingNo].clean
+mac.txring[$txRingNo].status $logTag
+mac.rxring[$rxRingNo].status $logTag
+
+readreg 0x6818 -n droppedCounter $logTag
+mac.llh -v inerruptDrop rpbRxPacketDropInterruptStatusGet
+
+if $droppedCounter != 0:
+    finalReport += ["(0)Dropped packet counter in not zero"]
+
+if $inerruptDrop != 0:
+    finalReport += ["(1)Dropped packet interrupt"]
+    
+mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet $rxRingNo
+if $rxHeadAfter != $rxHeadBefore + 1:
+    packetsCount = ($rxHeadAfter - $rxHeadBefore)
+    finalReport += ["(2)Incorrect packets received(expected 1, actual $packetsCount)"]
+rxHeadBefore = $rxHeadAfter
+
+#send next 28 packets (total 60)
+
+mac.txring[$txRingNo].commit 28
+mac.txring[$txRingNo].clean
+mac.rxring[$rxRingNo].clean
+mac.txring[$txRingNo].status $logTag
+mac.rxring[$rxRingNo].status $logTag
+
+mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet $rxRingNo
+if $rxHeadAfter != $rxHeadBefore:
+    packetsCount = ($rxHeadAfter - $rxHeadBefore)
+    finalReport += ["(3)Incorrect packets received(expected 0, actual $packetsCount)"]
+rxHeadBefore = $rxHeadAfter
+
+readreg 0x6818 -n droppedCounter $logTag
+if $droppedCounter != 28:
+    finalReport += ["(4)Incorrect dropped packet counter (expected 28, actual $droppedCounter)"]
+    
+mac.llh -v inerruptDrop rpbRxPacketDropInterruptStatusGet
+if $inerruptDrop == 0:
+    finalReport += ["(5)NO Dropped packet interrupt"]
+
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.rxring[$rxRingNo].clean
+mac.txring[$txRingNo].status $logTag
+mac.rxring[$rxRingNo].status $logTag
+
+
+mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet $rxRingNo
+if $rxHeadAfter != $rxHeadBefore + 71:
+    packetsCount = ($rxHeadAfter - $rxHeadBefore)
+    finalReport += ["(6)Incorrect packets received(expected 71, actual $packetsCount)"]
+
+readreg 0x6818 -n droppedCounter $logTag
+if $droppedCounter != 28:
+    finalReport += ["(7)Incorrect dropped packet counter (expected 28, actual $droppedCounter)"]
+    
+mac.llh -v inerruptDrop rpbRxPacketDropInterruptStatusGet
+if $inerruptDrop != 0:
+    finalReport += ["(8)Dropped packet interrupt"]
+
+#Show result
+exec $(PWD)/helpers/showTestResult.txt
+
+mac.uninit

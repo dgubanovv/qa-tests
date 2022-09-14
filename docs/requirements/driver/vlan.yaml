@@ -1,0 +1,24 @@
+features:
+  vlan:
+    requirement_list:
+      - id: DRV_VLAN_1
+        description: In default state when no user vlan interfaces creates, vlan promiscious mode must be enabled; incoming vlan tagged packets must not be dropped and it doen't depend on vlan id in the packet.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER]
+      - id: DRV_VLAN_2
+        description: When the first vlan interface is created, vlan promiscious mode must be disabled.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER]
+      - id: DRV_VLAN_3
+        description: When 16 or more user vlan interfaces are created, vlan promiscious mode must be enabled.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER]
+      - id: DRV_VLAN_4
+        description: When promiscious vlan mode is disabled packets sent to a non-existent vlan interface must be dropped.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER]
+      - id: DRV_VLAN_5
+        description: When promiscious vlan mode is enabled packets sent to a non-existent vlan interface must not be dropped.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER]
+      - id: DRV_VLAN_6
+        description: When flag Promisc set, vlan promiscious mode must be enabled.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER]
+    marks:
+      ready: no
+    note: Only Linux drivers are covered by these requirements.

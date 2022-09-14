@@ -1,0 +1,19 @@
+#Rx unicast filter configurator
+#Use global values: 
+#IN: filterUnicastIndex - index of filter to configure
+#filterUnicastEnable - enable (1) or disable (0) unicast filter
+#filterUnicastMngQueue - mng queue
+#filterUnicastAction - 0=Discard, 1=Host, 2=Management, 3=Host & Management, 4=Wake-on-LAN, 5 to 7=Reserved
+#filterUnicastMacAddr - array of 6 bytes
+
+
+mac.llhcache on
+mac.llh -C rpfL2UnicastFilterEnableSet $filterUnicastEnable $filterUnicastIndex
+mac.llh -C rpfL2UnicastFilterActionSet $filterUnicastAction $filterUnicastIndex
+
+mac.llh -C rpfL2UnicastManagementQueueSet $filterUnicastMngQueue $filterUnicastIndex
+macAddressLSW = (($filterUnicastMacAddr[2] << 24) & 0xFF000000) | (($filterUnicastMacAddr[3] << 16) & 0xFF0000) | (($filterUnicastMacAddr[4] << 8) & 0xFF00) | ($filterUnicastMacAddr[5] & 0xFF)
+macAddressMSW = (($filterUnicastMacAddr[0] << 8) & 0xFF00) | ($filterUnicastMacAddr[1] & 0xFF)
+mac.llh -C rpfL2UnicastDestinationAddressMSW_Set $macAddressMSW $filterUnicastIndex
+mac.llh -C rpfL2UnicastDestinationAddressLSW_Set $macAddressLSW $filterUnicastIndex
+mac.llhcache off

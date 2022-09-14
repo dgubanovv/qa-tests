@@ -1,0 +1,13 @@
+#Rx multicast filter configurator
+#Use global values: 
+#IN: filterMulticastIndex - index of filter to configure
+#filterMulticastEnable - enable (1) or disable (0) multicast filter
+#filterMulticastAction - 0=Discard, 1=Host, 2=Management, 3=Host & Management, 4=Wake-on-LAN, 5 to 7=Reserved
+#filterMulticastMacAddr - 12 bits multicast address
+
+mac.llhcache on
+mac.llh -C rpfL2MulticastFilterEnableSet $filterMulticastEnable $filterMulticastIndex
+mac.llh -C rpfL2MulticastFilterActionSet $filterMulticastAction $filterMulticastIndex
+#macAddressMSW = ((($filterMulticastMacAddr[0] << 8) & 0x0F00) | ( $filterMulticastMacAddr[1] & 0xFF))
+mac.llh -C rpfL2MulticastDestinationAddressSet $filterMulticastMacAddr $filterMulticastIndex
+mac.llhcache off

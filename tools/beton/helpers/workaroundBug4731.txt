@@ -1,0 +1,18 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/helpers/workaroundBug4731.txt $
+# $Revision: #3 $
+# $DateTime: 2016/05/07 06:12:41 $
+# $Author: oxy $
+
+ifndef marginSize:
+    marginSize=0x1f
+val1 = 0x80000008 | ($marginSize << 4)
+val2 = 0x00000008 | ($marginSize << 4)
+writereg 0x8920 $val1
+writereg 0x8920 $val2
+
+ifdef tpbsize:
+    ifdef maxtc:
+	    ifdef maxtc:
+            maxSize = min($maxSize, 1024*(min($tpbsize, $rpbsize)//$maxtc) - ($marginSize + 1 + 16)*16)
+
+

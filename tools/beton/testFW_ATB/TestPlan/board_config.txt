@@ -1,0 +1,24 @@
+##############################################################################
+# BOARD CONFIG
+##############################################################################
+
+#size of tx buffer (kb)
+#tpbsize = 128 # FPGA limitation #CHANGE
+
+#size of rx buffer (kb)
+#rpbsize = 128 # FPGA limitation #CHANGE
+
+#size of each ring
+#ringSize = 512 #CHANGE
+
+#maxtc = 8				# TC count 4 or 8 #CHANGE
+
+
+#enable pauses to workaround slow loopback
+pausesOn = 0
+
+#pause duration (ms)
+delay = 1
+
+#number of descriptors per commit
+#numOfDesc = 256 #CHANGE

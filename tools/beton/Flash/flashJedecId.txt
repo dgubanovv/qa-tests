@@ -1,0 +1,21 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Flash/flashJedecId.txt $
+# $Revision: #5 $
+# $DateTime: 2016/05/06 20:56:05 $
+# $Author: ryanv $
+#
+# sample auto-test script sample, ready to copy&paste
+#
+log.hw Disable #disabled to speed up test
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+
+flash.init
+flash.get jedecid -n FLASH_CONST_JEDECID -l nul
+
+flash.jedecid -n id
+if $id != $FLASH_CONST_JEDECID:
+    hex_var = hex($FLASH_CONST_JEDECID)
+    finalReport = $finalReport + ['(1) JEDECID not equal to $hex_var']
+
+exec $PWD/helpers/showTestResult.txt
+log.hw Enable

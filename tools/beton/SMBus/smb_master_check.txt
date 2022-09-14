@@ -1,0 +1,38 @@
+# Check Busy Bit
+# See Uarch.pdf -> MIF -> SMBus 0 Master/Slave -> 12.10.3 Master SMB Send Byte Operation
+# At the moment we check ACK only
+
+writereg 0x410 0x5
+mac.llh smb0SmbResetSet 1 0
+pause 1 s
+mac.llh smb0SmbResetSet 0 0
+mac.llh smb0SmbMasterModeConfigurationSet 1 0
+mac.llh smb0Smb0BusBusyGet -v busybit
+echo BUSY BIT: $busybit
+
+mac.llh smb0Smb0MasterReadModeSet 1 0
+
+for slave_address in range(0, 0x7f):
+	reg608 = ($slave_address << 1)
+	writereg 0x608 $reg608 -l nul
+	mac.llh smb0Smb0StartSet 1 0
+	
+	aaa = 2
+	for i = 1; $i < $aaa; i = $i:
+		mac.llh smb0Smb0ByteTransferCompleteGet -v byte_transfer_comlete
+		if $byte_transfer_comlete == 1:
+			break
+		else:
+			i = $i + 1
+			pause 100 ms
+			echo BYTE TRANSFER COMPLETE: $byte_transfer_comlete
+	
+	mac.llh smb0SmbusRxAcknowledgeValueGet -v ack
+	if $ack == 0:
+		echo SLAVE ADDRESS: $slave_address
+		mac.llh smb0Smb0InterruptGet -v interrupt
+		if $interrupt == 1:
+			echo INTERRUPT!
+			break
+	else:
+		echo UNSUCCESSFUL: $slave_address

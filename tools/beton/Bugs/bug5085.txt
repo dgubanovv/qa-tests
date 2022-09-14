@@ -1,0 +1,62 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug5085.txt $
+# $Revision: #2 $
+# $DateTime: 2016/06/24 02:04:49 $
+# $Author: oxy $
+#
+# bug5085: Test DD after packet segments were sent
+
+finalReport = []
+
+test_num_ndef = False
+ifndef test_num:
+    test_num_ndef = True
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+mac.set loopback None $logTag  
+mac.init
+
+
+mac.txinit
+wbThresholdValue = 1
+
+mac.txring[$txRingNo].set wbThreshold $wbThresholdValue $logTag  # set wbThreshold
+mac.txring[$txRingNo].enable                        # Prepare Tx ring
+mac.txring[$txRingNo].set PacketMark None $logTag 
+mac.isr.disable
+
+wbOption = 0
+packetSize = 256
+segSize = ($packetSize / 2)
+segmentsToSend = 2
+
+
+for segment = 0; $segment < $segmentsToSend; segment += 1:
+    #echo segment = $segment
+    eop = (1 if $segment == $segmentsToSend - 1 else 0)
+    
+    params = -w $wbOption -p $packetSize -b $segSize -e $eop
+    mac.txring[$txRingNo].insert $params
+    
+mac.txring[$txRingNo].commit
+#echo
+#echo packet sent...
+pause 15 ms
+mac.txring[$txRingNo].clean
+
+for segment = 0; $segment < $segmentsToSend; segment += 1:
+    mac.txring[$txRingNo].getdescval $segment -f DD -n desc_done $logTag
+    if not $desc_done:
+        finalReport += ['(2) Desc N$segment DD field not equal to 1']
+
+
+exec $(PWD)/helpers/showTestResult.txt       
+mac.uninit

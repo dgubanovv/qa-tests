@@ -1,0 +1,167 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/MAC-Bringup/Scripts/Regression/testSample.txt $
+# $Revision: #1 $
+# $DateTime: 2015/10/14 01:45:59 $
+# $Author: oxy $
+#
+# sample auto-test script sample, ready to copy&paste
+#
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+ifndef logTag:
+    logTag = -l cli
+
+mcpType = MIPS
+cldFile = $(SCRIPT_PATH)/mcpInterruptException/atlantic_Test_interrupt.cld
+
+#   RESET ALL SRATCHPAD REGISTERS
+
+interruptCommandRegister = 0x320
+# 0x320 - interrupt command register:
+#    7 6 5 4 3 2 1 0
+#    | | | | | | | |
+#    | | | | | | | \-> 0: Enable HW0 Interrupt
+#    | | | | | | \---> 1: Enable HW1 Interrupt (MCP Force Interrupt. Managed by the 0x404 register.)
+#    | | | | | \-----> 2: Enable HW2 Interrupt
+#    | | | | \-------> 3: Enable HW3 Interrupt
+#    | | | \---------> 4: Enable HW4 Interrupt
+#    | | \-----------> 5: Enable HW5 Interrupt (Timer Interrupt. Interrupted each 50 msec.)
+#    | \-------------> 6: Enable HW6 Interrupt
+#    \---------------> 7: Enable HW7 Interrupt
+#
+
+mainCounterRegister = 0x324
+# 0x324 - MAIN counter register
+
+baseHwIntRegister = 0x300
+# 0x300 - HW0 counter register
+# 0x304 - HW1 counter register
+# 0x308 - HW2 counter register
+# 0x30c - HW3 counter register
+# 0x310 - HW4 counter register
+# 0x314 - HW5 counter register
+# 0x318 - HW6 counter register
+# 0x31c - HW7 counter register
+writereg 0x300 0
+writereg 0x304 0
+writereg 0x308 0
+writereg 0x30c 0
+writereg 0x310 0
+writereg 0x314 0
+writereg 0x318 0
+writereg 0x31c 0
+writereg 0x320 0
+writereg 0x324 0
+
+exceptionCommand = 0x330
+# For testing exception we use writing and reading from unaligned memory.
+# This causes the AdEL and AdES exceptions.
+#
+# 0x330 - exception command register
+#    1 - store word to unaligned memory
+#    2 - store short word to unaligned memory
+#    3 - load word from unaligned memory
+#    4 - load short word from unaligned memory
+#    5 - load unsigned short word from unaligned memory
+#    6 - software breakpoint
+#
+exceptionStore = 0x334
+# 0x334 - register for store to unaligned memory
+exceptionLoad = 0x338
+# 0x338 - register for load from unaligned memory
+exceptionCounter = 0x33c
+# 0x33c - exception counter
+
+writereg 0x330 0
+writereg 0x334 0
+writereg 0x338 0
+
+mac.mcp.set type $mcpType
+mac.mcp.bootLoadCld $cldFile
+pause 600 ms
+
+# Test of HW1 Interrupt
+writereg $interruptCommandRegister 0x02
+writereg 0x404 0x22
+pause 20 ms
+
+writereg 0x304 0
+pause 20 ms
+
+writereg 0x304 0
+pause 20 ms
+
+readreg -n HW1_count 0x304
+
+writereg 0x404 0x20
+writereg 0x304 0
+
+if $HW1_count != 3:
+	finalReport = $finalReport + ['(1) FAIL: Test of HW1 Interrupt']
+
+# Test of HW5 (Timer Interrupt)
+writereg $interruptCommandRegister 0x20
+pause 600 ms
+
+readreg -n HW5_count 0x314
+writereg $interruptCommandRegister 0
+
+if $HW5_count < 4:
+	finalReport = $finalReport + ['(2) FAIL: Test of Timer Interrupt']
+
+# Reset memory for Test Exception
+writereg $exceptionStore 0
+writereg $exceptionCommand 0
+pause 20 ms
+	
+# Test of Exceptions
+writereg $exceptionStore 0xfff4
+writereg $exceptionCommand 1
+pause 20 ms
+
+readreg -n Exc_count $exceptionCounter
+if $Exc_count != 1:
+	finalReport = $finalReport + ['(3) FAIL: Unexpected exception counter']
+
+writereg $exceptionCounter 0
+    
+readreg -n Exc_command $exceptionCommand
+if $Exc_command != 0:
+	finalReport = $finalReport + ['(4) FAIL: Not recovered after exception']
+
+writereg $exceptionCommand 1
+pause 20 ms
+
+readreg -n Exc_count $exceptionCounter
+if $Exc_count != 2:
+	finalReport = $finalReport + ['(3) FAIL: Unexpected exception counter']
+    
+writereg $exceptionCounter 0
+    
+readreg -n Exc_command $exceptionCommand
+if $Exc_command != 0:
+	finalReport = $finalReport + ['(4) FAIL: Not recovered after exception']
+
+writereg $exceptionCommand 1
+pause 20 ms
+
+readreg -n Exc_count $exceptionCounter
+if $Exc_count != 3:
+	finalReport = $finalReport + ['(3) FAIL: Unexpected exception counter']
+
+writereg $exceptionCounter 0
+    
+readreg -n Exc_command $exceptionCommand
+if $Exc_command != 0:
+	finalReport = $finalReport + ['(4) FAIL: Not recovered after exception']
+
+readreg -n main_count1 $mainCounterRegister
+
+pause 1000 ms
+
+readreg -n main_count2 $mainCounterRegister
+if $main_count1 == $main_count2:
+	finalReport = $finalReport + ['(5) FAIL: Main Loop does not work']
+
+exec helpers/showTestResult.txt #to show results [] in manual run mode
+
+#

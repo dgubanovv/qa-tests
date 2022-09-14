@@ -1,0 +1,23 @@
+result = 0x00
+
+for IPv4Ping_TestNo = 0; $IPv4Ping_TestNo < 4; IPv4Ping_TestNo += 1:
+
+    flags = 0
+
+    if $IPv4Ping_TestNo & 0x00000001:
+        IPv4SourceAddress = 0x11223344
+    else:
+        IPv4SourceAddress = 0x00000000
+
+    if $IPv4Ping_TestNo & 0x00000002:
+        IPv4DestAddress = 0xAABBCCDD
+    else:
+        IPv4DestAddress = 0x00000000
+
+    echo Test "wolFilterIPv4Ping", option $IPv4Ping_TestNo 
+
+    exec testFW/wol/lib/wolCentralState.txt
+    exec testFW/wol/lib/wolFilterTestIPv4Ping.txt
+
+    if $result != 0:
+        echo _____________FAILED

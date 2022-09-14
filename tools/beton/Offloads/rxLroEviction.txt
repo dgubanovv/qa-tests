@@ -1,0 +1,189 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Offloads/rxLroEviction.txt $
+# $Revision: #5 $
+# $DateTime: 2016/09/13 08:04:52 $
+# $Author: vryabov $
+#
+# Sends batch of short 240+54b TCP packets, which will be gathered on Rx in one normal 1494b packet
+
+finalReport = []
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+ifndef logTag:
+    logTag = -l cli
+
+
+mac.set loopback System Packet $logTag
+mac.init
+mac.txinit
+mac.rxinit
+mac.isr.disable
+
+mac.txring[0].enable
+mac.txring[0].set PacketMark None
+mac.rxring[0].enable
+mac.rxring[0].fill
+mac.rxring[0].commit
+
+readreg 0x5030 -n bit5030
+bit5030 = ($bit5030 >> 1) << 1
+writereg 0x5030 $bit5030
+
+writereg 0x00005590 0xFFFFFFFF
+if 0: #llh bug
+    mac.llh rpoLroAckPacketDisableSet 1
+else:
+    readreg 0x00005594 -n val
+    val = $val| (1<<0xA)
+    writereg 0x00005594 $val
+
+mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet 0
+mac.llh rpoLroMaxNumberOfDescriptorsSet 3 0
+seqNo = 0
+
+options = {0x0a}
+l3Protocols = ['IP', 'IPv6', 'IPopts', 'IP_1frag', 'IP_otherfrag', 'IP_padd', 'IPectCE', 'IPv6opts', 'IPv6_1frag', 'IPv6_otherfrag', 'IPv6_padd'] 
+l4ProtoForL3 = [['TCP', 'TCPopts', 'UDP', 'SCTP', 'ICMP', 'TCPflag', 'TCPfin', 'TCPsyn', 'TCPrst', 'TCPurg', 'TCPece', 'TCPcwr', 'TCPns', 'None']]
+l4ProtoForL3 += [['TCP', 'TCPopts', 'UDP', 'SCTP', 'ICMP', 'TCPflag', 'TCPfin', 'TCPsyn', 'TCPrst', 'TCPurg', 'TCPece', 'TCPcwr', 'TCPns', 'None']]
+l4ProtoForL3 += [['TCP']]
+l4ProtoForL3 += [['TCP']]
+l4ProtoForL3 += [['TCP']]
+l4ProtoForL3 += [['TCP']]
+l4ProtoForL3 += [['TCP']]
+l4ProtoForL3 += [['TCP']]
+l4ProtoForL3 += [['TCP']]
+l4ProtoForL3 += [['TCP']]
+l4ProtoForL3 += [['TCP']]
+l3HeaderLengths = [20, 40, 32, 20, 20, 20, 20, 48, 48, 48, 40]
+l4HeaderLengths = [20, 24, 8, 12, 8, 20, 20, 20, 20, 20, 20, 20, 20, 0]
+
+givenPacketCount = 0
+expectedRxPacketCount = 0
+
+countL3Proto = 0
+for l3Proto in $l3Protocols:
+    countL4Proto = 0
+    if '$l3Proto' == 'IP_padd' or '$l3Proto' == 'IPv6_padd':
+        givenTxPayloadLen = 0
+    elif '$l3Proto' == 'IP_1frag':
+        givenTxPayloadLen = 16
+    elif '$l3Proto' == 'IP_otherfrag':
+        givenTxPayloadLen = 14
+    else:
+        givenTxPayloadLen = 240
+    l4Protocols = $l4ProtoForL3[$countL3Proto]
+    for l4Proto in $l4Protocols:
+        for i in range(2):
+            givenPacketCount += 1
+            expectedRxPacketCount += 1
+            single = 1
+            #put payload
+            pkt.new -n packet$l3Proto$l4Proto$i -p $givenTxPayloadLen
+            #put L4 Proto
+            if '$l4Proto' == 'TCPopts':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=10 options=[('WScale',100)]
+                single = 0
+            elif '$l4Proto' == 'TCPflag':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=10
+                single = 0
+            elif '$l4Proto' == 'TCPfin':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=0x01
+                single = 0
+            elif '$l4Proto' == 'TCPsyn':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=0x02
+                single = 0
+            elif '$l4Proto' == 'TCPrst':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=0x04
+                single = 0
+            elif '$l4Proto' == 'TCPurg':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=0x20
+                single = 0
+            elif '$l4Proto' == 'TCPece':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=0x40
+                single = 0
+            elif '$l4Proto' == 'TCPcwr':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=0x80
+                single = 0
+            elif '$l4Proto' == 'TCPns':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t TCP sport=1234 dport=5000 seq=$seqNo flags=0xc0
+                single = 0
+            elif  '$l4Proto' == 'TCP':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t $l4Proto sport=1234 dport=5000 seq=$seqNo flags=0    
+            elif '$l4Proto' != 'None':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 50 -t $l4Proto
+                single = 0
+            if '$l4Proto' == 'None':  
+                single = 0
+            #put L3 Proto
+            if '$l3Proto' == 'IPopts':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IP options=$options
+                single = 0
+            elif '$l3Proto' == 'IP_1frag':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IP id=0xFFFF flags=1 frag=0
+                single = 0
+            elif '$l3Proto' == 'IP_otherfrag':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IP id=0xFFFF flags=0 frag=3 
+                single = 0
+            elif '$l3Proto' == 'IP_padd':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IP
+                single = 0   
+            elif '$l3Proto' == 'IPv6_padd':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IPv6
+                single = 0                    
+            elif '$l3Proto' == 'IPectCE':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IP flags=11
+                single = 0  
+            elif '$l3Proto' == 'IPv6opts':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IPv6 nh=0 
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 35 -t IPv6ExtHdrHopByHop nh=6
+                single=0
+            elif '$l3Proto' == 'IPv6_1frag':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IPv6 nh=44 
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 35 -t IPv6ExtHdrFragment offset=0 m=1 id=0xFFFF
+                single=0
+            elif '$l3Proto' == 'IPv6_otherfrag':
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t IPv6 nh=44 
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 35 -t IPv6ExtHdrFragment offset=3 m=0 id=0xFFFF
+                single=0
+            else:
+                pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 30 -t $l3Proto 
+            pkt.layer -i $(packet$l3Proto$l4Proto$i) -L 20 -t Ether 
+            
+            givenTxPacketLen = 14 + $l3HeaderLengths[$countL3Proto] + $l4HeaderLengths[$countL4Proto] + $givenTxPayloadLen
+            mac.txring[0].insert -i $(packet$l3Proto$l4Proto$i) -p $givenTxPacketLen
+            seqNo += $givenTxPayloadLen
+            if $i == 1:
+                expectedRxPacketCount -= $single
+            #echo packet$l3Proto$l4Proto$i
+        countL4Proto += 1
+    countL3Proto += 1
+   
+#echo "given $givenPacketCount exp $expectedRxPacketCount "  
+mac.txring[0].commit
+mac.txring[0].clean
+mac.txring[0].status 
+
+mac.rxring[0].clean
+mac.rxring[0].status 
+mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet 0
+actualRxPacketCount = ($rxHeadAfter - $rxHeadBefore )
+if $expectedRxPacketCount != $actualRxPacketCount:
+    finalReport += ["(0)Incorrect packet count, Expected = $expectedRxPacketCount, actual = $actualRxPacketCount"]
+#else:
+#    mac.rxring[0].getdescval -f PKT_LEN -n actualRxPacketLen
+#    if $expectedRxPacketLen != $actualRxPacketLen:
+#        finalReport += ["(1)Incorrect packet len, Expected = $expectedRxPacketLen, actual = $actualRxPacketLen"]
+
+readreg 0x000055B4
+readreg 0x000055C0
+readreg 0x00005598
+readreg 0x00005594
+readreg 0x00005590
+readreg 0x000055A0
+
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

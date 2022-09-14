@@ -1,0 +1,5 @@
+mac.llh -v truncationError -C $extractionQueueTruncationErrorGet $queue
+if  $(truncationError) != $expectedTruncationError:
+    str = '$stringId Truncation error bit for queue $queue not equal to expected (which is $expectedTruncationError)'
+    echo $str
+    finalReport = $finalReport + ['$str']

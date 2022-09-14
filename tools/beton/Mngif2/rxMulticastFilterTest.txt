@@ -1,0 +1,286 @@
+# Script for one packet extraction with ARP filter
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    logTag = -l cli
+    RPF2 = True
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef RPF2:
+    RPF2 = False
+    
+filterActionDiscard = 0
+filterActionHost = 1
+filterActionManagement = 2
+filterActionHostManagement = 3
+filterActionWoL = 4
+filterActionReserved = 5
+
+macAddrSrcStr = 0x10 0xdd 0xb1 0xe6 0x1e 0xa5
+
+protoIcmpFullLen = 74
+
+vLans = ['NoVlan', 'Vlan']
+
+mac.set glb_reg_reset_dis False
+mac.set tx_reg_rst_dis False
+mac.set rx_reg_rst_dis False
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback System Packet $logTag  #Deep loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+
+
+if $RPF2:
+    exec $(PWD)/helpers/enableRPF2.txt
+    
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $PWD/helpers/workaroundBug3991.txt
+
+mac.rxring[$rxRingNo].get -n rxRingSize size
+
+#Configure filters
+
+exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 256
+mac.llh -C rpfL2BroadcastFilterActionSet $filterActionHost
+mac.llh -C rpfL2BroadcastCountResetSet 0
+#??? SwapEnable - what is this?
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llh -C rpfL2BroadcastEnableSet 1
+
+#L2 Multicast Destination Address Offset
+#0 = bits[47:36]
+#1 = bits[46:35]
+#2 = bits[45:34]
+#3 = bits[43:32]
+#mac.llh -C rpfL2MulticastDestinationAddressOffsetSet 0
+
+#L2 Multicast Destination Address Mask [B:0]
+#1 = Match the corresponding bit
+#0 = Ignore the corresponding bit
+#mac.llh -C rpfL2MulticastDestinationAddressMaskSet 0xF00
+
+mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+#Format of test:
+#(multicast_discard_mask, multicast_host_mask, multicast_man_mask, multicast_hostman_mask, offset, mask)
+tests = [[0xf,0, 0, 0, 0, 0xFFF]]
+tests += [[0,0xf, 0, 0, 0, 0xFFF]]
+tests += [[0,0, 0xf, 0, 0, 0xFFF]]
+tests += [[0,0, 0, 0xf, 0, 0xFFF]]
+
+# tests = [[0x11,0, 0, 0, 0, 0xFFF], [0,0x22, 0, 0, 1, 0xAAA], [0,0, 0x44, 0, 2, 0], [0,0, 0, 0x88, 3, 0x555]]
+filterMasks = [0x0, 0xFFF, 0xAAA, 0x555]
+
+
+if len($tests) == 0:
+    #auto create test sequences
+    for testAction = 0; $testAction < 4; testAction += 1:
+        for mask = 1; $mask <= 0xFF; mask = ($mask << 1) | 1:
+            testElem = []
+            for count= 0; $count < 4; count += 1: 
+                if $count == $testAction:
+                    testElem = $testElem + [$mask]
+                else:
+                    testElem = $testElem + [0]
+            for offset = 0; $offset < 4; offset += 1:
+                testElemWithOffset = $testElem + [$offset]
+                for filterMask in $filterMasks:
+                    tmp = $testElemWithOffset + [$filterMask]
+                    tests += [$tmp]
+
+
+filterMulticastCount = 8
+testNumber = 0
+
+for vlan in $vLans:
+
+    #create packets
+    for filterMulticastIndex = 0; $filterMulticastIndex < $filterMulticastCount; filterMulticastIndex += 1:
+        multicastWord0 = 0xAD
+        multicastWord1 = $filterMulticastIndex << 4 | 0xB
+        macAddressMulticastStr = '[$multicastWord0,$multicastWord1,0xCC,0xDD,0xEE,0xFF]'
+        
+        pkt.new -n pkt$vlan$filterMulticastIndex -p 32
+        pkt.layer -i $(pkt$vlan$filterMulticastIndex) -L 60 -t ICMP
+        pkt.layer -i $(pkt$vlan$filterMulticastIndex) -L 50 -t IP  
+        #put Vlan
+        if '$vlan' == 'Vlan':
+            pkt.layer -i $(pkt$vlan$filterMulticastIndex) -L 30 -t Dot1Q
+        macAddrDstStr = '$macAddressMulticastStr'
+        pkt.layer -i $(pkt$vlan$filterMulticastIndex) -L 25 -t Ether src=$macAddrDstStr type=0x800 dst=$macAddrDstStr
+
+    #run tests
+    for test in $tests:
+        tmp = 0
+        for elemIndex = 0; $elemIndex < 4; elemIndex +=1:
+            if $test[$elemIndex] != 0:
+                if $tmp:
+                    finalReport += ['(1)Defined a lot of actions']
+                    break
+                tmp = 1
+        if len($finalReport) > 0:
+            break;
+
+        multicastToHost = 0
+        multicastToManagement = 0
+        # dstAddrOffset = $test[4]
+        dstAddrMask = $test[5]
+		dstAddrOffset = random.randint(0, 3)
+        enabledFilters = []
+        
+        mac.llh rpfL2MulticastDestinationAddressMaskSet $dstAddrMask
+        mac.llh rpfL2MulticastDestinationAddressOffsetSet $dstAddrOffset
+        # Set filter action according to the test definition
+
+        for filterMulticastIndex = 0; $filterMulticastIndex < $filterMulticastCount; filterMulticastIndex += 1:
+            filterMulticastEnable = 0
+            filterMulticastAction = $filterActionDiscard
+            if ($test[0] & (1 << $filterMulticastIndex)) != 0:
+                filterMulticastEnable = 1
+                filterMulticastAction = $filterActionDiscard
+            if ($test[1] & (1 << $filterMulticastIndex)) != 0:
+                filterMulticastEnable = 1
+                filterMulticastAction = $filterActionHost
+                multicastToHost += 1
+            if ($test[2] & (1 << $filterMulticastIndex)) != 0:
+                filterMulticastEnable = 1
+                filterMulticastAction = $filterActionManagement
+                multicastToManagement += 1
+            if ($test[3] & (1 << $filterMulticastIndex)) != 0:
+                filterMulticastEnable = 1
+                filterMulticastAction = $filterActionHostManagement
+                multicastToHost += 1
+                multicastToManagement += 1
+            multicastWord0 = 0xAD
+            multicastWord1 = $filterMulticastIndex << 4 | 0xB
+            #macAddressMulticastStr = hex($multicastWord0)+' '+hex($multicastWord1)+' 0xCC 0xDD 0xEE 0xFF'
+            
+            #multicastWord0 = 0xFF
+            #multicastWord1 = 0xFF
+            #macAddressMulticastStr = hex($multicastWord0)+' '+hex($multicastWord1)+' 0xFF 0xFF 0xFF 0xFF'
+            
+            if $dstAddrOffset == 3:
+                dstAddrOffset = 4
+            filterMulticastMacAddr = (($multicastWord0<<8)&0xFF00 | $multicastWord1)  >> (4 - $dstAddrOffset)
+            exec $(PWD)/helpers/filtersConfigurators/rxMulticastFilter.txt
+            if $filterMulticastEnable:
+                enabledFilters += [$filterMulticastMacAddr]
+
+        for filterMulticastIndex = 0; $filterMulticastIndex < $filterMulticastCount; filterMulticastIndex += 1:
+            mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+            # Insert packet and get buffer address
+            
+            if '$vlan' == 'Vlan':
+                mac.txring[$txRingNo].insert -i $(pkt$vlan$filterMulticastIndex) -b 78
+            else:
+                mac.txring[$txRingNo].insert -i $(pkt$vlan$filterMulticastIndex) -b 74
+            mac.txring[$txRingNo].status $logTag
+            mac.rxring[$rxRingNo].status $logTag
+            mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+            
+            # Generate packet that match this filter and only this filter
+            
+            mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx --size 80
+            mac.txring[$txRingNo].commit
+            mac.txring[$txRingNo].clean
+            mac.rxring[$rxRingNo].clean
+            mac.txring[$txRingNo].status $logTag
+            mac.rxring[$rxRingNo].status $logTag
+            
+            passedBySomeFilter = False
+            current = ((0xAD<<8)&0xFF00 | $filterMulticastIndex << 4 | 0xB)  >> (4 - $dstAddrOffset)
+            #echo currnet = $current
+            for filter in $enabledFilters:
+                if $filter & $dstAddrMask == $current & $dstAddrMask:
+                    passedBySomeFilter = True
+                    break
+            if (($test[2] != 0) or ($test[3] != 0)) and $passedBySomeFilter:
+                expectedPacketCount = 1
+            else:
+                expectedPacketCount = 0
+                
+            # Check extractor right now
+            stringId = '(2)'
+            mac.llhcache on
+            exec $(PWD)/helpers/extractorCheckers/checkPacketCount.txt
+            if $packetCount == 1:
+                exec $(PWD)/helpers/extractAndCompare.txt
+                
+            #Check packet in rx ring
+            mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+        
+            if (($test[1] != 0) or ($test[3] != 0)) and $passedBySomeFilter:
+                if $rxHeadBefore == ($rxRingSize-1):
+                    $rxHeadBefore = -1
+                rxCount = $rxHeadGood + 0 - $rxHeadBefore
+                if $rxCount != 1:
+                    finalReport += ['(3)Wrong packet number routed to host']
+                    break
+                mac.rxring[$rxRingNo].dumpbuf -H 1 -l dumprx --size 80
+                mac.rxring[$rxRingNo].clean
+                mac.rxring[$rxRingNo].status $logTag
+
+                mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n rxAddr $logTag
+                mac.rxring[$rxRingNo].getdescval -H 1 -f size -n rxPacketSize $logTag
+                if '$vlan' == 'Vlan':
+                    if $protoIcmpFullLen+4 != $rxPacketSize:
+                        finalReport += ['(4)Wrong packet size on Rx']
+                        break
+                else:
+                    if $protoIcmpFullLen != $rxPacketSize:
+                        finalReport += ['(4)Wrong packet size on Rx']
+                        break
+                cmpRes = False
+                mem.cmp -p $pAddr -p2 $rxAddr -s $rxPacketSize -l nul -n cmpRes
+                if $cmpRes == False:
+                    finalReport += ['(5)txPacket and rxPacket differs']
+                mac.rxring[$rxRingNo].fill 1
+                mac.rxring[$rxRingNo].commit 1
+            else:
+                if $rxHeadGood != $rxHeadBefore:
+                    finalReport += ['(6)Unexpected packet in Rx ring']
+                    break
+        testNumber += 1
+
+readreg 0x5040 $logTag
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

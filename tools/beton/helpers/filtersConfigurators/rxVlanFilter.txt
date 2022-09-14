@@ -1,0 +1,25 @@
+#Rx VLAN filter configurator
+#Use global values: 
+#IN: filterVlanIndex - index of filter to configure
+#filterVlanEnable - enable (1) or disable (0) unicast filter
+#filterVlanCfiEnable - enable (1) or disable (0) CFI bit
+#filterVlanCfi - CFI bit
+#filterVlanRxQueueEnable - assignement to RxQueue enabled
+#filterVlanRxQueue  - Rx queue
+#filterVlanAction - 0=Discard, 1=Host, 2=Management, 3=Host & Management, 4=Wake-on-LAN, 5 to 7=Reserved
+#filterVlanID - array of 3 bytes
+#filterVlanManagementQueue - 0 or 1
+
+ifndef filterVlanManagementQueue:
+    filterVlanManagementQueue = 0
+
+mac.llhcache on
+mac.llh -C rpfVlanFilterEnableSet $filterVlanEnable $filterVlanIndex
+mac.llh -C rpfVlanCfiEnableSet $filterVlanCfiEnable $filterVlanIndex
+mac.llh -C rpfVlanCfiBitSet $filterVlanCfi $filterVlanIndex
+mac.llh -C rpfVlanRxQueueEnableSet $filterVlanRxQueueEnable $filterVlanIndex
+mac.llh -C rpfVlanRxQueueSet $filterVlanRxQueue $filterVlanIndex
+mac.llh -C rpfVlanFilterActionSet $filterVlanAction $filterVlanIndex
+mac.llh -C rpfVlanIdFilterSet $filterVlanID $filterVlanIndex
+mac.llh -C rpfVlanManagementQueueSet $filterVlanManagementQueue $filterVlanIndex
+mac.llhcache off

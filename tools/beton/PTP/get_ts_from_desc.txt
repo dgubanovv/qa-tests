@@ -1,0 +1,49 @@
+timestamp = None
+allDefined = True
+
+ifndef wb_desc_val:
+    echo Writeback descriptor dump is not definded. Please define variable wb_desc_val
+    allDefined = False
+
+ifndef _link_speed:
+    mac.link -n _link_speed -l nul
+    mac.link -n _link_speed -l nul
+
+if '$_link_speed' == '10G':
+    offset = (296 + 225)
+elif '$_link_speed' == '5G':
+    offset = (881 + 140)
+elif '$_link_speed' == '2.5G':
+    offset = (1038 + 750)
+elif '$_link_speed' == '1G':
+    offset = (1506 + 185)
+elif '$_link_speed' == '100M':
+    offset = (16080 - 2150)
+else:
+    echo Wrong link speed get prev value!
+    #allDefined = False
+
+if $allDefined == True:
+    w1 = ($wb_desc_val >> 0) & 0xffffffff
+    w2 = ($wb_desc_val >> 32) & 0xffffffff
+    w3 = ($wb_desc_val >> 64) & 0xffffffff
+    w4 = ($wb_desc_val >> 96) & 0xffffffff
+
+    nsec_timestamp = $w2
+    sec_2f_26 = ($w1 & 0xFFC00000) >> 22
+    sec_25_1a = $w1 & 0xFFF
+    sec_19_a = ($w4 >> 16)
+    sec_9_0 = ($w3 & 0xFFC) >> 2
+    sec_timestamp = ($sec_2f_26 << 0x26) | ($sec_25_1a << 0x1a) | ($sec_19_a << 0xa) | ($sec_9_0)
+
+    if $offset + $nsec_timestamp >= 1000000000:
+        timestamp = $sec_timestamp.$nsec_timestamp
+        echo TIMESTAMP: $timestamp, offset: $offset
+        sec_timestamp = ($sec_timestamp + 1)
+        nsec_timestamp = ($nsec_timestamp + $offset - 1000000000)
+    else:
+        nsec_timestamp = ($nsec_timestamp + $offset)
+    #echo EG offset $offset
+    #echo TIMESTAMP: $timestamp
+else:
+    echo Not all variables are defined. Exiting script

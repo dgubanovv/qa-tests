@@ -1,0 +1,548 @@
+# Script for simpleResponder responses check
+# linkSimulatorProtocolDefinitions.txt should be executed first (once is enough)
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+ifndef logTag:
+    logTag = -l cli
+
+exec $(PWD)/mngif/linkSimulatorProtocolDefinitions.txt
+
+cldAlreadyLoaded = False
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    # default param values for manual run
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    # 0 LWIP
+    loopbackType = 0
+
+    # 0 - extract from interface 0
+    # 1 - extract from interface 1
+    queue = 0
+    
+    extType = tx
+    injType = rx
+    #extType = rx
+    #injType = tx
+
+#linkType
+linkTxExtractor = 0x1
+linkTxInjector = 0x2
+linkRxExtractor = 0x4
+linkRxInjector = 0x8
+
+linkLoop = 0
+
+if "$extType" == "tx" and "$injType" == "rx":
+    # Tx extractor + Rx injector: loopback types 1, 2, 3
+    link = $linkTxExtractor | $linkRxInjector
+elif "$extType" == "rx" and "$injType" == "tx":
+    # Rx extractor + Rx injector: loopback type 1, 3
+    link = $linkRxExtractor | $linkTxInjector
+else:
+    echo $extType $injType
+    echo Incorrect parameters
+    exit
+
+#For deep loopback test
+#link = 0
+#linkLoop = 1
+
+if ($link & $linkTxInjector) != 0 or ($link & $linkRxExtractor) != 0 or $linkLoop == 1:
+    usePadding = 1
+else:
+    usePadding = 0
+
+arpPadding = 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+if $usePadding:
+    protoArpFullLen += 22
+
+# MIPS firmware
+cldFile = $(SCRIPT_PATH)/mipsFirmware/ATL-10G-A0_B0-1.5.10!EUR-v3.1.7-Atlantic_Nikki_XFI_SGMII_Efused!PCIROM-0.0.1!VPD-0.0.1!ID4560!NI.clx
+echo firmware = $cldFile
+
+mac.mcp.set type MIPS
+
+txRingNo = 0
+rxRingNo = 0
+
+# Value initialization
+vsize = -s 1    # always use byte array for packet filling
+
+macAddrReq = 0x10 0xdd 0xb1 0xb0 0x37 0xd3
+ipAddrReq = 0xa9 0xfe 0x01 0x20
+
+macUnicastAddr_q0 = 0x00 0x17 0xb6 0x10 0x01 0x01
+ipAddrResp_q0 = [ 0xa9, 0xfe, 0x01, 0x01 ]
+macUnicastAddr_q1 = 0x00 0x17 0xb6 0x10 0xde 0x0a
+ipAddrResp_q1 = [ 0xa9, 0xfe, 0xde, 0x0a ]
+
+ipChecksum1_0 = 0xf8 0x19
+ipChecksum2_0 = 0xf8 0x16
+ipChecksum1_1 = 0x1b 0x10
+ipChecksum2_1 = 0x1b 0x0d
+
+icmpChecksum1 = 0x4d 0x42
+icmpChecksum2 = 0x4d 0x3f
+
+if $queue == 0:
+    ipChecksum1 = $ipChecksum1_0
+    ipChecksum2 = $ipChecksum2_0
+else:
+    ipChecksum1 = $ipChecksum1_1
+    ipChecksum2 = $ipChecksum2_1
+
+if $queue == 0:
+    macUnicastAddr = $macUnicastAddr_q0
+    ipAddrResp = ' '.join([hex(elem) for elem in $ipAddrResp_q0])
+else:
+    macUnicastAddr = $macUnicastAddr_q1
+    ipAddrResp = ' '.join([hex(elem) for elem in $ipAddrResp_q1])
+
+ipAddrPrm = hex(($ipAddrResp_q1[2] << 24) | ($ipAddrResp_q1[3] << 16) | ($ipAddrResp_q0[2] << 8) | $ipAddrResp_q0[3])
+
+#Removed
+#if $loopbackType == 0:
+#    #This address is not hardcoded in firmware - to check runtime filter changes by source MAC address from arp request
+#    macAddrResp = $macAddrReq
+#else:
+
+#This address is hardcoded in firmware for responding ping requests
+macAddrResp = $macUnicastAddr
+
+ipCommon1 = 0x45 0x00
+# ipTotalLen is calculated after icmp fields declaration
+ipId1 = 0x6d 0x89
+ipId2 = 0x6d 0x8c
+
+ipCommon2 = 0x00 0x00 0xFF 0x01
+
+icmpIdent = 0x00 0x01
+icmpSeqNumber1 = 0x00 0x19
+icmpSeqNumber2 = 0x00 0x1c
+icmpDataLen = 32
+ipTotalLen = $protoIpBaseHeaderLen + $protoIcmpDataOffset + $icmpDataLen
+ipTotalLenBuf = hex(($ipTotalLen >> 8) & 0xFF) + ' ' + hex($ipTotalLen & 0xFF)
+icmpDataStartMark = 0x61
+icmpDataEndMark = 0x77
+icmpData = ' '
+icmpDataValue = $icmpDataStartMark
+for i = 0; $i < $icmpDataLen; i += 1:
+    icmpData = '$icmpData' + ' ' + hex($icmpDataValue)
+    icmpDataValue = $icmpDataValue + 1
+    if $icmpDataValue > $icmpDataEndMark:
+        icmpDataValue = $icmpDataStartMark
+protoIcmpFullLen = $protoEthHeaderLen + $ipTotalLen
+
+# Packet send and receive prepare
+if $hostAlreadyInitiated == False:
+    mac.uninit
+    if ($link & $linkTxInjector) != 0 or ($link & $linkRxExtractor) != 0 or $linkLoop == 1:
+        mac.set loopback System Packet
+    else:
+        mac.set loopback None         # No loopback
+    mac.init
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+    
+    exec $(PWD)/helpers/workaroundBug4921.txt
+    exec $(PWD)/helpers/enableTPO2.txt
+    exec $(PWD)/helpers/enableRPF2.txt
+
+    mac.llhcache on
+    if ($link & $linkTxInjector) != 0 or $linkLoop == 1:
+        mac.llh -C rpfL2PromiscuousModeEnableSet 1
+        mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+    else:
+        mac.llh -C rpfL2PromiscuousModeEnableSet 0
+        mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+    mac.llh -C rpfDoubleVlanEnableSet 0
+    mac.llh -C rpfL2BroadcastEnableSet 1
+    mac.llh -C rpfL2BroadcastFilterActionSet 1
+    mac.llh -C rpfL2BroadcastCountThresholdSet 100
+    mac.llhcache off
+
+#Prevent FW from changing promisc mode and global filter setting
+writereg 0x368 0x2
+   
+if $cldAlreadyLoaded == False:
+    mac.mcp.enterLoadMode
+    mac.mcp.bootLoadCld $cldFile
+    #mac.mcp.dbgBuffer -e
+    pause 1 s
+    readreg 0x7860
+else:
+    mec.mcp.clearReset
+
+
+if $queue == 0:    
+    responderMode = $loopbackType + ($link << 24)
+else:
+    responderMode = $loopbackType + ($link << 16)
+
+# It is workaround for Bug 4921
+readreg -n reg7900 0x7900
+reg7900 = $reg7900 & ~(1 << 3)
+writereg 0x7900 $reg7900
+
+writereg 0x370 $ipAddrPrm
+writereg 0x364 $responderMode
+pause 20 ms
+
+echo
+echo loopbackType = $loopbackType, queue = $queue
+echo
+
+# Packets Send
+readreg -n baseStatistic 0x360
+echo Statistic Base Addres: $baseStatistic
+
+addr = $baseStatistic + 0xAC
+mac.mcp.readmem $addr -n extCntBefore
+addr += 4
+mac.mcp.readmem $addr -n injCntBefore
+addr += 4
+mac.mcp.readmem $addr -n respCntBefore
+
+# writereg 0x404 0x80E0
+
+mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+for packetNo = 0; $packetNo < 4; packetNo += 1:
+    
+    if $packetNo == 0 or $packetNo == 1:
+        mac.txring[$txRingNo].insert -b $protoArpFullLen -p $protoArpFullLen
+    else:
+        mac.txring[$txRingNo].insert -b $protoIcmpFullLen -p $protoIcmpFullLen
+    
+    echo 111
+    mac.txring[$txRingNo].status $logTag
+    mac.rxring[$rxRingNo].status $logTag
+    mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr
+
+    if $packetNo == 0:
+        fields = [($protoEthDaOffset, '$broadcastMacAddr'), ($protoEthSaOffset, '$macAddrReq'), ($protoEthTypeLenOffset, '$ethTypeLenArp')]
+        
+        fields = $fields + [($protoEthHeaderLen + $protoArpCommonOffset, '$arpCommon')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpOpcodeOffset, '$arpOpcodeReq')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpShaOffset, '$macAddrReq')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpSpaOffset, '$ipAddrReq')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpThaOffset, '$zeroMacAddr')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpTpaOffset, '$ipAddrResp')]
+        if $usePadding == 1:
+            fields = $fields + [($protoEthHeaderLen + $protoArpTpaOffset + $protoArpTpaLen, '$arpPadding')]
+        arpFields = $fields
+
+    elif $packetNo == 1:
+        fields = [($protoEthDaOffset, '$macUnicastAddr'), ($protoEthSaOffset, '$macAddrReq'), ($protoEthTypeLenOffset, '$ethTypeLenArp')]
+        
+        fields = $fields + [($protoEthHeaderLen + $protoArpCommonOffset, '$arpCommon')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpOpcodeOffset, '$arpOpcodeReq')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpShaOffset, '$macAddrReq')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpSpaOffset, '$ipAddrReq')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpThaOffset, '$macUnicastAddr')]
+        fields = $fields + [($protoEthHeaderLen + $protoArpTpaOffset, '$ipAddrResp')]
+        if $usePadding == 1:
+            fields = $fields + [($protoEthHeaderLen + $protoArpTpaOffset + $protoArpTpaLen, '$arpPadding')]
+
+    else:
+        fields = [($protoEthDaOffset, '$macAddrResp'), ($protoEthSaOffset, '$macAddrReq'), ($protoEthTypeLenOffset, '$ethTypeLenIp')]
+        
+        if $packetNo == 2:
+            ipId = $ipId1
+            icmpSeqNumber = $icmpSeqNumber1
+        else:
+            ipId = $ipId2
+            icmpSeqNumber = $icmpSeqNumber2
+        
+        fields = $fields + [($protoEthHeaderLen + $protoIpCommon1Offset, '$ipCommon1')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpTotalLenOffset, '$ipTotalLenBuf')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpIdOffset, '$ipId')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpCommon2Offset, '$ipCommon2')]
+        if $packetNo == 2:
+            fields = $fields + [($protoEthHeaderLen + $protoIpChecksumOffset, '$ipChecksum1')]
+        else:
+            fields = $fields + [($protoEthHeaderLen + $protoIpChecksumOffset, '$ipChecksum2')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpSaOffset, '$ipAddrReq')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpDaOffset, '$ipAddrResp')]
+        
+        fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpTypeOffset, '$icmpEchoReq')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpCodeOffset, '$icmpEchoCode')]
+        # don't calc icmp checksum, sw doesn't check it
+        if $packetNo == 2:
+            fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpChecksumOffset, '$icmpChecksum1')]
+        else:
+            fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpChecksumOffset, '$icmpChecksum2')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpIdentOffset, '$icmpIdent')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpSeqNumberOffset, '$icmpSeqNumber')]
+        fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpDataOffset, '$icmpData')]
+        
+        if $packetNo == 2:
+            icmpFields = $fields
+    
+    fldCount = len($fields)
+    echo packet = $packetNo, fldCount = $fldCount
+    for fldNo = 0; $fldNo < $fldCount; fldNo += 1:
+        addr = $pAddr + $fields[$fldNo][0]
+        value = $fields[$fldNo][1]
+        mem.put $value $vsize -p $addr
+    echo
+    
+    echo 111.1
+    #send packets one by one, to avoid wrong order on receive side and let firmwre time to change filters
+    mac.txring[$txRingNo].dumpdesc -T 1:1 -l dumptx
+    mac.txring[$txRingNo].dumpbuf -T 1:1 $logTag
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.txring[$txRingNo].status
+    
+#mac.txring[$txRingNo].dumpdesc -T 3:1 -l dumptx
+#mac.txring[$txRingNo].dumpbuf -T 3:1 -l dumptx
+#mac.txring[$txRingNo].commit
+#mac.txring[$txRingNo].clean
+#mac.txring[$txRingNo].status
+pause 300 ms
+
+readreg -n ipIdResp 0x310
+
+addr = $baseStatistic + 0xAC
+mac.mcp.readmem $addr -n extCntGood
+addr += 4
+mac.mcp.readmem $addr -n injCntGood
+addr += 4
+mac.mcp.readmem $addr -n respCntGood
+
+# Packet Show
+mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+
+extCnt = $extCntGood + 0 - $extCntBefore
+if $extCnt != 4:
+    finalReport = $finalReport + ["(1) FAIL: Not all packets extracted: $extCnt"]
+
+injCnt = $injCntGood + 0 - $injCntBefore
+if $injCnt != 4:
+    finalReport = $finalReport + ["(2) FAIL: Not all packets injected: $injCnt"]
+
+if $loopbackType != 2:
+    respCnt = $respCntGood + 0 - $respCntBefore
+    if $respCnt != 4:
+        finalReport = $finalReport + ["(3) FAIL: Not all packets processed: $respCnt"]
+
+expectedRxCount = 4
+
+rxCount = $rxHeadGood + 0 - $rxHeadBefore
+if $rxCount != $expectedRxCount:
+    finalReport = $finalReport + ["(4) FAIL: Not all packets received: $rxCount"]
+
+mac.rxring[$rxRingNo].clean
+mac.rxring[$rxRingNo].status
+
+if $rxCount != $expectedRxCount:
+    if $rxCount > 0:
+        mac.rxring[$rxRingNo].dumpdesc -H $rxCount:1 $logTag
+        mac.rxring[$rxRingNo].dumpbuf -H $rxCount:1 $logTag
+else:
+    # Compare packet content
+    for packetNo = 0; $packetNo < 4; packetNo += 1:
+        if $expectedRxCount == 8:
+            goodPacketNo = $packetNo * 2 + 1
+        else:
+            goodPacketNo = $packetNo
+        index = $rxCount + 0 - $goodPacketNo
+        
+
+        mac.rxring[$rxRingNo].dumpdesc -H $index -l dumprx
+        echo 222: $pAddr
+        mac.txring[$txRingNo].status $logTag
+        mac.rxring[$rxRingNo].status $logTag
+        mac.rxring[$rxRingNo].getdescval -H $index -f bufferAddress -n pAddr $logTag
+        echo 222.1: $pAddr
+        mac.rxring[$rxRingNo].dumpbuf -H $index $logTag
+        
+        if $packetNo == 0 or $packetNo == 1:
+            if $loopbackType == 1 or $loopbackType == 3 or $loopbackType == 0:
+                fields = [($protoEthDaOffset, $protoEthDaLen, '$macAddrReq'), ($protoEthSaOffset, $protoEthSaLen, '$macUnicastAddr')]
+                fields = $fields + [($protoEthTypeLenOffset, $protoEthTypeLenLen, '$ethTypeLenArp')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpCommonOffset, $protoArpCommonLen, '$arpCommon')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpOpcodeOffset, $protoArpOpcodeLen, '$arpOpcodeResp')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpShaOffset, $protoArpShaLen, '$macUnicastAddr')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpSpaOffset, $protoArpSpaLen, '$ipAddrResp')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpThaOffset, $protoArpThaLen, '$macAddrReq')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpTpaOffset, $protoArpTpaLen, '$ipAddrReq')]
+            else:
+                if $packetNo == 0:
+                    fields = [($protoEthDaOffset, $protoEthDaLen, '$broadcastMacAddr'), ($protoEthSaOffset, $protoEthSaLen, '$macAddrReq')]
+                else:
+                    fields = [($protoEthDaOffset, $protoEthDaLen, '$macUnicastAddr'), ($protoEthSaOffset, $protoEthSaLen, '$macAddrReq')]
+                fields = $fields + [($protoEthTypeLenOffset, $protoEthTypeLenLen, '$ethTypeLenArp')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpCommonOffset, $protoArpCommonLen, '$arpCommon')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpOpcodeOffset, $protoArpOpcodeLen, '$arpOpcodeReq')]
+                fields = $fields + [($protoEthHeaderLen + $protoArpShaOffset, $protoArpShaLen, '$macAddrReq')]
+                if $loopbackType == 2:
+                    fields = $fields + [($protoEthHeaderLen + $protoArpSpaOffset, $protoArpSpaLen, '$ipAddrReq')]
+                else:
+                    fields = $fields + [($protoEthHeaderLen + $protoArpSpaOffset, $protoArpSpaLen, '$ipAddrResp')]
+                
+                if $packetNo == 0:
+                    fields = $fields + [($protoEthHeaderLen + $protoArpThaOffset, $protoArpThaLen, '$zeroMacAddr')]
+                else:
+                    fields = $fields + [($protoEthHeaderLen + $protoArpThaOffset, $protoArpThaLen, '$macUnicastAddr')]
+                
+                if $loopbackType == 2:
+                    fields = $fields + [($protoEthHeaderLen + $protoArpTpaOffset, $protoArpTpaLen, '$ipAddrResp')]
+                else:
+                    fields = $fields + [($protoEthHeaderLen + $protoArpTpaOffset, $protoArpTpaLen, '$ipAddrReq')]
+
+
+        else:
+            if $loopbackType == 1 or $loopbackType == 3 or $loopbackType == 0:
+                fields = [($protoEthDaOffset, $protoEthDaLen, '$macAddrReq'), ($protoEthSaOffset, $protoEthSaLen, '$macAddrResp')]
+                fields = $fields + [($protoEthTypeLenOffset, $protoEthTypeLenLen, '$ethTypeLenIp')]
+                
+                ipIdRespBuf = $ipIdResp - 4 + $packetNo
+                ipIdRespBuf = (($ipIdRespBuf << 8) & 0xFF00) | (($ipIdRespBuf >> 8) & 0xFF)
+                if $packetNo == 2:
+                    if $loopbackType == 3:
+                        ipIdRespBuf = $ipId1
+                    icmpSeqNumber = $icmpSeqNumber1
+                else:
+                    if $loopbackType == 3:
+                        ipIdRespBuf = $ipId2
+                    icmpSeqNumber = $icmpSeqNumber2
+                
+                fields = $fields + [($protoEthHeaderLen + $protoIpCommon1Offset, $protoIpCommon1Len, '$ipCommon1')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpTotalLenOffset, $protoIpTotalLenLen, '$ipTotalLenBuf')]
+                # don't control ip Id
+                #fields = $fields + [($protoEthHeaderLen + $protoIpIdOffset, $protoIpIdLen, '$ipIdRespBuf')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpCommon2Offset, $protoIpCommon2Len, '$ipCommon2')]
+                # don't control ip checksum resp
+                # fields = $fields + [($protoEthHeaderLen + $protoIpChecksumOffset, $protoIpChecksumLen, '$ipChecksumResp')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpSaOffset, $protoIpSaLen, '$ipAddrResp')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpDaOffset, $protoIpDaLen, '$ipAddrReq')]
+                
+                if $loopbackType == 1 or $loopbackType == 0:
+                    fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpTypeOffset, $protoIcmpTypeLen, '$icmpEchoResp')]
+                else:
+                    fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpTypeOffset, $protoIcmpTypeLen, '$icmpEchoReq')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpCodeOffset, $protoIcmpCodeLen, '$icmpEchoCode')]
+                # don't control icmp checksum resp
+                # fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpChecksumOffset, $protoIcmpChecksumLen, '$icmpChecksumResp')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpIdentOffset, $protoIcmpIdentLen, '$icmpIdent')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpSeqNumberOffset, $protoIcmpSeqNumberLen, '$icmpSeqNumber')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpDataOffset, $icmpDataLen, '$icmpData')]
+            else:
+                fields = [($protoEthDaOffset, $protoEthDaLen, '$macAddrResp'), ($protoEthSaOffset, $protoEthSaLen, '$macAddrReq')]
+                fields = $fields + [($protoEthTypeLenOffset, $protoEthTypeLenLen, '$ethTypeLenIp')]
+                
+                if $packetNo == 2:
+                    ipIdRespBuf = $ipId1
+                    icmpSeqNumber = $icmpSeqNumber1
+                else:
+                    icmpSeqNumber = $icmpSeqNumber2
+                    ipIdRespBuf = $ipId2
+                
+                fields = $fields + [($protoEthHeaderLen + $protoIpCommon1Offset, $protoIpCommon1Len, '$ipCommon1')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpTotalLenOffset, $protoIpTotalLenLen, '$ipTotalLenBuf')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpIdOffset, $protoIpIdLen, '$ipIdRespBuf')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpCommon2Offset, $protoIpCommon2Len, '$ipCommon2')]
+                # don't control ip checksum resp
+                # fields = $fields + [($protoEthHeaderLen + $protoIpChecksumOffset, $protoIpChecksumLen, '$ipChecksumResp')]
+                
+                fields = $fields + [($protoEthHeaderLen + $protoIpSaOffset, $protoIpSaLen, '$ipAddrReq')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpDaOffset, $protoIpDaLen, '$ipAddrResp')]
+                
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpTypeOffset, $protoIcmpTypeLen, '$icmpEchoReq')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpCodeOffset, $protoIcmpCodeLen, '$icmpEchoCode')]
+                #don't control icmp checksum resp
+                #fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpChecksumOffset, $protoIcmpChecksumLen, '$icmpChecksumResp')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpIdentOffset, $protoIcmpIdentLen, '$icmpIdent')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpSeqNumberOffset, $protoIcmpSeqNumberLen, '$icmpSeqNumber')]
+                fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpDataOffset, $icmpDataLen, '$icmpData')]
+
+        fldCount = len($fields)
+        for fldNo = 0; $fldNo < $fldCount; fldNo += 1:
+            addr = $pAddr + $fields[$fldNo][0]
+            len = $fields[$fldNo][1]
+            value = $fields[$fldNo][2]
+            echo $value
+            mem.cmp -p $addr -s $len -V $value -n cmpRes $logTag
+            if $cmpRes == False:
+                finalReport = $finalReport + ["(5) FAIL: Packet is not valid"]
+
+# Unsuitable packets
+
+mac.txring[$txRingNo].insert -b $protoArpFullLen -p $protoArpFullLen
+echo 333
+mac.txring[$txRingNo].status $logTag
+mac.rxring[$rxRingNo].status $logTag
+mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr
+    
+fldCount = len($arpFields)
+for fldNo = 0; $fldNo < $fldCount; fldNo += 1:
+    if $fldNo != $fldCount - 1 - $usePadding: #invalid tpa
+        addr = $pAddr + $arpFields[$fldNo][0]
+        value = $arpFields[$fldNo][1]
+    else:
+        addr = $pAddr + $arpFields[$fldNo][0]
+        value = $arpFields[$fldNo - 2][1]
+    mem.put $value $vsize -p $addr
+echo
+
+mac.txring[$txRingNo].insert -b $protoIcmpFullLen -p $protoIcmpFullLen
+echo 444
+
+
+mac.txring[$txRingNo].status $logTag
+mac.rxring[$rxRingNo].status $logTag
+mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr
+    
+fldCount = len($icmpFields)
+for fldNo = 0; $fldNo < $fldCount; fldNo += 1:
+    if $fldNo != 9 and $fldNo != 0: # invalid da
+        addr = $pAddr + $icmpFields[$fldNo][0]
+        value = $icmpFields[$fldNo][1]
+    else:
+        if $fldNo ==0:
+            addr = $pAddr + $icmpFields[$fldNo][0]
+            value = $icmpFields[$fldNo + 1][1]
+        else:
+            addr = $pAddr + $icmpFields[$fldNo][0]
+            value = $icmpFields[$fldNo - 1][1]
+    mem.put $value $vsize -p $addr
+    
+    
+echo
+
+mac.txring[$txRingNo].dumpdesc -T 2:1 $logTag
+mac.txring[$txRingNo].dumpbuf -T 2:1 $logTag
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+pause 300 ms
+
+addr = $baseStatistic + 0xAC
+mac.mcp.readmem $addr -n extCntWrong
+
+extCnt = $extCntWrong + 0 - $extCntGood
+if $extCnt != 0:
+    finalReport = $finalReport + ["(6) FAIL: Wrong packets extracted: $extCnt"]
+    pause 1
+    mac.rxring[$rxRingNo].clean
+    mac.rxring[$rxRingNo].status $logTag
+    mac.rxring[$rxRingNo].dumpdesc -H 1 $logTag
+    mac.rxring[$rxRingNo].dumpbuf -H 1 $logTag
+
+echo
+mac.mcp.dbgBuffer -d
+echo Script done
+readreg 0x7860
+
+#mac.uninit
+exec helpers/showTestResult.txt #to show results [] in manual run mode

@@ -1,0 +1,98 @@
+# Script for one packet extraction/injection by FW (simple or full build)
+# Suppose that FW configures extract filters accordingly to packet pattern
+# in case of full build
+
+simpleBuild = False
+cldAlreadyLoaded = False
+hostAlreadyInitiated = False
+mcpType = MIPS
+if '$mcpType' == 'MIPS':
+    cldFile = $(SCRIPT_PATH)/mcpTpoExtractRpbInject1Packet/atlantic_Ram.cld
+    simpleCldFile = $(SCRIPT_PATH)/mcpTpoExtractRpbInject1Packet/atlantic_Ram_simple.cld
+else:
+    cldFile = $(SCRIPT_PATH)/mcpTpoExtractRpbInject1Packet/MNGIF.cld
+    simpleCldFile = $(SCRIPT_PATH)/mcpTpoExtractRpbInject1Packet/MNGIF-simple.cld
+mac.mcp.set type $mcpType
+
+txRingNo = 0
+rxRingNo = 0
+
+packetLength = 125
+
+# Packet send and receive prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+
+if $cldAlreadyLoaded == False:
+    if $simpleBuild == True:
+        bootLoadCldFile = $simpleCldFile
+    else:
+        writereg 0x364 0x2    # Set loopback mode to loop
+        bootLoadCldFile = $cldFile
+    mac.mcp.bootLoadCld $bootLoadCldFile
+
+# Registers
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+exec $(SCRIPT_PATH)/rxInjRegDefs.txt
+
+if $simpleBuild == True:
+    # There is no TPO Extractor filter configuration in FW
+    filterLSW = 0x02030405
+    filterMSW = 0x00000001
+
+    readreg $txExtCtrlReg -n txExtCtrl
+    txExtCtrl = $txExtCtrl | $txExtMACFilterMask
+    txExtCtrl = $txExtCtrl & ~$txExtReplicateMask
+    writereg $txExtCtrlReg $txExtCtrl
+
+    writereg $txExtMACFilter0LSWReg $filterLSW
+    writereg $txExtMACFilter0MSWReg $filterMSW 
+
+# Packet Send
+
+mac.txring[$txRingNo].insert -b $packetLength -p $packetLength -f indexed_uniq_ramp
+mac.txring[$txRingNo].dumpdesc -T 1 -l cli
+mac.txring[$txRingNo].dumpbuf -T 1 -l cli
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+# Extract regs
+#readreg $txExtCtrlReg
+#readreg $txExtStatus1Reg
+#readreg $txExtStatus2Reg
+#readreg $txExtStatus3Reg
+
+# Inject regs
+#readreg $rxInjCtrlReg
+#readreg $rxInjStatus1Reg
+#readreg $rxInjStatus2Reg
+#readreg $rxInjData1Reg
+
+# Packet Show
+
+mac.rxring[$rxRingNo].clean
+mac.rxring[$rxRingNo].status
+
+if $simpleBuild == False:
+    # Both queues should run
+    mac.rxring[$rxRingNo].dumpdesc -H 2 -l cli
+    mac.rxring[$rxRingNo].dumpbuf -H 2 -l cli
+    
+mac.rxring[$rxRingNo].dumpdesc -H 1 -l cli
+mac.rxring[$rxRingNo].dumpbuf -H 1 -l cli
+
+if '$mcpType' == 'MIPS':
+    readreg 0x314 -n extCnt
+    readreg 0x318 -n injCnt
+    echo extCnt = $extCnt injCnt = $injCnt
+cmd

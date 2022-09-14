@@ -1,0 +1,48 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/helpers/pkt_bytes_cmp.txt $
+# $Revision: #1 $
+# $DateTime: 2016/06/27 05:54:14 $
+# $Author: oxy $
+#
+# byte-wise compares to packets
+#
+# input:
+#    pAddrRx - sent (original) packet addr
+#    pAddrTx - received packet addr
+#    packetLen - length of packet
+#    expectedChecksum_byte0, expectedChecksum_byte1 - expected checksum bytes
+
+# insert test error (debug only)
+#offset = $pAddrRx + $givenChecksumOffset + 1
+#mem.put -p $offset -s 1 0x22
+
+# bytewise compare of tx and rx packets
+packetByteAddrRx = $pAddrRx
+packetByteAddrTx = $pAddrTx
+for packetByte = 0; $packetByte < $packetLen; packetByte += 1:
+    mem.get -p $packetByteAddrRx -s 1 -n byte_rx
+    mem.get -p $packetByteAddrTx -s 1 -n byte_tx
+    if $byte_rx != $byte_tx:
+        hex_byte_tx = hex($byte_tx)
+        hex_byte_rx = hex($byte_rx)
+        
+        hex_byte_offset = hex($packetByte)
+
+        checksum_byte_0 = $packetByte == $givenChecksumOffset
+        checksum_byte_1 = $packetByte == $givenChecksumOffset + 1
+        
+        if $checksum_byte_0 or $checksum_byte_1:
+            if $checksumShouldBeCorrected:
+                if $checksum_byte_0 and $hex_byte_rx != $expectedChecksum_byte0:
+                    expectedChecksum_byte0_hex = hex($expectedChecksum_byte0)
+                    finalReport += ['(helper0) checksum byte 0 was offloaded incorrectly:']
+                    finalReport += ['(helper1) TxPacket at offset $hex_byte_offset = $hex_byte_tx, RxPacket = $hex_byte_rx, expected = $expectedChecksum_byte0_hex']
+
+                if $checksum_byte_1 and $hex_byte_rx != $expectedChecksum_byte1:
+                    expectedChecksum_byte1_hex = hex($expectedChecksum_byte1)
+                    finalReport += ['(helper2) checksum byte 1 was offloaded incorrectly:']
+                    finalReport += ['(helper3) TxPacket at offset $hex_byte_offset = $hex_byte_tx, RxPacket = $hex_byte_rx, expected = $expectedChecksum_byte1_hex']
+        else:
+            finalReport += ['(helper4) TxPacket at offset $hex_byte_offset = $hex_byte_tx, RxPacket = $hex_byte_rx']
+
+    packetByteAddrRx += 1
+    packetByteAddrTx += 1

@@ -1,0 +1,49 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/helpers/pkt_send.txt $
+# $Revision: #2 $
+# $DateTime: 2016/06/27 05:54:34 $
+# $Author: oxy $
+#
+# sends IPv6+destination options packet and receives it via pre-setuped System Packet loopback. If needed, substitutes TCP checksum with correct one
+#
+# input:
+#    ringNo - number of ring to use
+#    packetLen - packet-to-send length
+#    givenPacket - bytes of given packet-to-send
+#    expectedChecksum - to bytes of expected IPv6+destination options TCP checksum
+#    givenChecksumOffset - offset in IPv6+destination options to TCP checksum pos
+#    setChecksumToCorrectValue - bool value for checksum correction
+#    txRingInsertParams - params to insert in txring
+
+
+#add one rxring descriptor
+mac.rxring[$ringNo].fill 1
+mac.rxring[$ringNo].commit
+
+mac.txring[$ringNo].insert $txRingInsertParams
+mac.txring[$ringNo].getdescval -T 1 -f bufferAddress -n pAddrTx $logTag
+# Insert packet
+mem.put $givenPacket -s 1 -p $pAddrTx
+
+if ($setChecksumToCorrectValue):
+    tx_checksum_pos = $pAddrTx + $givenChecksumOffset
+    mem.put $expectedChecksum -p $tx_checksum_pos -s 1 
+
+mac.txring[$ringNo].dumpdesc -T 1 $logTag
+mac.txring[$ringNo].dumpbuf -T 1 $logTag
+mac.txring[$ringNo].commit
+
+pause 2 ms
+
+mac.txring[$ringNo].status $logTag
+mac.txring[$ringNo].clean
+mac.txring[$ringNo].status $logTag
+mac.rxring[$ringNo].status $logTag
+mac.rxring[$ringNo].clean
+mac.rxring[$ringNo].status $logTag
+
+#mac.rxring[ringNo].get -n rxRingSize0 size $logTag
+mac.rxring[$ringNo].dumpbuf -T 1 $logTag
+mac.rxring[$ringNo].dumpdesc -T 1 $logTag
+mac.rxring[$ringNo].getdescval -T 1 -f bufferAddress -n pAddrRx $logTag
+mac.rxring[$ringNo].getdescval -T 1 -f RX_STAT -n rx_stat $logTag
+mac.rxring[$ringNo].getdescval -T 1 -f RX_CNTL -n rx_cntl $logTag

@@ -1,0 +1,10 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/helpers/headSplit/headSplitTearDown.txt $
+# $Revision: #1 $
+# $DateTime: 2016/05/03 04:25:42 $
+# $Author: dmitryb $
+#
+# Framework to simplify all HeadSplitBug writing
+
+mac.uninit 
+mac.rxring[$rxRingNo].set splitHeaderSize None $logTag
+exec $(PWD)/helpers/showTestResult.txt

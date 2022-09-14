@@ -1,0 +1,77 @@
+test: B0 Offloads
+subtests:
+- name: Rx Checksum Offload
+  script: Offloads/rxChecksumOffload.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Rx Header Split
+  script: Offloads/rxHeaderSplitTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Tx Zero UDP Checksum
+  script: Offloads/txZeroUDPChecksumOffload.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Tx Checksum Offload
+  script: Offloads/txChecksumOffload.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Rx Fragmented UDP Checksum
+  script: Offloads/rxFragmentedUdpChecksumOffload.txt
+  parameters:
+    useVlan: 'True'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Rx Desc Fields HDR_LEN etc
+  script: Mngif2/rxDescFieldTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    test_num: '-1'
+- name: Rx Desc Field RSS_TYPE
+  script: Offloads/rxDescFieldRssType.txt
+  parameters:
+    maxtc: '8'
+    txRingNo: '0'
+    test_num: '-1'
+- name: RSS on 32 rings
+  script: Packet/rssCheck.txt
+  parameters:
+    maxtc: '8'
+    txRingNo: '0'
+    test_num: '-1'
+- name: Tx Checksum IP with Options
+  script: Offloads/txOffloadIPWithOption.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Rx RSS Hash for NDIS Packets
+  script: Packet/rxRssHashNDISPacket.txt
+  parameters:
+    test_num: '-1'
+- name: Rx RSS Hash Extended
+  script: Packet/rxRssHashExtended.txt
+  parameters:
+    test_num: '-1'
+- name: RSS with double VLAN
+  script: Packet/rxDoubleVlanRSS.txt
+  parameters:
+    itr: 15
+    seed: 1
+    test_num: '-1'
+- name: Incorrect VLAN tag (bug 4537)
+  script: Packet/vlanTagMultiplePacket.txt
+  parameters:
+    txRingNo: 0
+    rxRingNo: 0
+    test_num: '-1'

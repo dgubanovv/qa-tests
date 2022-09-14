@@ -1,0 +1,185 @@
+# Script for extraction with par_chk_sense on mng queue0 using mac filter
+
+hostAlreadyInitiated = False
+txRingNo = 0
+truncatePackets = True
+packetLen = 128
+checkParityErrorEarly = False # check parity error at once
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq
+
+# Tx Extractor prepare
+
+txCtrlReg1 = 0x7000
+txParChkSenseMask = 0x40000000
+
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+
+readreg $txExtStatus2Reg -n status2Reg
+nPackets = $status2Reg & $txExtCntMask
+if $nPackets > 0:
+    echo Please run script on clear queue
+    exit
+
+# Set mode
+# Set corresponding filters enable and clear other
+
+readreg $txExtCtrlReg -n txExtCtrl
+if $truncatePackets == True:
+    txExtCtrl = $txExtCtrl | $txExtLimitMask
+else:
+    txExtCtrl = $txExtCtrl & ~$txExtLimitMask
+txExtCtrl = $txExtCtrl & ~$txExtReplicateMask
+txExtCtrl = $txExtCtrl | $txExtMACFilterMask
+txExtCtrl = $txExtCtrl & ~$txExtIPFilterMask
+txExtCtrl = $txExtCtrl & ~$txExtARPFilterMask
+writereg $txExtCtrlReg $txExtCtrl
+
+macFilterLSW = 0x02030405
+macFilterMSW = 0x00000001
+writereg $txExtMACFilter0LSWReg $macFilterLSW
+writereg $txExtMACFilter0MSWReg $macFilterMSW 
+
+# Read status reg1 to self-clear errors
+readreg $txExtStatus1Reg
+
+# Read other status regs for information
+readreg $txExtStatus2Reg
+readreg $txExtStatus3Reg
+
+readreg $txCtrlReg1 -n txCtrl1
+
+finalReport = [] # final report is useful when command line window has huge output
+
+# Send packet with txParChkSenseMask = 0 (default),
+# packet with txParChkSenseMask = 1 (to set parity error),
+# and then packet with txParChkSenseMask = 0 again
+for packetNo = 0; $packetNo < 3; packetNo += 1:
+    checkMask = 0
+    if $packetNo == 1:
+        txCtrl1 = $txCtrl1 | $txParChkSenseMask
+        writereg $txCtrlReg1 $txCtrl1
+        checkMask = $txExtPerrMask
+    else:
+        if $packetNo == 2:
+            txCtrl1 = $txCtrl1 & ~$txParChkSenseMask
+            writereg $txCtrlReg1 $txCtrl1
+    checkMaskStr = hex($checkMask)
+    
+    # Packet Send
+
+    mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+    mac.txring[$txRingNo].getdescval -T 1 -f paddr -n pAddr
+    mac.txring[$txRingNo].dumpdesc -T 1 -l dumptx
+    mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.txring[$txRingNo].status
+
+    # Packet Read
+
+    readreg $txExtStatus2Reg -n status2Reg
+    nPackets = $status2Reg & $txExtCntMask
+    if $nPackets != 1:
+        echo Wrong packet count $nPackets; iter = $packetNo
+        exit
+
+    # Select Queue
+    txExtCtrl = $txExtCtrl & ~$txExtSelectQueueMask
+    writereg $txExtCtrlReg $txExtCtrl
+
+    # Check Parity Error
+    if $checkParityErrorEarly == True:
+        readreg $txExtStatus1Reg -n status1Reg
+        if ($status1Reg & $txExtPerrMask) != $checkMask:
+            status1RegStr = hex($status1Reg)
+            str = 'Unexpected Parity Error field value on $status1RegStr with checkMask = $checkMaskStr (early); iter = $packetNo'
+            echo $str
+            finalReport = $finalReport + ['$str']
+        if $checkMask == $txExtPerrMask:
+            # Check Parity Error is cleared after read
+            if ($status1Reg & $txExtPerrMask) != 0:
+                readreg $txExtStatus1Reg -n status1Reg
+                if ($status1Reg & $txExtPerrMask) != 0:
+                    status1RegStr = hex($status1Reg)
+                    str = 'Parity Error is not cleared $status1RegStr after read (early); iter = $packetNo'
+                    echo $str
+                    finalReport = $finalReport + ['$str']
+
+    bufStr = ' '
+    txExtCtrl0 = $txExtCtrl & ~$txExtReadMask
+    txExtCtrl1 = $txExtCtrl | $txExtReadMask
+    for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+        # generate rising edge
+        writereg $txExtCtrlReg $txExtCtrl0
+        writereg $txExtCtrlReg $txExtCtrl1
+        readreg $txExtDataReg -n dataExtracted
+        bufStr = '$bufStr' + ' ' + hex($dataExtracted)
+
+        readreg $txExtStatus2Reg -n status2Reg
+        eop = $status2Reg & $txExtEopMask
+        if $eop <> 0:
+            byteCnt += 4
+            break
+    writereg $txExtCtrlReg $txExtCtrl0
+
+    # Process data_vld field
+    valid = ($status2Reg & $txExtDataValidMask) >> $txExtDataValidShift
+    if $valid > 0:
+        for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+            byteCnt = $byteCnt + 0 - 1
+    else:
+        byteCnt = $byteCnt + 0 - 4
+
+    readreg $txExtStatus3Reg -n extOffset
+    if $extOffset != 0:
+        extOffsetStr = hex($extOffset)
+        str = 'Wrong ext_offset $extOffsetStr after extraction; iter = $packetNo'
+        echo $str
+        finalReport = $finalReport + ['$str']
+
+    nPackets = $status2Reg & $txExtCntMask
+    if $nPackets != 0:
+        str = 'Wrong packet count $nPackets after extraction; iter = $packetNo'
+        echo $str
+        finalReport = $finalReport + ['$str']
+
+    # Check received data
+    # @note: is there any way to acquire mem.cmp result to stop next execution?
+    if $byteCnt != $packetLen:
+        str = 'Wrong byte count $byteCnt extracted; iter = $packetNo'
+        echo $str
+        finalReport = $finalReport + ['$str']
+    mem.cmp -p $pAddr -s $byteCnt -V $bufStr
+    
+    # Check Parity Error
+    readreg $txExtStatus1Reg -n status1Reg
+    if ($status1Reg & $txExtPerrMask) != $checkMask:
+        status1RegStr = hex($status1Reg)
+        str = 'Unexpected Parity Error field value on $status1RegStr with checkMask = $checkMaskStr; iter = $packetNo'
+        echo $str
+        finalReport = $finalReport + ['$str']
+    if $checkMask == $txExtPerrMask:
+        # Check Parity Error is cleared after read
+        if ($status1Reg & $txExtPerrMask) != 0:
+            readreg $txExtStatus1Reg -n status1Reg
+            if ($status1Reg & $txExtPerrMask) != 0:
+                status1RegStr = hex($status1Reg)
+                str = 'Parity Error is not cleared $status1RegStr after read; iter = $packetNo'
+                echo $str
+                finalReport = $finalReport + ['$str']
+
+if len($finalReport) > 0:
+    echo
+    echo FinalReport:
+    for str in $finalReport:
+        echo $str
+echo Script done
+cmd

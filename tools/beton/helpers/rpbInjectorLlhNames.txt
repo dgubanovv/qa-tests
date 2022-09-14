@@ -1,0 +1,13 @@
+injectionQueueFullGet = rpbRxInjectionQueueFullGet
+injectionQueueTruncationErrorGet = rpbRxInjectionQueueTruncationErrorGet
+injectionQueueParityErrorGet = rpbRxInjectionQueueParityErrorGet
+injectionQueuePacketOffsetGet = rpbRxInjectionQueuePacketOffsetGet
+injectionQueueOverflowErrorGet = rpbRxInjectionQueueOverflowErrorGet
+
+pathParityCheckSenseSet = rpfRpoRpbRdmRxPathParityCheckeSenseSet
+
+injectionQueueResetSet = rpbRxInjectionQueueResetSet
+injectionSelectSet = rpbRxInjectionSelectSet
+injectionPacketSopSet = rpbRxInjectionPacketSopSet
+injectionPacketDataSet = rpbRxInjectionPacketDataSet
+injectionPacketEopSet = rpbRxInjectionPacketEopSet

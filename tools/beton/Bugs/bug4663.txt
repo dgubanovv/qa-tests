@@ -1,0 +1,71 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4663.txt $
+# $Revision: #4 $
+# $DateTime: 2016/05/17 22:59:26 $
+# $Author: oxy $
+#
+finalReport = []                               #mandatory clear, empty means tests passed.
+ifndef logTag:
+    logTag = -l cli
+
+mac.set loopback System Packet $logTag
+mac.txring[0].set lsoEnable 1  $logTag
+mac.init
+mac.txinit
+mac.rxinit
+mac.rxring[0].enable
+mac.rxring[0].fill 5
+mac.rxring[0].commit
+
+mac.txring[0].enable
+exec $(PWD)/helpers/workaroundBug4663.txt
+
+mac.txring[0].insertcontext -I 0 --ct_cmd 0x4
+mac.txring[0].insert -C 0 -l 1 -p 256 -b 256
+mac.txring[0].insert -C 0 -l 0 -p 256 -b 256
+mac.txring[0].insert -C 0 -l 0 -p 256 -b 256
+mac.txring[0].insert -C 0 -l 0 -p 256 -b 256
+mac.txring[0].insert -C 0 -l 0 -p 256 -b 256
+mac.txring[0].dumpdesc -T 1     $logTag
+mac.txring[0].dumpbuf -T 1      $logTag
+mac.txring[0].commit
+
+pause 100 ms
+
+mac.txring[0].clean
+mac.rxring[0].clean
+mac.txring[0].status            $logTag
+mac.rxring[0].status            $logTag
+mac.rxring[0].dumpdesc -H 1     $logTag
+mac.rxring[0].dumpbuf -H 1      $logTag
+
+txExpectHead = 6
+rxExpectHead = 5
+mac.llh -v txHead tdmTxDescriptorHeadPointerGet 0
+mac.llh -v rxHead rdmRxDescriptorHeadPointerGet 0
+if $txHead != $txExpectHead:
+    finalReport = $finalReport + ['(0)txHead = $txHead, txExpectHead = $txExpectHead']
+if $rxHead != $rxExpectHead:
+    finalReport = $finalReport + ['(1)rxHead = $rxHead, rxExpectHead = $rxExpectHead']
+
+if 0: #for NWL core debugging
+    dumpNWL -r mgmt_pcie_status     $logTag
+    readreg 0x7918                  $logTag
+    readreg 0x7c0c                  $logTag
+    readreg 0x7c10                  $logTag
+    readreg 0x8800                  $logTag
+    readreg 0x8804                  $logTag
+    readreg 0x8808                  $logTag
+    readreg 0x880C                  $logTag
+    readreg 0x8900                  $logTag
+    readreg 0x8904                  $logTag
+    readreg 0x5708                  $logTag
+    readreg 0x5B0C                  $logTag
+    readreg 0x5B10                  $logTag
+    readreg 0x6800                  $logTag
+    readreg 0x6804                  $logTag
+    readreg 0x6808                  $logTag
+    readreg 0x680C                  $logTag
+    readreg 0x6900                  $logTag
+
+exec $(PWD)/helpers/showTestResult.txt #to show results [] in manual run mode
+mac.uninit

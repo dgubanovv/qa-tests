@@ -1,0 +1,9 @@
+features:
+  media_detect:
+    requirement_list:
+      - id: FW_MEDIA_DETECT_1
+        description: When both DUT and LKP enters into media detect state they shall be capable to detect link advertisement on remote machine.
+        products: [PROD_JAMAICA_FIRMWARE_3X_QUALCOM, PROD_BERMUDA_FIRMWARE_3X_PERONI]
+      - id: FW_MEDIA_DETECT_2
+        description: If PHY detects link advertisement while staying in media detect state link up time shall be not more 17 seconds.
+        products: [PROD_JAMAICA_FIRMWARE_3X_QUALCOM, PROD_BERMUDA_FIRMWARE_3X_PERONI]

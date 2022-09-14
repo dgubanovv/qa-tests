@@ -1,0 +1,154 @@
+# Feature: Send $N packets
+# Scenario: Send 4 packets per time through single ring (with workaround bug:3712 bug:)
+#	Given ring to send 0 (by default insert/commit/refresh/cleanup...)
+#       And Need to to send $N packets
+#	When first packet size is $lowSize
+#	And second packet size is a ramp up value from $lowSize to $highSize
+#	And third packet size is a ramp down value from $highSize to $lowSize
+#	And forth packet size is a random value between $minSize to $maxSize
+#       And bugs workarounds applied
+#	And insert packet's descriptors 
+#	And commits a group of descriptors
+#       Then sent $N packets Or for each 10000 packets
+#       And compares buffer's dumps
+
+#output folder for dumps
+folder = d:/tests/logs
+
+#run results file name
+runResults = $folder/results.txt
+
+#number of packets to send
+N = 1028
+
+#min size of definite frame
+lowSize = 64
+
+#max size of definite frame
+highSize = 256
+
+#size of TPB and RPB (kb)
+bufSize = 32
+
+#min size of random size frame
+minSize = $lowSize
+
+#max size of random size frame
+maxSize = $highSize
+
+mark = "newline"
+
+txfile = $folder/tx.txt
+rxfile = $folder/rx.txt
+
+txtmp = $folder/ztx.txt
+rxtmp = $folder/zrx.txt
+
+#shell rmdir $folder /s /q
+shell mkdir $folder
+shell del $txfile
+shell del $rxfile
+
+shell echo [==========] Running sanity test. >> $runResults
+
+mac.init
+mac.txinit
+mac.rxinit
+
+mac.txpb[0].set size $bufSize
+mac.rxpb[0].set size $bufSize
+
+mac.txring[0].enable
+mac.rxring[0].enable
+
+mac.llh -v ringSize tdmTxDescriptorLengthGet 0
+ringSize *= $ringSize * 8
+mac.rxring[0].fill
+mac.rxring[0].commit
+
+shell echo [----------] Global test environment set-up. >> $runResults
+shell echo [ RUN      ] Number of packets == $N TPB == RPB == $bufSize lowSize == $lowSize highSize == $highSize ringSize == $ringSize >> $runResults
+
+acc = 0
+middle = ($ringSize / 2)
+echo $middle
+pause
+iterNum = ($N / 4) + 1
+
+for i = 1; $i < $iterNum; i += 1:
+
+	sentSize = 0
+	size1 = (($i - 1) % ($highSize - $lowSize)) + $lowSize
+	size2 = $highSize + $lowSize - $size1
+	size3 = random.randint($minSize, $maxSize)
+
+	# + 128 - internal data size packets (128 - min value)
+	sentSize = $sentSize + $lowSize + $size1 + $size2 + $size3 + 128
+	acc += $sentSize
+
+	if $acc > $bufSize * 1024:
+		pause 100 ms
+		acc = 0
+
+	mac.txring[0].insert -b $lowSize
+	mac.txring[0].insert -b $size1
+	mac.txring[0].insert -b $size2
+	mac.txring[0].insert -b $size3
+
+	mac.txring[0].dumpbuf -T 4:1 -a $txfile -t $mark -l dumptx
+
+	mac.txring[0].commit
+
+	
+	if ($i * 4) % $middle == 0:
+		pause 1000 ms
+		mac.rxring[0].clean
+		mac.rxring[0].fill
+		mac.rxring[0].commit
+		mac.rxring[0].dumpbuf -H $middle:1 -a $rxfile -t $mark -l dumprx
+
+	if $i % 10000 == 0:
+		shell ./Scripts/dumpconverter.py -i $txfile -o $txtmp -m $mark
+		shell ./Scripts/dumpconverter.py -i $rxfile -o $rxtmp -m $mark
+		
+		shell fc $txtmp $rxtmp > nul
+		if $errorlevel != 0:
+			break
+		
+		shell del $txfile
+		shell del $rxfile
+		shell del $txtmp
+		shell del $rxtmp
+
+	mac.txring[0].clean
+
+if $errorlevel != 0:
+	shell echo [  FAILED  ] Number of packets == $N TPB == RPB == $bufSize lowSize == $lowSize highSize == $highSize ringSize == $ringSize >> $runResults
+	exit
+
+rem = (($i - 1) * 4) % $middle
+echo $rem
+if $rem > 0:
+	pause 1000 ms
+	mac.rxring[0].clean
+	mac.rxring[0].fill
+	mac.rxring[0].commit
+	mac.rxring[0].dumpbuf  -H $rem:1 -a $rxfile -t $mark -l dumprx
+
+shell ./Scripts/dumpconverter.py -i $txfile -o $txtmp -m $mark
+shell ./Scripts/dumpconverter.py -i $rxfile -o $rxtmp -m $mark
+		
+shell fc $txtmp $rxtmp > nul
+if $errorlevel != 0:
+	shell echo [  FAILED  ] Number of packets == $N TPB == RPB == $bufSize lowSize == $lowSize highSize == $highSize ringSize == $ringSize >> $runResults
+	exit
+else:		
+	shell del $txfile
+	shell del $rxfile
+	shell del $txtmp
+	shell del $rxtmp
+
+shell echo [       OK ] Number of packets == $N TPB == RPB == $bufSize lowSize == $lowSize highSize == $highSize ringSize == $ringSize >> $runResults
+shell echo [----------] Global test environment tear-down >> $runResults
+shell echo [==========] >> $runResults
+shell echo [  PASSED  ] >> $runResults

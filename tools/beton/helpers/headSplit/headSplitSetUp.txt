@@ -1,0 +1,46 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/helpers/headSplit/headSplitSetUp.txt $
+# $Revision: #2 $
+# $DateTime: 2016/05/03 05:26:32 $
+# $Author: dmitryb $
+#
+# Framework to simplify all HeadSplitBug writing
+
+finalReport = []
+ifndef txRingNo:
+    txRingNo = 0
+ifndef rxRingNo:
+    rxRingNo = 0
+ifndef logTag:
+    logTag = -l cli
+ifndef expectedHeaderLen:
+    finalReport += ["(-1) expectedHeaderLen is not defined"] 
+    expectedHeaderLen = 0
+ifndef givenPacket:
+    finalReport += ["(-1) givenPacket is not defined"] 
+    givenPacket = 0x30 0x0e 0xe3 0xb0 0xab 0xcd 0xa0 0x36 0x9f 0x3e 0x49 0xac 0x08 0x00 0x45 0xbb 
+ifndef expectedMsg:
+    expectedMsg = "Incorrect header length"
+
+if 1: #deep loopabck
+    mac.set loopback System Packet $logTag
+else:
+    mac.set loopback None
+
+mac.rxring[$rxRingNo].set splitHeaderSize 256 $logTag
+
+mac.init
+mac.txinit
+mac.txring[$txRingNo].enable    # Prepare Tx ring
+mac.txring[$txRingNo].set PacketMark None $logTag
+
+mac.rxinit
+mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+mac.isr.disable
+
+mac.llh macEnableSystemLoopbackSet 1
+exec $(PWD)/helpers/workaroundBug4841.txt
+
+l3Protocols = ["IPv4", "IPv6", "L2"]
+l4Protocols = ["TCP", "UDP", "SCTP", "ICMP", "Other", "Other", "Other", "Other" ]

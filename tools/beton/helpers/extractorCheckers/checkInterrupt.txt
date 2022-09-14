@@ -1,0 +1,5 @@
+mac.llh -v isInterrupt -C $extractionQueueInterruptGet $queue
+if  $(isInterrupt) != $expectedIsInterrupt:
+    str = '$stringId Interrupt bit for queue $queue not equal to expected (which is $expectedIsInterrupt)'
+    echo $str
+    finalReport = $finalReport + ['$str']

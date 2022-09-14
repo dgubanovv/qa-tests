@@ -1,0 +1,324 @@
+# Script for l2/l3 filters
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    vlanMode = False
+    logTag = -l cli
+    RPF2 = False
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef vlanMode:
+        vlanMode = False
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef RPF2:
+    RPF2 = False        
+        
+filterActionDiscard = 0
+filterActionHost = 1
+filterActionManagement = 2
+filterActionHostManagement = 3
+filterActionWoL = 4
+filterActionReserved = 5
+
+mac.set glb_reg_reset_dis False
+mac.set tx_reg_rst_dis False
+mac.set rx_reg_rst_dis False
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    #mac.set loopback System DMA            # No loopback
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    #mac.isr.disable
+
+
+if $RPF2:
+    exec $(PWD)/helpers/enableRPF2.txt
+    
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+
+mac.rxring[$rxRingNo].get -n rxRingSize size
+
+exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+#Configure filters
+mac.llhcache on
+mac.llh -C rpfL2PromiscuousModeEnableSet 1
+mac.llh -C rpfL2BroadcastCountThresholdSet 1
+mac.llh -C rpfL2BroadcastFilterActionSet $filterActionHost
+mac.llh -C rpfL2BroadcastEnableSet 1
+mac.llh -C rpfL2BroadcastCountResetSet 0
+mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+#Format of test:
+#(action, threshold, reset)
+#l4_enable_mask = [src_addr_enable, dst_addr_enable, src_port_en, dst_port_en]
+#[action, filter_mask, l4_enable_mask, l4_enable, arp_enable, l4_value, management_queue]
+tests = [ ]
+tests += [[0, 0x1, 8, 0, 1, 0, 0]]
+tests += [[1, 0x1, 2, 0, 1, 0, 0]]
+tests += [[2, 0x1, 1, 1, 0, 1, 1]]
+tests += [[3, 0x1, 4, 0, 1, 0, 0]]
+autoGenTests = False
+if len($tests) == 0:
+    autoGenTests = True
+    #auto create test sequences
+    #WARNING each case sends 168 packets, there is more than 1000 variants will be genereted
+    for testAction = 0; $testAction < 3; testAction += 1:
+        echo action = $testAction
+        for mask = 1; $mask <= 0x3; mask = ($mask << 1) | 1:
+            echo mask = $mask
+            for l4EnableMask = 1; $l4EnableMask <= 0xF; l4EnableMask +=1:
+                echo l4EnableMask = $l4EnableMask
+                for l4Enable = 0; $l4Enable < 2; l4Enable += 1:
+                    for arpEnable = 0; $arpEnable < 2; arpEnable += 1: 
+                        for l4Value = 0; $l4Value < 4; l4Value += 1:
+                            testElem = [$testAction, $mask, $l4EnableMask, $l4Enable, $arpEnable, $l4Value]
+                            tests += [$testElem]
+                    
+l = len($tests)
+echo There are $l variants
+
+
+protocols = ['TCP', 'UDP', 'SCTP', 'ICMP', 'ARP', 'TCPopts', 'ICMPbroadcast', 'PTP', 'IPwPTP']
+#packet variants according protocol position in protocols
+packetVariants = [['Valid', 'InvSrcAddr', 'InvDstAddr', 'InvSrcPort', 'InvDstPort'] ]
+packetVariants += [['Valid', 'InvSrcAddr', 'InvDstAddr', 'InvSrcPort', 'InvDstPort'] ]
+packetVariants += [['Valid', 'InvSrcAddr', 'InvDstAddr', 'InvSrcPort', 'InvDstPort'] ]
+packetVariants += [['Valid', 'InvSrcAddr', 'InvDstAddr']]
+packetVariants += [['Valid', 'InvSrcAddr', 'InvDstAddr']]
+packetVariants += [['Valid', 'InvSrcAddr', 'InvDstAddr', 'InvSrcPort', 'InvDstPort'] ]
+packetVariants += [['Valid', 'InvSrcAddr', 'InvDstAddr']]
+packetVariants += [['Valid', 'InvSrcAddr', 'InvDstAddr']]
+packetVariants += [['Valid', 'InvSrcAddr', 'InvDstAddr']]
+protoLengths = [74, 62, 66, 62, 64, 78, 62, 54, 54]
+
+filtersCount = 8
+for filterIndex = 0; $filterIndex < $filtersCount; filterIndex += 1:
+    ipLastByte = 16 + $filterIndex
+    srcPort = 0xC000 | $filterIndex #49152 + index
+    dstPort = 0xD000 | $filterIndex #49152 + index
+    
+    invIpLastByte = 32+$filterIndex
+    invSrcPort = 0xC100 | $filterIndex
+    invDstPort = 0xD100 | $filterIndex
+    
+    countProto = 0
+    for protocol in $protocols:
+        packetVariantForProto = $packetVariants[$countProto]
+        for variant in $packetVariantForProto:
+            if '$protocol' != 'ARP':
+                pkt.new -n packet$protocol$filterIndex$variant -p 20
+                if '$protocol' == 'TCPopts':
+                    pkt.new -n packet$protocol$filterIndex$variant -p 20
+                    if '$variant' == 'InvSrcPort':
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 60 -t TCP sport=$invSrcPort dport=$dstPort options=[('WScale',100)]
+                    elif '$variant' == 'InvDstPort':
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 60 -t TCP sport=$srcPort dport=$invDstPort options=[('WScale',100)]
+                    else:
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 60 -t TCP sport=$srcPort dport=$dstPort options=[('WScale',100)]
+                elif '$protocol' != 'PTP' and '$protocol' != 'IPwPTP' :
+                    if '$variant' == 'InvSrcPort':
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 60 -t $protocol sport=$invSrcPort dport=$dstPort
+                    elif '$variant' == 'InvDstPort':
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 60 -t $protocol sport=$srcPort dport=$invDstPort
+                    else:
+                        if '$protocol' != 'ICMP' and '$protocol' != 'ICMPbroadcast':
+                            pkt.layer -i $(packet$protocol$filterIndex$variant) -L 60 -t $protocol sport=$srcPort dport=$dstPort
+                        else:
+                            pkt.layer -i $(packet$protocol$filterIndex$variant) -L 60 -t ICMP            
+                 
+                if '$protocol' == 'IPwPTP':
+                    if '$variant' == 'InvSrcAddr':
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 50 -t IP src="192.168.0.$invIpLastByte" dst="224.0.1.129"
+                    else:
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 50 -t IP src="192.168.0.$ipLastByte" dst="224.0.1.129"
+                else:
+                    if '$variant' == 'InvSrcAddr':
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 50 -t IP src="192.168.0.$invIpLastByte" dst="192.168.16.$ipLastByte"
+                    elif '$variant' == 'InvDstAddr':
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 50 -t IP src="192.168.0.$ipLastByte" dst="192.168.16.$invIpLastByte"
+                    else:
+                        pkt.layer -i $(packet$protocol$filterIndex$variant) -L 50 -t IP src="192.168.0.$ipLastByte" dst="192.168.16.$ipLastByte"
+                if $vlanMode:
+                    pkt.layer -i $(packet$protocol$filterIndex$variant) -L 30 -t Dot1Q
+                if '$protocol' == 'ICMPbroadcast':
+                    pkt.layer -i $(packet$protocol$filterIndex$variant) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="10:dd:a1:e5:1e:a4"
+                elif '$protocol' == 'PTP':
+                    pkt.layer -i $(packet$protocol$filterIndex$variant) -L 25 -t Ether src="10:dd:b1:e6:1e:a5" dst="ff:ff:ff:ff:ff:ff" type=0x887
+                else:
+                    pkt.layer -i $(packet$protocol$filterIndex$variant) -L 25 -t Ether src="10:dd:b1:e6:1e:a5" dst="ff:ff:ff:ff:ff:ff" 
+            else:
+                pkt.new -n packet$protocol$filterIndex$variant -p 22
+                if '$variant' == 'InvSrcAddr':
+                    pkt.layer -i $(packet$protocol$filterIndex$variant) -L 50 -t ARP pdst="192.168.16.$ipLastByte" psrc="192.168.0.$invIpLastByte"
+                elif '$variant' == 'InvDstAddr':
+                    pkt.layer -i $(packet$protocol$filterIndex$variant) -L 50 -t ARP pdst="192.168.16.$invIpLastByte" psrc="192.168.0.$ipLastByte"
+                else:
+                    pkt.layer -i $(packet$protocol$filterIndex$variant) -L 50 -t ARP pdst="192.168.16.$ipLastByte" psrc="192.168.0.$ipLastByte"
+                if $vlanMode:
+                    pkt.layer -i $(packet$protocol$filterIndex$variant) -L 30 -t Dot1Q
+                pkt.layer -i $(packet$protocol$filterIndex$variant) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="ff:ff:ff:ff:ff:ff"
+        countProto += 1
+
+testNumber = 0
+
+for test in $tests:
+    if len($finalReport) > 0:
+        break
+    echo Test case - $test
+    filterAction = $test[0]
+    filterIpv6Enable = 0
+    filterSrcAddressEnable = 0
+    filterDstAddressEnable = 0
+    filterSrcPortEnable = 0
+    filterDstPortEnable = 0
+    if ($test[2] & 0x8) != 0:
+        filterSrcAddressEnable = 1
+    if ($test[2] & 0x4) != 0:
+        filterDstAddressEnable = 1
+    if ($test[2] & 0x2) != 0:
+        filterSrcPortEnable = 1
+    if ($test[2] & 0x1) != 0:
+        filterDstPortEnable = 1
+    filterL4ProtoEnable = $test[3]
+    filterArpEnable = $test[4]
+    filterMngQueueEnable = 0
+    filterMngQueue = $test[6]
+    filterL4Proto = $test[5]
+    
+    for filterIndex = 0; $filterIndex < $filtersCount; filterIndex += 1:
+        filterEnable = 0
+        if ($test[1] & (1 << $filterIndex)) != 0:
+            filterEnable = 1
+        filterL3SrcAddress = 0xC0A80010 | $filterIndex #192.168.0.16+index
+        filterL3DstAddress = 0xC0A81010 | $filterIndex#192.168.16.16+index
+        filterL3SrcPort = 0xC000 | $filterIndex #49152 + index
+        filterL3DstPort = 0xD000 | $filterIndex #53248 + index
+        exec $PWD/helpers/filtersConfigurators/rxL3L4Filter.txt
+    if $autoGenTests:
+        packetsToSend = 2
+    else:
+        packetsToSend = $filtersCount
+    for filterIndex = 0; $filterIndex < $packetsToSend; filterIndex += 1:
+        countProto = 0
+        for protocol in $protocols:
+            packetVariantForProto = $packetVariants[$countProto]  
+            length = $protoLengths[$countProto]
+            if $vlanMode:
+                length = $protoLengths[$countProto] + 4
+            for variant in $packetVariantForProto:
+                matched = True
+                if '$variant' == 'Valid' and (($test[1] & (1 << $filterIndex)) == 0) and '$protocol' != 'ICMP' and '$protocol' != 'ARP':
+                    matched = False
+                if $filterSrcAddressEnable and ('$variant' == 'InvSrcAddr' or (($test[1] & (1 << $filterIndex)) == 0 )):
+                    matched = False
+                if $filterDstAddressEnable and ('$variant' == 'InvDstAddr' or (($test[1] & (1 << $filterIndex)) == 0 )):
+                    matched = False
+                if $filterSrcPortEnable and '$variant' == 'InvSrcPort':
+                    matched = False
+                if $filterDstPortEnable and '$variant' == 'InvDstPort':
+                    matched = False
+                if '$protocol' != 'ARP' and '$protocol' != 'ICMP':
+                    if (($test[1] & (1 << $filterIndex)) == 0):
+                        matched = False
+                if $filterL4ProtoEnable and '$protocol' != 'ARP' and $filterL4Proto != $countProto:
+                    matched = False
+                if $filterArpEnable and '$protocol' == 'ARP' and ('$variant' == 'InvSrcAddr' and $filterSrcAddressEnable or '$variant' == 'InvDstAddr' and $filterDstAddressEnable or $filterL4ProtoEnable):
+                    matched = False
+                if not $filterArpEnable and '$protocol' == 'ARP':
+                    matched = False
+                # Get Rx head before packet insertion
+                mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+                # Insert packet and get buffer address
+                mac.txring[$txRingNo].insert -i $(packet$protocol$filterIndex$variant) -b $length
+                mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+                
+                mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size 80
+                mac.txring[$txRingNo].commit
+                mac.txring[$txRingNo].clean
+                mac.rxring[$rxRingNo].clean
+
+                mac.txring[$txRingNo].status $logTag
+                mac.rxring[$rxRingNo].status $logTag
+                toMng = ($test[0] == $filterActionManagement or $test[0] == $filterActionHostManagement) and $matched
+                if $toMng:
+                    expectedPacketCount = 1
+                else:
+                    expectedPacketCount = 0
+                # Check extractor right now
+                stringId = '(2)'
+                queue = $filterMngQueue
+                # Should be removed soon
+               # if '$hw_options' == 'A0':
+                #    queue = 0
+                mac.llhcache on
+                if '$protocol' != 'PTP' and '$protocol' != 'IPwPTP':
+                    exec $(PWD)/helpers/extractorCheckers/checkPacketCount.txt
+                    if $packetCount == 1:
+                        exec $(PWD)/helpers/extractAndCompare.txt
+                #Check packet in rx ring
+                mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+                toHost = (($test[0] == $filterActionHost or $test[0] == $filterActionHostManagement) and $matched)
+                toHost = $toHost or not $matched
+                if $toHost or '$protocol' == 'PTP':
+                    if $rxHeadBefore == ($rxRingSize-1):
+                        $rxHeadBefore = -1
+                    rxCount = $rxHeadGood + 0 - $rxHeadBefore
+                    if $rxCount != 1:
+                        finalReport += ['(3)Wrong packet number($rxCount) routed to host']
+                        break
+                        
+                    mac.rxring[$rxRingNo].clean
+                    #mac.rxring[$rxRingNo].status $logTag
+
+                    mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n rxAddr -l nul#$logTag
+                    mac.rxring[$rxRingNo].getdescval -H 1 -f size -n rxPacketSize -l nul #$logTag
+                    if $length != $rxPacketSize:
+                        finalReport += ['(4)Wrong packet size on Rx']
+                        break
+                    mem.cmp -p $pAddr -p2 $rxAddr -s $rxPacketSize -l nul -n cmpRes
+                    if $cmpRes == False:
+                        finalReport += ['(5)txPacket and rxPacket differs']
+                    mac.rxring[$rxRingNo].fill 1
+                    mac.rxring[$rxRingNo].commit 1
+                else:
+                    if $rxHeadGood != $rxHeadBefore:
+                        finalReport += ['(6)Unexpected packet in Rx ring']
+                        break
+            countProto += 1
+    testNumber += 1
+
+readreg 0x5040 $logTag
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

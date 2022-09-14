@@ -1,0 +1,20 @@
+# Script for one packet extraction with different MAC filters
+
+bufLen = 64
+
+# Packet Send
+mac.txring[$txRingNo].insert -b $bufLen -p $bufLen -f $pattern1
+mac.txring[$txRingNo].dumpdesc -T 1 -l cli
+mac.txring[$txRingNo].dumpbuf -T 1 -l cli
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+mac.txring[$txRingNo].insert -b $bufLen -p $bufLen -f $pattern2
+mac.txring[$txRingNo].dumpdesc -T 1 -l cli
+mac.txring[$txRingNo].dumpbuf -T 1 -l cli
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+cmd

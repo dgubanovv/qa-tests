@@ -1,0 +1,10 @@
+#Enable vm arbitration mode WRR
+#INPUT: weightes - array of weightes, txRingsArr - array of enabled rings
+mac.tps.set vmDescArbitrationMode WRR
+i=0
+for txRingNo in $txRingsArr:
+    curWeight = $weightes[$i]
+    maxCredit = $maxCredits[$i]
+    mac.tps.vm $txRingNo set vmWeight $curWeight
+    mac.tps.vm $txRingNo set vmMaxCredit $maxCredit
+    i+=1

@@ -1,0 +1,42 @@
+#Rx unicast filter configurator
+#Use global values: 
+#IN: filterIndex - index of filter to configure
+#filterEnable - enable (1) or disable (0) unicast filter
+#filterIpv6Enable -  IPv6 source and destination 128-bit address format shall be used
+#filterSrcAddressEnable - if enabled-compared
+#filterDstAddressEnable - if enabled-compared
+#filterSrcPortEnable - if enabled-compared
+#filterDstPortEnable - if enabled-compared
+#filterL4ProtoEnable - if enabled-compared
+#filterArpEnable - if enabled-compared
+#filterMngQueueEnable - enable mn queue assignment
+#filterMngQueue - mng queueu 
+#filterAction 0=Discard, 1=Host, 2=Management, 3=Host & Management, 4=Wake-on-LAN, 5 to 7=Reserved
+#filterL4Proto - 0=TCP, 1=UDP, 2=SCTP, 3=ICMP
+
+#filterL3SrcAddress - 4byte address
+#filterL3DstAddress - 4byte address
+#filterL3SrcPort - 2byte port
+#filterL3DstPort - 2byte port
+
+
+mac.llhcache on
+mac.llh -C rpfL3L4FilterEnableSet $filterEnable $filterIndex
+mac.llh -C rpfL3Ipv6EnableSet $filterIpv6Enable $filterIndex
+mac.llh -C rpfL3SourceAddressEnableSet $filterSrcAddressEnable $filterIndex
+mac.llh -C rpfL3DestinationAddressEnableSet $filterDstAddressEnable $filterIndex
+mac.llh -C rpfL4SourcePortEnableSet $filterSrcPortEnable $filterIndex
+mac.llh -C rpfL4DestinationPortEnableSet $filterDstPortEnable $filterIndex
+mac.llh -C rpfL4ProtocolEnableSet $filterL4ProtoEnable $filterIndex
+mac.llh -C rpfL3ArpFilterEnableSet $filterArpEnable $filterIndex
+mac.llh -C rpfL3L4RxQueueEnableSet $filterMngQueueEnable $filterIndex
+mac.llh -C rpfL3L4ManagementQueueSet $filterMngQueue $filterIndex
+mac.llh -C rpfL3L4FilterActionSet $filterAction $filterIndex
+mac.llh -C rpfL4ProtocolValueSet $filterL4Proto $filterIndex
+
+mac.llh -C rpfL3SourceAddressSet $filterL3SrcAddress $filterIndex
+mac.llh -C rpfL3DestinationAddressSet $filterL3DstAddress $filterIndex
+mac.llh -C rpfL4SourcePortSet $filterL3SrcPort $filterIndex
+mac.llh -C rpfL4DestinationPortSet $filterL3DstPort $filterIndex
+
+mac.llhcache off

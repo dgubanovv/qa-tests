@@ -1,0 +1,75 @@
+macAddrLen = 6
+ipv4AddrLen = 4
+
+# Protocols description
+protoEthDaOffset = 0
+protoEthDaLen = $macAddrLen
+protoEthSaOffset = $protoEthDaOffset + $protoEthDaLen
+protoEthSaLen = $macAddrLen
+protoEthTypeLenOffset = $protoEthSaOffset + $protoEthSaLen
+protoEthTypeLenLen = 2
+
+#protoEthHeaderLen = $protoEthTypeLenOffset + $protoEthTypeLenLen
+protoEthHeaderLen = 14
+
+protoArpCommonOffset = 0    # Combine HwType, ProtocolType, HwLen and ProtocolLen as common fields
+protoArpCommonLen = 6
+protoArpOpcodeOffset = $protoArpCommonOffset + $protoArpCommonLen
+protoArpOpcodeLen = 2
+protoArpShaOffset = $protoArpOpcodeOffset + $protoArpOpcodeLen
+protoArpShaLen = $macAddrLen
+protoArpSpaOffset = $protoArpShaOffset + $protoArpShaLen
+protoArpSpaLen = $ipv4AddrLen
+protoArpThaOffset = $protoArpSpaOffset + $protoArpSpaLen
+protoArpThaLen = $macAddrLen
+protoArpTpaOffset = $protoArpThaOffset + $protoArpThaLen
+protoArpTpaLen = $ipv4AddrLen
+
+protoArpFullLen = $protoEthHeaderLen + $protoArpTpaOffset + $protoArpTpaLen
+
+protoIpCommon1Offset = 0    # Combine Version, IHL, DSCP and ECN
+protoIpCommon1Len = 2
+protoIpTotalLenOffset = $protoIpCommon1Offset + $protoIpCommon1Len
+protoIpTotalLenLen = 2
+protoIpIdOffset = $protoIpTotalLenOffset + $protoIpTotalLenLen
+protoIpIdLen = 2
+protoIpCommon2Offset = $protoIpIdOffset + $protoIpIdLen   # Combine Flags, Fragment Offset, TTL and Protocol
+protoIpCommon2Len = 4
+protoIpChecksumOffset = $protoIpCommon2Offset + $protoIpCommon2Len   # Combine Flags, Fragment Offset, TTL and Protocol
+protoIpChecksumLen = 2
+protoIpSaOffset = $protoIpChecksumOffset + $protoIpChecksumLen
+protoIpSaLen = $ipv4AddrLen
+protoIpDaOffset = $protoIpSaOffset + $protoIpSaLen
+protoIpDaLen = $ipv4AddrLen
+
+#protoIpBaseHeaderLen = $protoIpDaOffset+ $protoIpDaLen
+protoIpBaseHeaderLen = 20
+
+protoIcmpTypeOffset = 0
+protoIcmpTypeLen = 1
+protoIcmpCodeOffset = $protoIcmpTypeOffset + $protoIcmpTypeLen
+protoIcmpCodeLen = 1
+protoIcmpChecksumOffset = $protoIcmpCodeOffset + $protoIcmpCodeLen
+protoIcmpChecksumLen = 2
+protoIcmpIdentOffset = $protoIcmpChecksumOffset + $protoIcmpChecksumLen
+protoIcmpIdentLen = 2
+protoIcmpSeqNumberOffset = $protoIcmpIdentOffset + $protoIcmpIdentLen
+protoIcmpSeqNumberLen = 2
+protoIcmpDataOffset = $protoIcmpSeqNumberOffset + $protoIcmpSeqNumberLen
+protoIcmpDataDefaultLen = 32
+
+protoIcmpDefaultFullLen = $protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpDataOffset + $protoIcmpDataDefaultLen
+
+broadcastMacAddr = 0xff 0xff 0xff 0xff 0xff 0xff
+zeroMacAddr = 0x00 0x00 0x00 0x00 0x00 0x00
+
+ethTypeLenArp = 0x08 0x06
+ethTypeLenIp = 0x08 0x00
+
+arpCommon = 0x00 0x01 0x08 0x00 0x06 0x04
+arpOpcodeReq = 0x00 0x01
+arpOpcodeResp = 0x00 0x02
+
+icmpEchoReq = 0x08
+icmpEchoResp = 0x00
+icmpEchoCode = 0x00

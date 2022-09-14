@@ -1,0 +1,162 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mngif2/injMinTest.txt $
+# $Revision: #9 $
+# $DateTime: 2016/08/11 02:22:39 $
+# $Author: dgubanov $
+#
+# Script for large packets injection on mng queue0
+# To make test packets unique, $mark variable is used. It is incremented on every run.
+# But it should be initialized with start value before first run, e.g. mark = 0 in cli
+# or by pseudo-condition in this script
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    injType = rx
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef injType:
+        injType = rx
+    ifndef logTag:
+        logTag = -l cli
+
+# Packet receive prepare
+if $hostAlreadyInitiated == False:
+    if '$injType' == 'tx':
+        mac.set loopback System Packet $logTag # deep loopback
+    else:
+        mac.set loopback None $logTag # No loopback
+    mac.init
+    mac.isr.disable
+    if '$injType' == 'tx':
+        mac.txinit
+        mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill      # Without parameters: by default 0xFFFF
+    mac.rxring[$rxRingNo].commit    # Without parameters: by default 0xFFFF
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+
+if '$injType' == 'tx':
+    exec $(PWD)/helpers/tpbInjectorLlhNames.txt
+else:
+    exec $(PWD)/helpers/rpbInjectorLlhNames.txt
+# Rx Injector prepare
+
+# Set mode
+
+if '$injType' == 'tx':
+    mac.llh rpfL2PromiscuousModeEnableSet 1
+    mac.llh rpfVlanPromiscuousModeEnableSet 1
+    mac.llh rpfL2BroadcastCountThresholdSet 256
+    mac.llh rpfL2BroadcastFilterActionSet 2
+    mac.llh rpfL2BroadcastCountResetSet 0
+    mac.llh rpfRxPathByteSwapEnableSet 0
+    mac.llh rpfL2BroadcastEnableSet 0
+
+
+if '$injType' == 'tx':
+    headerLen = 12
+else:
+    headerLen = 16
+
+packetLengths = [64, 1518]
+for packetLen in $packetLengths:
+    mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+    # Inject
+
+    # Select injection queue
+    mac.llh $injectionSelectSet $(queue)
+
+    # SOP = 1
+    mac.llh $injectionPacketSopSet 1
+
+    # Packet Len Header Word
+    if '$injType' == 'tx':
+        headerWord = $packetLen
+    else:
+        headerWord = ($packetLen << 16)
+    mac.llh $injectionPacketDataSet $headerWord
+
+    # SOP = 0
+    mac.llh $injectionPacketSopSet 0
+
+    rpbHdrQueueNumShift = 12
+    # Header Rest
+
+    for hdrByteCnt = 4; $hdrByteCnt < $headerLen; hdrByteCnt += 4:
+        if $hdrByteCnt == 8:
+            if '$injType' == 'tx':
+                headerWord = 0
+            else:
+                headerWord = ($rxRingNo << $rpbHdrQueueNumShift)
+        else:
+            headerWord = 0
+        mac.llh $injectionPacketDataSet $headerWord
+
+    bufStr = ' '
+    for byteCount = 0; $byteCount < $packetLen; byteCount += 4:
+        if $byteCount + 4 >= $packetLen:
+            # EOP = 1
+            mac.llh $injectionPacketEopSet 1
+
+        byte0 = $byteCount
+        byte1 = $byteCount + 1
+        byte2 = $byteCount + 2
+        byte3 = $byteCount + 3
+        packetWord = (($byte3 << 24) & 0xFF000000) | (($byte2 << 16) & 0x00FF0000) | (($byte1 << 8) & 0x00000FF00) | ($byte0 & 0x0000000FF)
+        bufStr = '$bufStr' + ' ' + hex($packetWord)
+        mac.llh $injectionPacketDataSet $packetWord
+
+    # EOP = 0
+    mac.llh $injectionPacketEopSet 0
+
+    # Check errors
+    mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet $rxRingNo
+    if $rxHeadAfter != $rxHeadBefore + 1:
+        str = '(2)After injection head not updated'
+        echo $str
+        finalReport = $finalReport + ['$str']
+
+
+    # Packet Show
+
+    mac.rxring[$rxRingNo].clean
+    mac.rxring[$rxRingNo].status $logTag
+    mac.rxring[$rxRingNo].dumpdesc -H 1 -l dumprx $logTag
+    mac.rxring[$rxRingNo].dumpbuf -H 1 -l dumprx $logTag --size 80
+
+    mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n pAddr $logTag
+    mac.rxring[$rxRingNo].getdescval -H 1 -f size -n byteCnt $logTag
+    # Check received data
+    if $byteCnt != $packetLen:
+        finalReport = $finalReport + ['Wrong byte count $byteCnt received']
+
+    mem.cmp -p $pAddr -s $packetLen -V $bufStr -n compareResult $logTag
+    #mem.dump -p $pAddr -s $byteCnt -l cli
+
+    if $compareResult != True:
+        finalReport = $finalReport + ['(4) Memory compare failed']
+
+readreg 0x7040
+mac.uninit
+exec $(PWD)/helpers/showTestResult.txt

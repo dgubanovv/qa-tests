@@ -1,0 +1,100 @@
+# Script udp checksumm offload when IP header 24
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    logTag = -l cli
+    TPO2 = False
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+
+ifndef TPO2:
+    TPO2 = False 
+
+    
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    #mac.set loopback System DMA            # No loopback
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+if $TPO2:
+        exec $(PWD)/helpers/enableTPO2.txt 
+        
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+
+mac.llh tpoIpv4HeaderChecksumOffloadEnableSet 1
+mac.llh tpoTcpUdpChecksumOffloadEnableSet 1
+
+
+udpPacket = 0x01 0x00 0x5e 0x00 0x00 0x16 0x08 0x00 0x20 0x12 0x34 0x56 0x08 0x00 0x46 0x00 0x00 0x28 0x04 0x7e 0x00 0x00 0x01 0x02 0x96 0x3c 0xa9 0xfe 0x00 0x01 0xe0 0x00 0x00 0x16 0x94 0x04 0x00 0x00 0x22 0x00 0xf9 0x01 0x00 0x00 0x00 0x01 0x04 0x00 0x00 0x00 0xe0 0x00 0x00 0xfc 0x00 0x01 0x00 0x03 0x19 0x34 0x0e 0x00 0x0d 0x92
+packetLength = 64
+
+mac.rxring[$rxRingNo].get -n rxRingSize size
+mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+mac.txring[$txRingNo].insert -b $packetLength -p $packetLength -f indexed_uniq_ramp -u 1 -s 1
+mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+mem.put $udpPacket -s 1 -p $pAddr
+
+
+bufStr = ' '
+data=0
+for i=0; $i < $packetLength; i+=4:
+    addr = $pAddr + $i
+    mem.get -p $addr -s 4 -n data
+    bufStr = '$bufStr' + ' ' + hex($data)
+
+mac.txring[$txRingNo].status $logTag
+mac.rxring[$rxRingNo].status $logTag
+
+mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size 80
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.rxring[$rxRingNo].clean
+
+mac.txring[$txRingNo].status $logTag
+mac.rxring[$rxRingNo].status $logTag
+if $rxHeadBefore == ($rxRingSize-1):
+    $rxHeadBefore = -1
+mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+rxCount = $rxHeadGood + 0 - $rxHeadBefore
+if $rxCount != 1:
+    finalReport += ['(1)Wrong packet number($rxCount) routed to host']
+else:
+    mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n pAddr $logTag
+    mem.cmp -p $pAddr -s $packetLength -V $bufStr -n compareResult $logTag
+    if $compareResult != True:
+        finalReport += ['(2)Memory compare failed']
+mac.rxring[$rxRingNo].dumpbuf -H 1 $logTag --size 80
+
+readreg 0x7040
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

@@ -1,0 +1,147 @@
+# Author: dgubanov
+# Verify ALLMULTICAST bit
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    logTag = -l cli
+    RPF2 = False
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef logTag:
+        logTag = -l cli
+
+        
+ifndef RPF2:
+    RPF2 = False
+    
+exec $(PWD)/helpers/versionSpecificInit.txt
+
+mac.set glb_reg_reset_dis False
+mac.set tx_reg_rst_dis False
+mac.set rx_reg_rst_dis False
+
+
+if $hostAlreadyInitiated == False:
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+    
+if $RPF2:
+    exec $(PWD)/helpers/enableRPF2.txt
+    
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 256
+mac.llh -C rpfL2BroadcastFilterActionSet 1
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llh -C rpfL2BroadcastEnableSet 0
+mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+#configure multicast filter for IPv4 multicast packet
+filterMulticastIndex = 0
+filterMulticastEnable = 1
+filterMulticastAction = 1
+filterMulticastMacAddr = 0x010
+
+mac.llhcache on
+mac.llh -C rpfL2MulticastDestinationAddressOffsetSet 0
+mac.llh -C rpfL2MulticastDestinationAddressMaskSet 0xfff
+mac.llh -C rpfL2AcceptAllMulticastPacketsSet 1
+mac.llhcache off
+
+exec $(PWD)/helpers/filtersConfigurators/rxMulticastFilter.txt
+
+
+#Generate variations of dst adress
+macAddrSrcStr = '[0x21,0x22,0x23,0x24,0x25,0x26]'
+macAddrSrcStr = '[0x21,0x22,0x23,0x24,0x25,0x26]'
+macAddrDstStrs = ['[0x80,0x00,0x20,0x14,0x15,0x16]', '[0xff,0xff,0xff,0xff,0xff,0xff]', '[0x01,0x00,0x5e,0x01,0x02,0x03]']
+packetTypesStr = ['Unicast','Broadcast','Multicast']
+Vlans = ['NoVlan', 'Vlan', 'Vlan10']
+l4Protocols = ['ICMP', 'ARP', 'UDP']
+l3ProtoForL4 = [['IP', 'IPv6']]
+l3ProtoForL4 += [['None']]
+l3ProtoForL4 += [['IPv6']]
+countPackets = 0
+for macAddrDstStr in $macAddrDstStrs:  
+    for vlan in $Vlans:  
+        countL4Proto = 0
+        for l4Proto in $l4Protocols:
+            l3Protocols = $l3ProtoForL4[$countL4Proto]
+            for l3Proto in $l3Protocols:
+                packetLength = 74
+                #Generate packet expectation
+                if $countPackets in [0,1]:
+                    expectCount = 0
+                else:
+                    expectCount = 1
+                
+                # Get Rx head before packet insertion
+                mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+                pkt.new -n pkt$countPackets$vlan$l3Proto$l4Proto -p 32
+                pkt.layer -i $(pkt$countPackets$vlan$l3Proto$l4Proto) -L 60 -t $l4Proto
+                if '$l3Proto' != 'None':
+                    pkt.layer -i $(pkt$countPackets$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto
+                    if '$l3Proto' == 'IPv6':
+                        packetLength = $packetLength + 20
+                if '$vlan' == 'Vlan':
+                    pkt.layer -i $(pkt$countPackets$vlan$l3Proto$l4Proto)  -L 40 -t Dot1Q
+                    packetLength = $packetLength + 4
+                elif '$vlan' == 'Vlan10':
+                    pkt.layer -i $(pkt$countPackets$vlan$l3Proto$l4Proto)  -L 40 -t Dot1Q prio=6 type=0x800 vlan=0x0a
+                    packetLength = $packetLength + 4
+                    
+                pkt.layer -i $(pkt$countPackets$vlan$l3Proto$l4Proto) -L 25 -t Ether src=$macAddrSrcStr type=0x800 dst=$macAddrDstStr
+                    
+                mac.txring[$txRingNo].insert -i $(pkt$countPackets$vlan$l3Proto$l4Proto) -b $packetLength
+                mac.txring[$txRingNo].commit
+                mac.txring[$txRingNo].clean
+                mac.rxring[$rxRingNo].clean
+                
+                #Check packet in rx ring
+                mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+                
+                rxCount = ($rxHeadGood - $rxHeadBefore)
+                if $rxCount != $expectCount:
+                    packetType = $packetTypesStr[$countPackets]
+                    if $rxCount == 0 :
+                        finalReport += ['($countPackets)$packetType packet was not received']
+                    else :
+                        finalReport += ['($countPackets)$packetType packet was received']
+            countL4Proto += 1
+    countPackets += 1
+
+
+readreg 0x5040 $logTag    
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit
+    

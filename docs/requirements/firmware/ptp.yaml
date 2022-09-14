@@ -1,0 +1,11 @@
+features:
+  ptp:
+    requirement_list:
+      - id: FW_PTP_1
+        description: If PTP is disabled Round Robin TX packet scheduler arbitration shall be used.
+        note: See register 0x7100.0
+        products: [PROD_JAMAICA_FIRMWARE_3X]
+      - id: FW_PTP_2
+        description: If PTP is enabled Weighted-Strict Priority TX packet scheduler arbitration shall be used.
+        note: See register 0x7100.0
+        products: [PROD_JAMAICA_FIRMWARE_3X]

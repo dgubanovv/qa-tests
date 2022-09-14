@@ -1,0 +1,33 @@
+#####################################################
+### Config
+#####################################################
+
+timeout = 10000
+
+test_result = 0
+
+echo Test "wolLinkUp"
+
+#####################################################
+### Central state
+#####################################################
+
+exec testFW/wol/lib/wolCentralState.txt
+
+#####################################################
+### DRV_MSG_WOL_ADD
+#####################################################
+
+exec testFW/wol/lib/linkUpAdd.txt
+if $result != 0:
+    echo wolLinkUp filter failed
+    test_result = -1
+
+#####################################################
+### DRV_MSG_ENABLE_WAKEUP
+#####################################################
+
+exec testFW/wol/lib/wolEnableAllWakeups.txt
+if $result != 0:
+    echo wolLinkUp: Enable filter failed
+    test_result = -1

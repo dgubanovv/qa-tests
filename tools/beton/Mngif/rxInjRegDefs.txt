@@ -1,0 +1,26 @@
+rxInjCtrlReg = 0x5800
+rxInjStatus1Reg = 0x5804
+rxInjStatus2Reg = 0x5808
+rxInjData1Reg = 0x5810
+rxInjData2Reg = 0x5814
+
+
+rxInjLimitMask =       0x04000000
+rxInjSizeMask =        0x01000000
+rxInjSelectQueueMask = 0x00000002
+rxInjWriteMask =       0x00000001
+
+rxInjTruncMask =  0x00000010
+rxInjOfMask =     0x00000004
+rxInjPerrMask =   0x00000001
+
+rxInjOffsetMask = 0x07FF0000
+rxInjOffsetShift = 16
+rxInjCntMask =    0x000000F0
+rxInjCntShift =   4
+
+rxInjSopMask = 0x00000002
+rxInjEopMask = 0x00000001
+
+rpbHdrQueueNumShift = 12
+rpbHdrPktTypeShift = 4

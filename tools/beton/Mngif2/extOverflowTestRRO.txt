@@ -1,0 +1,353 @@
+# Author: dgubanov
+# Check overflow feature for RRO
+
+finalReport = [] 
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0   
+    extType = rx
+    queueActive = [1, 0]
+    logTag = -l cli
+
+ifndef logTag:
+    logTag = -l cli
+
+if '$hw_options' != 'B0RRO':
+    echo !!!Execute extOverFlowTest.txt!!!
+    exec $(PWD)/Mngif2/extOverflowTest.txt
+    exit
+
+if '$extType' != 'rx':
+    echo !!!Tx: unexpected value of extType!!!
+    exec $(PWD)/helpers/showTestResult.txt
+    exit
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    if '$extType' == 'rx':
+        mac.set loopback System Packet $logTag #deep loopback
+    else:
+        mac.set loopback None $logTag           # No loopback
+    mac.init
+    if '$extType' == 'rx':
+        mac.rxinit
+        mac.rxring[$txRingNo].enable
+        mac.rxring[$txRingNo].fill
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+
+
+exec $(PWD)/helpers/versionSpecificInit.txt    
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+exec $(PWD)/helpers/enableRPF2.txt
+
+if '$extType' == 'rx':
+    exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+else:
+    exec $(PWD)/helpers/tpoExtractorLlhNames.txt
+
+for queue = 0; $queue < 2; queue += 1:
+    mac.llh -v packetCount $extractionQueuePacketCountGet $queue
+    if $packetCount > 0:
+        echo Please run script on clear queue
+        exit
+
+# Tx Extractor prepare
+# Set mode
+# Set corresponding filters enable and clear other
+
+if '$extType' == 'rx':
+    exec $(PWD)/helpers/configureRxExtFilters.txt
+else:
+    exec $(PWD)/helpers/configureTxExtFilters.txt
+
+
+
+#======== Send 8 packets =============
+packetToSend1 = 8
+packetLen = 64
+
+for packetCnt = 0; $packetCnt < $packetToSend1; packetCnt += 1:
+    
+    for queue = 0; $queue < 2; queue += 1:
+        if $queueActive[$queue] == 1:
+            mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+            mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+            str = $macAddrFilters[$queue]
+            mem.put $str -s 1 -p $pAddr
+        
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status $logTag
+
+# Check overflow and lost flag
+expectedPacketCount = 8
+expectedIsReady = 1
+expectedTruncationError = 0
+expectedOverflowError = 0
+expectedLostError = 0
+expectedIsInterrupt = 1
+expectedParityError = 0
+stringId = '(2)'
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] == 1:
+        exec $(PWD)/helpers/checkExtQueueErrors.txt
+		if $packetCount != $expectedPacketCount:
+            exec $(PWD)/helpers/showTestResult.txt
+            exit
+
+
+
+#======== Send 16 packets =============
+packetToSend2 = 16
+		
+for packetCnt = 0; $packetCnt < $packetToSend2; packetCnt += 1:
+    
+    for queue = 0; $queue < 2; queue += 1:
+        if $queueActive[$queue] == 1:
+            mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+            mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+            str = $macAddrFilters[$queue]
+            mem.put $str -s 1 -p $pAddr
+        if $packetCnt == 15:          #
+            bufAddr$queue = $pAddr    #Save last packet pAddr            
+
+        
+
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status $logTag
+
+# Check overflow and lost flag
+expectedPacketCount = 0xf
+expectedIsReady = 1
+expectedTruncationError = 0
+expectedOverflowError = 0
+expectedLostError = 0
+expectedIsInterrupt = 1
+expectedParityError = 0
+stringId = '(3)'
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] == 1:
+        exec $(PWD)/helpers/checkExtQueueErrors.txt
+		if $packetCount != $expectedPacketCount:
+            exec $(PWD)/helpers/showTestResult.txt
+            exit
+
+
+
+nReleasePackets = $packetToSend1 + $packetToSend2
+nPacketsInQueue = $packetToSend1 + $packetToSend2
+expectedPacketCount = 0xf #HW cannot show more than 15 packets per queue (in real we have 24 packets inserted)
+expectedIsReady = 1
+expectedTruncationError = 0
+expectedOverflowError = 0
+expectedLostError = 0
+expectedIsInterrupt = 0
+expectedParityError = 0
+
+#======== Read packet #24 from the queue  =============	
+for queue = 0; $queue < 2; queue += 1:
+    # Select Queue    
+    mac.llh $extractionSelectSet $queue
+    
+    if $queueActive[$queue] == 1:
+        
+        for readCnt = 0; $readCnt < $nReleasePackets; readCnt += 1:
+            stringId = '(packet $readCnt)'
+            if $nPacketsInQueue > 15:
+                expectedPacketCount = 0xf
+            else:
+                expectedPacketCount = $nPacketsInQueue
+            
+            exec $(PWD)/helpers/checkExtQueueErrors.txt
+            
+            #Read one packet now
+            bufArray = []
+            for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+                # generate rising edge
+                mac.llh $extractionReadSet 0
+                mac.llh $extractionReadSet 1
+                mac.llh -v dataExtracted $extractionQueuePacketDataGet
+                if '$extType' == 'rx':
+                    dataExtracted = ($dataExtracted & 0xFF) << 24 | ($dataExtracted & 0xFF00) << 8 | ($dataExtracted & 0xFF0000) >> 8 | ($dataExtracted & 0xFF000000) >> 24
+                bufArray += [$dataExtracted]
+                mac.llh -v eop $extractionQueueEopGet
+                if $eop <> 0:                    
+                    byteCnt += 4
+                    break
+            mac.llh $extractionReadSet 0
+            
+            #Packet count in queue reduced by one
+            nPacketsInQueue -= 1
+        
+        bufStr = ' '    
+        for count = 0; $count < ($packetLen/4); count += 1:
+            data = $bufArray[$count]
+            bufStr = '$bufStr' + ' ' + hex($data)
+                        
+        mem.cmp -p $(bufAddr$queue) -s $packetLen -V $bufStr -n compareResult $logTag      
+        if $compareResult != True:
+                finalReport = $finalReport + ['(3) Memory compare failed']
+                      
+
+stringId = '(4)'                      
+expectedPacketCount = 0
+expectedIsReady = 0
+expectedTruncationError = 0
+expectedOverflowError = 0
+expectedLostError = 0
+expectedIsInterrupt = 0
+expectedParityError = 0
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] == 1:
+        exec $(PWD)/helpers/checkExtQueueErrors.txt
+		if $packetCount != $expectedPacketCount:
+            exec $(PWD)/helpers/showTestResult.txt
+            exit    
+            
+
+                       
+#================= Send 129 packets =====================
+packetLen = 128
+queueSize = 16384
+packetsInQueue= ($queueSize/$packetLen)
+extraPacktes = 1 
+packetToSend = $packetsInQueue + $extraPacktes
+
+
+for packetCnt = 0; $packetCnt < $packetToSend; packetCnt += 1:
+    
+    for queue = 0; $queue < 2; queue += 1:
+        if $queueActive[$queue] == 1:
+            mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+            mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+            str = $macAddrFilters[$queue]
+            mem.put $str -s 1 -p $pAddr
+        if $packetCnt == 127:          #
+            bufAddr$queue = $pAddr    #Save last packet pAddr   
+            
+
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status $logTag
+
+
+
+# Check overflow and lost flag
+expectedPacketCount = 0xf 
+expectedIsReady = 1
+expectedTruncationError = 0
+expectedOverflowError = 1 #Check if overflow feature is working
+expectedLostError = 0
+expectedIsInterrupt = 1
+expectedParityError = 0
+stringId = '(5)'
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] == 1:
+        exec $(PWD)/helpers/checkExtQueueErrors.txt
+		if $packetCount != $expectedPacketCount:
+            exec $(PWD)/helpers/showTestResult.txt
+            exit            
+
+
+
+#=========== Read packet #128 from the queue  ==============
+nPacketsInQueue = $packetsInQueue
+nReleasePackets = 128
+expectedPacketCount = 0xf #HW cannot show more than 15 packets per queue (in real we have 128 packets inserted and one dropped)
+expectedIsReady = 1
+expectedTruncationError = 0
+expectedOverflowError = 0 
+expectedLostError = 0
+expectedIsInterrupt = 0
+expectedParityError = 0
+
+for queue = 0; $queue < 2; queue += 1:
+    # Select Queue    
+    mac.llh $extractionSelectSet $queue
+    
+    if $queueActive[$queue] == 1:
+        
+        for readCnt = 0; $readCnt < $nReleasePackets; readCnt += 1:
+            stringId = '(packet $readCnt)'
+            if $nPacketsInQueue > 15:
+                expectedPacketCount = 0xf
+            else:
+                expectedPacketCount = $nPacketsInQueue
+            
+            exec $(PWD)/helpers/checkExtQueueErrors.txt
+            
+            #Read one packet now
+            bufArray = []
+            for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+                # generate rising edge
+                mac.llh $extractionReadSet 0
+                mac.llh $extractionReadSet 1
+                mac.llh -v dataExtracted $extractionQueuePacketDataGet
+                if '$extType' == 'rx':
+                    dataExtracted = ($dataExtracted & 0xFF) << 24 | ($dataExtracted & 0xFF00) << 8 | ($dataExtracted & 0xFF0000) >> 8 | ($dataExtracted & 0xFF000000) >> 24
+                bufArray += [$dataExtracted]
+                mac.llh -v eop $extractionQueueEopGet
+                if $eop <> 0:                    
+                    byteCnt += 4
+                    break
+            mac.llh $extractionReadSet 0
+            
+            #Packet count in queue reduced by one
+            nPacketsInQueue -= 1
+            
+            
+        bufStr = ' '    
+        for count = 0; $count < ($packetLen/4); count += 1:
+            data = $bufArray[$count]
+            bufStr = '$bufStr' + ' ' + hex($data)
+         
+        
+            
+        mem.cmp -p $(bufAddr$queue) -s $packetLen -V $bufStr -n compareResult $logTag      
+        if $compareResult != True:
+                finalReport = $finalReport + ['(3) Memory compare failed']
+      
+
+      
+      
+#========= Send 8 packets =============
+packetToSend3 = 8
+packetLen = 64
+
+for packetCnt = 0; $packetCnt < $packetToSend3; packetCnt += 1:
+    
+    for queue = 0; $queue < 2; queue += 1:
+        if $queueActive[$queue] == 1:
+            mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+            mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+            str = $macAddrFilters[$queue]
+            mem.put $str -s 1 -p $pAddr
+        
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status $logTag
+
+# Check overflow and lost flag
+expectedPacketCount = 8
+expectedIsReady = 1
+expectedTruncationError = 0
+expectedOverflowError = 0
+expectedLostError = 0
+expectedIsInterrupt = 1
+expectedParityError = 0
+stringId = '(6)'
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] == 1:
+        exec $(PWD)/helpers/checkExtQueueErrors.txt
+		if $packetCount != $expectedPacketCount:
+            exec $(PWD)/helpers/showTestResult.txt
+            exit     
+readreg 0x7040			
+mac.uninit
+exec $(PWD)/helpers/showTestResult.txt

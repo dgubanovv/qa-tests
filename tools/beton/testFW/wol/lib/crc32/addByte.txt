@@ -1,0 +1,23 @@
+byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+
+for j = 0; $j <= 7; j += 1:
+
+    if $crc32 & 0x80000000:
+        crc32_high_bit = 1
+    else:
+        crc32_high_bit = 0
+
+    if $byte & 0x80000000:
+        byte_high_bit = 1
+    else:
+        byte_high_bit = 0
+
+    crc32 = ($crc32 << 1) & 0xFFFFFFFF
+
+    if ($crc32_high_bit ^ $byte_high_bit):
+        crc32 = $crc32 ^ 0x04C11DB7
+        
+    byte = ($byte << 1)

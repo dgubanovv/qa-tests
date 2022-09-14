@@ -1,0 +1,2 @@
+mac.llh regRxDmaControl2Set 0x0202
+mac.llh regTxDmaControl2Set 0x0202

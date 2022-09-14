@@ -1,0 +1,199 @@
+# Script for injection with par_chk_sense on mng queue0
+# To make test packets unique, $mark variable is used. It is incremented on every run.
+# But it should be initialized with start value before first run, e.g. mark = 0 in cli
+# or by pseudo-condition in this script
+
+hostAlreadyInitiated = False
+rxRingNo = 0
+truncatePackets = True
+packetMaxSizeKB = 1
+packetLen = 128
+expStrobe = False
+if $mark == 0:
+    mark = 0
+
+# Packet receive prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill      # Without parameters: by default 0xFFFF
+    mac.rxring[$rxRingNo].commit    # Without parameters: by default 0xFFFF
+
+# Rx Injector prepare
+
+rxCtrlReg1 = 0x5000
+rxParChkSenseMask = 0x40000000
+
+exec $(SCRIPT_PATH)/rxInjRegDefs.txt
+
+pktType = 0
+
+readreg $rxInjStatus2Reg -n status2Reg
+nPackets = ($status2Reg & $rxInjCntMask) >> $rxInjCntShift
+if $nPackets > 0:
+    echo Please run script on clear queue
+    exit
+
+# Set mode
+
+readreg $rxInjCtrlReg -n rxInjCtrl
+if $truncatePackets == True:
+    rxInjCtrl = $rxInjCtrl | $rxInjLimitMask
+else:
+    rxInjCtrl = $rxInjCtrl & ~$rxInjLimitMask
+if $packetMaxSizeKB == 1:
+    rxInjCtrl = $rxInjCtrl & ~$rxInjSizeMask
+else:
+    rxInjCtrl = $rxInjCtrl | $rxInjSizeMask
+writereg $rxInjCtrlReg $rxInjCtrl
+headerLen = 16
+
+# Read status reg1 to self-clear errors
+readreg $rxInjStatus1Reg
+
+# Read other status regs for information
+readreg $rxInjStatus2Reg
+readreg $rxInjData1Reg -n injDataSt
+
+readreg $rxCtrlReg1 -n rxCtrl1
+
+finalReport = [] # final report is useful when command line window has huge output
+
+# Inject
+
+# Select injection queue
+rxInjCtrl = $rxInjCtrl & ~$rxInjSelectQueueMask
+writereg $rxInjCtrlReg $rxInjCtrl
+
+# Send packet with rxParChkSenseMask = 0 (default),
+# packet with rxParChkSenseMask = 1 (to set parity error),
+# and then packet with rxParChkSenseMask = 0 again
+for packetNo = 0; $packetNo < 3; packetNo += 1:
+    checkMask = 0
+    if $packetNo == 1:
+        rxCtrl1 = $rxCtrl1 | $rxParChkSenseMask
+        writereg $rxCtrlReg1 $rxCtrl1
+        checkMask = $rxInjPerrMask
+    else:
+        if $packetNo == 2:
+            rxCtrl1 = $rxCtrl1 & ~$rxParChkSenseMask
+            writereg $rxCtrlReg1 $rxCtrl1
+    checkMaskStr = hex($checkMask)
+    
+    # 1. Injection
+    mark = $mark + 1
+    
+    # SOP = 1
+    injDataSt = $injDataSt | $rxInjSopMask
+    writereg $rxInjData1Reg $injDataSt
+
+    # Packet Len Header Word
+    headerWord = ($packetLen << 16)
+
+    writereg $rxInjData2Reg $headerWord
+
+    if $expStrobe == True:
+        rxInjCtrlWrite1 = $rxInjCtrl | $rxInjWriteMask
+        writereg $rxInjCtrlReg $rxInjCtrlWrite1
+        rxInjCtrlWrite0 = $rxInjCtrl & ~$rxInjWriteMask
+        writereg $rxInjCtrlReg $rxInjCtrlWrite0
+
+    # SOP = 0
+    injDataSt = $injDataSt & ~$rxInjSopMask
+    writereg $rxInjData1Reg $injDataSt
+
+    # Header Rest
+    for hdrByteCnt = 4; $hdrByteCnt < $headerLen; hdrByteCnt += 4:
+        if $hdrByteCnt == 8:
+            headerWord = ($rxRingNo << $rpbHdrQueueNumShift) | ($pktType << $rpbHdrPktTypeShift)
+        else:
+            headerWord = 0
+        writereg $rxInjData2Reg $headerWord
+        if $expStrobe == True:
+            writereg $rxInjCtrlReg $rxInjCtrlWrite1
+            writereg $rxInjCtrlReg $rxInjCtrlWrite0
+    
+    bufStr = ' '
+    for byteCount = 0; $byteCount < $packetLen; byteCount += 4:
+        if $byteCount + 4 >= $packetLen:
+            # EOP = 1
+            readreg $rxInjData1Reg -n injDataSt
+            injDataSt = $injDataSt | $rxInjEopMask
+            writereg $rxInjData1Reg $injDataSt
+            byte3 = $mark
+        else:
+            byte3 = $byteCount + 3
+        
+        byte0 = $byteCount
+        byte1 = $byteCount + 1
+        byte2 = $byteCount + 2
+        packetWord = (($byte0 << 24) & 0xFF000000) | (($byte1 << 16) & 0x00FF0000) | (($byte2 << 8) & 0x00000FF00) | ($byte3 & 0x0000000FF)
+        writereg $rxInjData2Reg $packetWord
+        if $expStrobe == True:
+            writereg $rxInjCtrlReg $rxInjCtrlWrite1
+            writereg $rxInjCtrlReg $rxInjCtrlWrite0
+        packetWordToCompare = (($byte3 << 24) & 0xFF000000) | (($byte2 << 16) & 0x00FF0000) | (($byte1 << 8) & 0x00000FF00) | ($byte0 & 0x0000000FF)
+        bufStr = '$bufStr' + ' ' + hex($packetWordToCompare)
+
+    # EOP = 0
+    injDataSt = $injDataSt & ~$rxInjEopMask
+    writereg $rxInjData1Reg $injDataSt
+
+    readreg $rxInjStatus2Reg -n status2Reg
+    offset = ($status2Reg & $rxInjOffsetMask) >> $rxInjOffsetShift
+    # TODO remove header len subtraction after fix
+    offsetExpected = ($packetLen + $headerLen - 4 + 3) / 4
+    if $offset != $offsetExpected:
+        str = 'Packet offset after injection offset = $offset, expected $offsetExpected; iter = $packetNo'
+        echo $str
+        finalReport = $finalReport + ['$str']
+    nPackets = ($status2Reg & $rxInjCntMask) >> $rxInjCntShift
+    if $nPackets != 0:
+        str = 'Packet count after injection nPackets = $nPackets, expected 0; iter = $packetNo'
+        echo $str
+        finalReport = $finalReport + ['$str']
+
+    # 2. Reception
+
+    mac.rxring[$rxRingNo].clean
+    mac.rxring[$rxRingNo].status
+    mac.rxring[$rxRingNo].dumpdesc -H 1 -l dumprx
+    mac.rxring[$rxRingNo].dumpbuf -H 1 -l dumprx
+
+    mac.rxring[$rxRingNo].getdescval -H 1 -f paddr -n pAddr
+    mac.rxring[$rxRingNo].getdescval -H 1 -f size -n byteCnt
+    # Check received data
+    # @note: is there any way to acquire mem.cmp result to stop next execution?
+    if $byteCnt != $packetLen:
+        str = 'Wrong byte count $byteCnt received; iter = $packetNo'
+        echo $str
+        finalReport = $finalReport + ['$str']
+    mem.cmp -p $pAddr -s $packetLen -V $bufStr
+    
+    # 3. Check Parity Error
+    readreg $rxInjStatus1Reg -n status1Reg
+    if ($status1Reg & $rxInjPerrMask) != $checkMask:
+        status1RegStr = hex($status1Reg)
+        str = Unexpected Parity Error field value on $status1RegStr with checkMask = $checkMaskStr; iter = $packetNo
+        echo $str
+        finalReport = $finalReport + ['$str']
+    if $checkMask == $rxInjPerrMask:
+        # Check Parity Error is cleared after read
+        if ($status1Reg & $rxInjPerrMask) != 0:
+            readreg $rxInjStatus1Reg -n status1Reg
+            if ($status1Reg & $rxInjPerrMask) != 0:
+                status1RegStr = hex($status1Reg)
+                str = Parity Error is not cleared $status1RegStr after read; iter = $packetNo
+                echo $str
+                finalReport = $finalReport + ['$str']
+
+if len($finalReport) > 0:
+    echo
+    echo FinalReport:
+    for str in $finalReport:
+        echo $str
+echo Script done
+cmd

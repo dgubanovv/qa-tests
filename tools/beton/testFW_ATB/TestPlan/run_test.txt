@@ -1,0 +1,211 @@
+###############################################################################
+# RUN TEST
+###############################################################################
+
+exec $path/board_config.txt
+exec $path/test_config.txt
+txBufSize = 0x8000
+
+#create ring list that holds different number of rings (depends on ringsPerTc and maxtc)
+if $maxtc == 4:
+	q_ct = 8
+elif $maxtc == 8: #CHANGECHANGE
+	q_ct = 4
+else:
+	q_ct = 1
+	numOfRings = 1
+if $ringsPerTc < 0:
+	echo INCORRECT VALUE, ringsPerTc = $ringsPerTc...Setting ringsPerTc = 1
+	ringsPerTc = 1
+elif $ringsPerTc > $q_ct:
+	echo INCORRECT VALUE, ringsPerTc = $ringsPerTc...Setting ringsPerTc = $q_ct (q_ct)
+	ringsPerTc = $q_ct
+ring_lst = [(i * $q_ct) + j for i in range($maxtc) for j in range($ringsPerTc)]
+
+echo ringlst = $ring_lst
+
+shell echo [==========] Running test from test plan. >> $runResults
+
+shell rmdir $folder /s /q
+shell mkdir $folder
+
+echo ring_list = $ring_lst
+echo path = $path
+echo scriptDir = $scriptDir
+echo error_file = $error_file
+echo script = $script
+echo folder = $folder
+echo runResults = $runResults
+echo ringSize = $ringSize
+echo ringsPerTc = $ringsPerTc
+echo maxtc = $maxtc
+echo tbp_rpb_tuple = $tbp_rpb_tuple
+echo frag = $frag
+echo ss_tuple for tc_num $tc_num = $ss_tuple
+echo numOfDesc = $numOfDesc
+echo sp = $sp
+echo numOfRings = $numOfRings
+
+mac.init
+mac.isr.disable
+mac.txinit
+mac.rxinit
+writereg 0x5a04 0x0202 #Fix NWL buffer issue
+writereg 0x7b04 0x0202 #Fix NWL buffer issue
+writereg 0x430 0x1 #disable PIF Timer
+
+echo after init, reading Tx DMA registers... (all should be zero)
+readreg 0x8800
+readreg 0x8804
+readreg 0x8808
+readreg 0x880C
+readreg 0x8810
+readreg 0x8814
+
+echo after init, reading Tx ring 0 control registers... (all should be zero)
+readreg 0x7C00
+readreg 0x7C04
+readreg 0x7C08
+readreg 0x7C0C
+readreg 0x7C10
+
+echo after init, reading Rx DMA registers... (all should be zero)
+readreg 0x6800
+readreg 0x6804
+readreg 0x6808
+readreg 0x680C
+readreg 0x6810
+readreg 0x6814
+
+echo after init, reading Rx ring 0 control registers... (all should be zero)
+readreg 0x5B00
+readreg 0x5B04
+readreg 0x5B08
+readreg 0x5B0C
+readreg 0x5B10
+
+mac.set txDcbTcCount $maxtc
+mac.set rxDcbTcCount $maxtc
+#tpbsizePerTcSize = ($tpbsize/$maxtc) #CHANGE
+z = 0
+for pb_size in $tbp_rpb_tuple:
+	tpbsizeTc$(z) = $pb_size
+	rpbsizeTc$(z) = $pb_size
+	z += 1
+echo $tbp_rpb_tuple
+echo pausing...
+
+for z = 0; $z < $maxtc; z += 1:
+	mac.txpb[$z].set size $(tpbsizeTc$z)
+	mac.rxpb[$z].set size $(rpbsizeTc$z)
+
+mac.txring[0:$numOfRings].set size $ringSize
+mac.rxring[0:$numOfRings].set size $ringSize
+
+for ring in $ring_lst:  #CHANGECHANGE
+	counter$ring = -1
+	acc$ring = 0
+	mac.txring[$ring].enable
+	mac.rxring[$ring].enable
+	
+	mac.llh -v txHeadExpected$ring tdmTxDescriptorHeadPointerGet $ring
+	echo txHeadExpected = $(txHeadExpected$ring)
+	mac.llh -v rxHeadExpected$ring rdmRxDescriptorHeadPointerGet $ring
+	echo rxHeadExpected = $(rxHeadExpected$ring)
+	mac.llh -v txHeadE$ring tdmTxDescriptorHeadPointerGet $ring
+	mac.llh -v txTailE$ring tdmTxDescriptorTailPointerGet $ring
+	echo txHeadE$ring == $(txHeadE$ring)
+	echo txTailE$ring == $(txTailE$ring)
+
+	txRingSize$ring = $ringSize
+	rxRingSize$ring = $ringSize
+	
+	mac.rxring[$ring].set -l nul batchFill 0 #Disable autofill after interrupt
+
+	if $BP == 0:
+		mac.rxring[$ring].fill
+		mac.rxring[$ring].commit
+	
+	#for packet and desc counting
+	curr_tx_headptr$ring = 0
+	prev_tx_headptr$ring = 0
+	curr_rx_headptr$ring = 0
+	prev_rx_headptr$ring = 0
+	successfulPacketCount$ring = 0
+	successfulTxCount$ring = 0
+	successfulRxCount$ring = 0
+	lastBatchCount$ring = 0
+
+shell echo [----------] Global test environment set-up. >> $runResults
+
+exec $script
+
+shell echo [----------] Global test environment tear-down >> $runResults
+
+if $error == 0:
+	echo success
+	shell echo [  PASSED  ] >> $runResults
+else:
+	echo failure $error
+	shell echo [  FAILED  ] error code $error >> $runResults
+	
+#for packet and desc counting
+for ring in $ring_lst:
+	tx_total_pkts = $(successfulPacketCount$ring)
+	failedTxCount = 0
+	if $(txHead$ring) != $(txHeadExpected$ring):
+		if $(curr_tx_headptr$ring) < $(prev_tx_headptr$ring):
+			failedTxCount = $(txRingSize$ring) - ($(txRingSize$ring) - $(curr_tx_headptr$ring))
+		else:
+			failedTxCount = ($(curr_tx_headptr$ring) - $(prev_tx_headptr$ring))
+	if $(lastBatchCount$ring) > 0:
+		tx_total_pkts += ($failedTxCount // $(lastBatchCount$ring)) #get an inexact average of failed packets
+	tx_total_desc = ($failedTxCount + $(successfulTxCount$ring))
+	rx_total_pkts = $(successfulPacketCount$ring)
+	failedRxCount = 0
+	if $(rxHead$ring) != $(rxHeadExpected$ring):
+		if $(curr_rx_headptr$ring) < $(prev_rx_headptr$ring):
+			failedRxCount = $(rxRingSize$ring) - ($(rxRingSize$ring) - $(curr_rx_headptr$ring))
+		else:
+			failedRxCount = ($(curr_rx_headptr$ring) - $(prev_rx_headptr$ring))
+	if $(lastBatchCount$ring) > 0:
+		rx_total_pkts += ($failedRxCount // $(lastBatchCount$ring)) #get an inexact average of failed packets
+	rx_total_desc = ($failedRxCount + $(successfulRxCount$ring))
+	
+	echo Ring $ring --> TX Desc/Packets, RX Desc/Packets : $tx_total_desc/$tx_total_pkts, $rx_total_desc/$rx_total_pkts
+
+shell echo $error > $error_file
+mac.txuninit
+mac.rxuninit
+mac.uninit
+
+echo after uninit, reading Tx DMA registers... (all should be zero)
+readreg 0x8800
+readreg 0x8804
+readreg 0x8808
+readreg 0x880C
+readreg 0x8810
+readreg 0x8814
+
+echo after uninit, reading Tx ring 0 control registers... (all should be zero)
+readreg 0x7C00
+readreg 0x7C04
+readreg 0x7C08
+readreg 0x7C0C
+readreg 0x7C10
+
+echo after uninit, reading Rx DMA registers... (all should be zero)
+readreg 0x6800
+readreg 0x6804
+readreg 0x6808
+readreg 0x680C
+readreg 0x6810
+readreg 0x6814
+
+echo after uninit, reading Rx ring 0 control registers... (all should be zero)
+readreg 0x5B00
+readreg 0x5B04
+readreg 0x5B08
+readreg 0x5B0C
+readreg 0x5B10
+exit

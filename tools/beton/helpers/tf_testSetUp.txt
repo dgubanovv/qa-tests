@@ -1,0 +1,9 @@
+shell echo [==========] Running 1 tests from 1 test case. >> $runResults
+
+# testExecuted is reset in set-up and set in showTestResult.txt if it called. if showTestResult.txt is NOT called - assume that test is broken
+testExecuted = False
+testReport = []
+numTestsToRun = 0
+logTag = -l nul
+hideResult = 1
+shell echo [----------] Global test environment set-up.  >> $runResults

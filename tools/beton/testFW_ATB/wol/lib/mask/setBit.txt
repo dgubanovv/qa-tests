@@ -1,0 +1,4 @@
+#accepts bitNumber
+
+byteNumber = ($bitNumber >> 5)
+mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))

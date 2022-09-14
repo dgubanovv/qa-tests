@@ -1,0 +1,61 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Phy/linkCheck.txt $
+# $Revision: #3 $
+# $DateTime: 2016/04/16 03:57:58 $
+# $Author: oxy $
+
+ifndef phyId:
+    for phyId=0; $phyId < 32; phyId += 1:
+        readphyreg -p $phyId 1.2 -n val
+        if not 0xFFFF == $val:
+            break
+
+mode = showState
+ifdef expectedLinkState:
+    mode = assertLinkState
+readphyreg -p $phyId 1.2 -n deviceId -l nul
+if $deviceId == 0xFFFF:
+    echo Unable to read PHY regs
+    exit
+
+#SystemSide
+readphyreg -p $phyId 4.0xe812 -n systemInterfaceConnectionStatusReg -l nul
+txReadyMask = 0x1000
+rxLinkUpMask = 0x2000
+sysInterfaceRateMask = 0xF00
+sysInterfaceInUseMask = 0xFC
+if ($systemInterfaceConnectionStatusReg & $rxLinkUpMask) == $rxLinkUpMask:
+    systemSideRxStatus = Up
+else:
+    systemSideRxStatus = Down
+if ($systemInterfaceConnectionStatusReg & $txReadyMask) == $txReadyMask:
+    systemSideTxStatus = Ready
+else:
+    systemSideTxStatus = NOT Ready
+
+sysInterfaceRatesArr = ["10M", "100M", "1G", "10G", "2.5G", "5G", "PowerDown"]
+sysInterfaceInUseArr = ["Backplane KR", "Backplane KX", "XFI", "USXGMII", "XAUI", "XAUI Pause Based", "SGMII", "RXAUI", "MAC", "OFF", "OCSGMII"]
+sysInterfaceRate = $sysInterfaceRatesArr[($systemInterfaceConnectionStatusReg & $sysInterfaceRateMask)>>0x8]
+sysInterfaceInUse = $sysInterfaceInUseArr[($systemInterfaceConnectionStatusReg & $sysInterfaceInUseMask)>>0x2]
+
+#CopperSide
+readphyreg -p $phyId 7.0xE000 -n copperInterfaceConnectionStatusReg -l nul
+readphyreg -p $phyId 7.0xC800 -n copperInterfaceRateStatusReg -l nul
+copperInterfaceRatesArr = ["10BASE-T", "100BASE-TX", "1000BASE-T", "10GBASE-T", "2.5G", "5G"]
+copperInterfaceRateMask = 0xE
+if ($copperInterfaceConnectionStatusReg & 0x4) == 0x4:
+    copperSideLinkStatus = Up
+else:
+    copperSideLinkStatus = Down
+copperInterfaceRate = $copperInterfaceRatesArr[($copperInterfaceRateStatusReg & $copperInterfaceRateMask )>> 1]
+
+#out
+if "$mode" == "showState":
+    echo System side:    State: $systemSideRxStatus/$systemSideTxStatus   Speed:$sysInterfaceRate   Interface:$sysInterfaceInUse
+    echo Copper side:    State: $copperSideLinkStatus     Speed: $copperInterfaceRate
+else:
+    if ("$copperSideLinkStatus" == "Up") and ("$systemSideRxStatus" == "Up") and ("$systemSideTxStatus" == "Ready"):
+        linkStatus = Up
+    else:
+        linkStatus = Down
+    if "$expectedLinkState" != "$linkStatus":
+        finalReport += ["Link status($linkStatus) isn't equal to expected($expectedLinkState)"]

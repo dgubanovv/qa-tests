@@ -1,0 +1,69 @@
+#####################################################
+### Config
+#####################################################
+
+flags = 0
+
+# Remote IPv6 addr
+# ANY
+remoteIPv6Address0 = 0x00000000
+remoteIPv6Address1 = 0x00000000
+remoteIPv6Address2 = 0x00000000
+remoteIPv6Address3 = 0x00000000
+
+# Solicited node multicast
+# ff02::0001:ff34:0145
+solNodeAddr0 = 0x000002FF
+solNodeAddr1 = 0x00000000
+solNodeAddr2 = 0x01000000
+solNodeAddr3 = 0x450134FF
+
+# IPv6 addr 1
+# fe80::1234:1234:1185
+hostIPv6Address1_0 = 0x000080FE
+hostIPv6Address1_1 = 0x00000000
+hostIPv6Address1_2 = 0x34120000
+hostIPv6Address1_3 = 0x85113412
+
+# IPv6 addr 2
+# fe80::1234:1234:0146
+hostIPv6Address2_0 = 0x000080FE
+hostIPv6Address2_1 = 0x00000000
+hostIPv6Address2_2 = 0x34120000
+hostIPv6Address2_3 = 0x46013412
+
+# 00:17:B6:00:00:8D
+Mac0 = 0x1700
+Mac1 = 0x00B6
+Mac2 = 0x8D00
+
+test_result = 0
+
+echo Test "nsOffload"
+
+#####################################################
+### Central state
+#####################################################
+
+exec testFW/offloads/lib/offloadCentralState.txt
+
+#####################################################
+### DRV_MSG_OFFLOAD_ADD
+#####################################################
+
+exec testFW/offloads/lib/nsOffloadAdd.txt
+if $result != 0:
+    echo arpOffload: Add offload failed
+    test_result = -1
+
+#####################################################
+### DRV_MSG_ENABLE_WAKEUP
+#####################################################
+
+exec testFW/offloads/lib/offloadEnableAll.txt
+if $result != 0:
+    echo arpOffload: Enable offload failed
+    test_result = -1
+
+if $test_result != 0:
+    echo _____________FAILED

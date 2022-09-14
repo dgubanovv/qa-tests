@@ -1,0 +1,62 @@
+products:
+
+  atlantic1_firmware_3x:
+    - id: PROD_ATLANTIC1_FIRMWARE_3X
+      description: Atlantic 1 firmware 3.0.x
+  jamaica_firmware_2x:
+    - id: PROD_JAMAICA_FIRMWARE_2X
+      description: Jamaica firmware 2.x.x
+  jamaica_firmware_3x:
+    - id: PROD_JAMAICA_FIRMWARE_3X
+      description: Jamaica firmware 3.1.x
+  felicity_firmware_3x:
+    - id: PROD_FELICITY_FIRMWARE_3X
+      description: Felicity firmware 3.1.x
+  bermuda_firmware_3x:
+    - id: PROD_BERMUDA_FIRMWARE_3X
+      description: Bermuda firmware 3.1.x
+  pacific_firmware:
+    - id: PROD_PACIFIC_FIRMWARE
+      description: Pacific firmware
+  fiji_firmware:
+    - id: PROD_FIJI_FIRMWARE
+      description: Fiji firmware
+
+  jamaica_firmware_3x_qualcom:
+    - id: PROD_JAMAICA_FIRMWARE_3X_QUALCOM
+      description: Jamaica firmware 3.1.x for Qualcom
+  bermuda_firmware_3x_peroni:
+    - id: PROD_BERMUDA_FIRMWARE_3X_PERONI
+      description: Bermuda firmware 3.1.x for Peroni
+
+  windows_ndis_driver:
+    - id: PROD_WINDOWS_NDIS_DRIVER
+      description: Windows NDIS driver
+  windows_xbox_driver:
+    - id: PROD_WINDOWS_XBOX_DRIVER
+      description: Windows XBOX driver
+  windows_fiji_driver:
+    - id: PROD_WINDOWS_FIJI_DRIVER
+      description: Windows Fiji driver
+  linux_driver:
+    - id: PROD_LINUX_DRIVER
+      description: Linux driver
+  linux_forwarding_driver:
+    - id: PROD_LINUX_FORWARDING_DRIVER
+      description: Linux forwarding driver
+  linux_cdc_fiji_driver:
+    - id: PROD_LINUX_CDC_FIJI_DRIVER
+      description: Linux CDC Fiji driver
+  linux_fiji_driver:
+    - id: PROD_LINUX_FIJI_DRIVER
+      description: Linux Fiji driver
+  macos_ecm_fiji_driver:
+    - id: PROD_MACOS_ECM_FIJI_DRIVER
+      description: Linux CDC Fiji driver
+  macos_fiji_driver:
+    - id: PROD_MACOS_FIJI_DRIVER
+      description: Linux Fiji driver
+
+  rhea:
+    - id: PROD_RHEA
+    description: RHEA chip

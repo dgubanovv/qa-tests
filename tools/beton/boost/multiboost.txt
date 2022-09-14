@@ -1,0 +1,747 @@
+echo Start multiboost
+
+###############################################################################
+# Test parameters
+
+ifndef link_speed:
+    link_speed = 1G
+
+ifndef no_mcp_link:
+    no_mcp_link = False
+
+ifndef flow_control:
+    flow_control = None
+
+ifndef maxtc:
+    maxtc = 4
+
+ifndef ringPerTc:
+    ringPerTc = 4
+
+ifndef rxpause:
+    rxpause = [1000000 for i in xrange($maxtc*$ringPerTc)]
+
+ifndef rxinterpause:
+    rxinterpause = [30000000 for i in xrange($maxtc*$ringPerTc)]
+
+ifndef boost_iter:
+    boost_iter = 1000000
+
+ifndef eee:
+    eee = False
+
+ifndef mcp_log:
+    mcp_log = False
+	
+###############################################################################
+#Device parameters
+txRingSize = 256#4096#
+rxRingSize = 256#4096#
+txRingBufSize = 2048
+rxRingBufSize = 2048
+
+#tpb_size = [160,0,0,0,0,0,0,0]
+#rpb_size = [320,0,0,0,0,0,0,0]
+tpb_size = [40, 40, 40, 40,0,0,0,0]
+rpb_size = [80, 80, 80, 80,0,0,0,0]
+#tpb_size = [20, 20, 20, 20, 20, 20, 20, 20]
+#rpb_size = [40, 40, 40, 40, 40, 40, 40, 40]
+
+booststat = False
+ringbooststat = False
+dmastat = True
+msmstat = False
+
+#Set link/loopback/fc settings
+mac.set -l nul no_mcp_link $no_mcp_link
+mac.set -l nul link        $link_speed # None, 100M, 1G, 2.5G, 5G, 10G, Auto
+mac.set -l nul loopback    None # None, Shallow, Deep, Msm, Serdes, PHY SIF, PHY NET. PHY SIF, PHY NET - stubs for future
+mac.set -l nul fc          $flow_control # None, link, pfc
+#mac.mpi.set mode           XFI  # XFI, SGMII
+
+interrupts = 'Auto' #'Auto', 'Single'
+
+###############################################################################
+#create ring list that holds different number of rings (depends on ringPerTc and maxtc)
+ringPerTc = 1 #can range from 1..8 if maxtc == 4, else if maxtc == 8 can range from 1..4
+if $maxtc == 8:
+    q_ct = 4
+else:
+    q_ct = 8
+if $ringPerTc < 0:
+    echo INCORRECT VALUE, ringPerTc = $ringPerTc...Setting ringPerTc = 1
+    ringPerTc = 1
+elif $ringPerTc > $q_ct:
+    echo INCORRECT VALUE, ringPerTc = $ringPerTc...Setting ringPerTc = $q_ct (q_ct)
+    ringPerTc = $q_ct
+ring_lst = [(i * $q_ct) + j for i in range($maxtc) for j in range($ringPerTc)]
+
+###############################################################################
+#Stream parameters
+
+l2src = "30:e0:3e:11:22:33"
+l2dst = "30:e0:3e:99:88:77"
+l3Gen = 1
+l3Src = "169.254.1.2"
+l3Dst = "169.254.9.8"
+noPayLoad = True
+l4Gen = 1
+l4Src = 0x1234
+
+#Range for RSS
+minl4Dst = 0x5678 
+maxl4Dst = 0x6789
+
+###############################################################################
+#Test parameters
+boosttime = -2
+
+integrity = True
+
+tx_desc_cnt = [0 for i in xrange($maxtc*$ringPerTc)]#0x1000000
+rx_desc_cnt = [0 for i in xrange($maxtc*$ringPerTc)]#0x2000000
+
+minSize = 64              # Min packet size
+maxSize = 1514            # Max packet size
+minSegCount = 1              # Min segment count
+maxSegCount = 1              # Max segment count
+minOffset = 0                # Min offset
+maxOffset = -1               # Max offset
+loopbackPause = 50          #
+maxWaitCount = 30           #
+low_trsh_prc = 50           # RPB low level
+high_trsh_prc = 66          # RPB high level
+txImmidiateRun = False
+###############################################################################
+# Fix max packet size and apply TPB/RPB settings
+dcbTc=(8 if $q_ct == 4 else 4)
+mac.set txDcbTcCount $dcbTc -l nul
+mac.set rxDcbTcCount $dcbTc -l nul
+
+tc = 0
+for pb_size in $tpb_size:
+    tpbsizeTc$(tc) = $pb_size
+    mac.txpb[$tc].set size $(tpbsizeTc$tc) -l nul
+    #echo TPB size for TC$tc: $(tpbsizeTc$(tc)) KB
+    tc += 1
+tc = 0
+for pb_size in $rpb_size:
+    rpbsizeTc$(tc) = $pb_size
+    maxSizeTc$(tc) = min($maxSize, 1024*(min($(tpbsizeTc$tc), $(rpbsizeTc$tc))) - 18*16)
+    #echo maxSizeTc$(tc) = $(maxSizeTc$tc)
+    mac.rxpb[$tc].set size $(rpbsizeTc$tc) -l nul
+    #echo RPB size for TC$tc: $(rpbsizeTc$(tc)) KB
+    low_trsh = ($low_trsh_prc * ($(rpbsizeTc$tc) * 1024) // 100) & 0x1FFE0
+    high_trsh = ($high_trsh_prc * ($(rpbsizeTc$tc) * 1024) // 100) & 0x1FFE0
+
+    mac.rpb[$tc].set enableXoff True -l nul
+    mac.rpb[$tc].set lowWaterMark $low_trsh -l nul
+    mac.rpb[$tc].set hiWaterMark $high_trsh -l nul
+    tc += 1
+
+#tx_desc_cnt_str = '%d' % ($tx_desc_cnt) if $tx_desc_cnt > 0 else 'inf'
+#rx_desc_cnt_str = '%d' % ($rx_desc_cnt) if $rx_desc_cnt > 0 else 'inf'
+
+###############################################################################
+echo Boost time                     : $boosttime sec
+#echo Tx/Rx Descriptor Count         : $tx_desc_cnt_str/$rx_desc_cnt_str
+echo Packet min/max size            : $minSize/$maxSize
+echo Segment count min/max          : $minSegCount/$maxSegCount
+echo Offset in buffer               : $minOffset/$maxOffset
+echo TX/RX DMA Buf size             : $txRingBufSize/$rxRingBufSize
+echo RPB Thresholds in percents     : $low_trsh_prc/$high_trsh_prc
+echo TC number $maxtc. TPB/RPB per TC    : $tpb_size/$rpb_size
+echo Test rings                     : $ring_lst
+
+###############################################################################
+#Enable rss and generate packets
+mac.rfc.rss.enable -l nul
+
+rssMask = (0x7 if $maxtc == 4 else 0x3)
+echo Enable RSS                     : True
+for ring in $ring_lst:
+    packetName = pkt$(ring)_i
+    packetIndex = 0
+    packetCount = 1#$uniqPacketPerRing
+    vlanGen = 1
+    minPktSize = $minSize
+    maxPktSize = $maxSize
+
+    rssGen = ($ring & $rssMask)
+    vlanPriority = $ring//$q_ct
+    dot $ring
+    #echo $newline
+
+    exec $(PWD)/helpers/packetgen.txt
+    pkt$(ring)Max = 1 #$uniqPacketPerRing
+    pkt$(ring)Cur = 0
+
+###############################################################################
+# Apply settings for loopback and flow control
+mac.get -l nul -n loopback loopback
+mac.get -l nul -n flowControl fc
+if '$loopback' in ['Deep'] or $flowControl is None:
+    rxpause      = [0 for i in xrange($maxtc*$ringPerTc)] #100 nanosec intervals
+    rxinterpause = [0 for i in xrange($maxtc*$ringPerTc)] #100 nanosec intervals
+    echo No back-preassure for loopback type: $loopback. Disable flow control
+else:
+    rxpstring = ','.join(map(lambda i : '%1.3f' % (1.0*i/10000000.0), $rxpause))
+    rxipstring = ','.join(map(lambda i : '%1.3f' % (1.0*i/10000000.0), $rxinterpause))
+    echo RPB back-preassure             : $rxpstring/$rxipstring sec
+
+echo Loopback                       : $loopback
+echo Flow Control                   : $flowControl
+
+###############################################################################
+# Apply interrupt settings
+interruptState = ('Single' if $interrupts == 'Single' else 'Multi-Vector')
+mac.isr.set Mode $interruptState -l nul
+mac.isr.get Mode -n interruptState -l nul
+
+###############################################################################
+mac.init
+###############################################################################
+
+###############################################################################
+# Enable interrupt booster and apply interrupt settings
+mac.isr.vc -l nul -n vc
+for i = 0; $i < $vc; i += 1:
+    mac.isr.boost -v $i -e 1
+
+echo Interrupts                     : $interruptState
+
+for ring in $ring_lst:
+    mac.txring[$ring].set wbThreshold 0 -l nul
+    vcr = ($ring) % $vc#(31 - $ring)
+    mac.txring[$ring].set map2vector $vcr -l nul
+    mac.txring[$ring].set map2cause $vcr -l nul
+
+    vcr = ($ring + 1) % $vc#(31 - $ring)
+    mac.rxring[$ring].set map2vector $vcr -l nul
+    mac.rxring[$ring].set map2cause $vcr -l nul
+    
+mac.set int_rx_desc_wrb_en True -l nul
+mac.set int_rx_desc_nempty_en False -l nul
+mac.set int_rx_desc_empty_en False -l nul
+
+rxInterruptThreshold = 64
+
+###############################################################################
+# Apply ring sizes and sizes of buffer for rings
+for ring in $ring_lst:
+    mac.txring[$ring].set bufSize $txRingBufSize -l nul
+    mac.txring[$ring].set maxDmaSize $txRingBufSize -l nul
+    mac.rxring[$ring].set bufSize $rxRingBufSize -l nul
+    ifdef txRingSize:
+        mac.txring[$ring].set -l nul size $txRingSize
+    ifdef rxRingSize:
+        mac.rxring[$ring].set -l nul size $rxRingSize
+    ifdef txRingSize$ring:
+        mac.txring[$ring].set -l nul size $(txRingSize$ring)
+    ifdef rxRingSize$ring:
+        mac.rxring[$ring].set -l nul size $(rxRingSize$ring)
+
+###############################################################################
+mac.txinit
+mac.rxinit
+###############################################################################
+
+###############################################################################
+# Apply workarounds
+if '$REVISION' == 'B0' and $FPGA:
+    echo Apply Kiran's fix for TPB parity error in FPGA bug 5011
+    readreg 0x7900 -n tpb_init -l nul
+    tpb_init = $tpb_init & (~(1 << 3))
+    writereg 0x7900 $tpb_init -l nul
+    pause 10 ms
+
+###############################################################################
+# Enable rings and get ring size
+for ring in $ring_lst:
+    dot $ring
+    mac.rxring[$ring].set -l nul batchFill 0 #Disable autofill after interrupt
+    mac.txring[$ring].set headWbEnable True -l nul
+    mac.rxring[$ring].set -l nul wholeRing True #Fill whole ring
+
+    mac.txring[$ring].enable
+    mac.rxring[$ring].enable
+
+    ifndef txRingSize$ring:
+        mac.txring[$ring].get -l nul -n txRingSize$ring size
+    ifndef txRingBufSize$ring:
+        mac.txring[$ring].get -l nul -n txRingBufSize$ring bufSize # Get value from dev config
+    ifndef rxRingSize$ring:
+        mac.rxring[$ring].get -l nul -n rxRingSize$ring size
+    ifndef rxRingBufSize$ring:
+        mac.rxring[$ring].get -l nul -n rxRingBufSize$ring bufSize
+    maxOffset$ring = ($maxOffset if $maxOffset >= 0 else $(txRingBufSize$ring) + $maxOffset)
+    mac.rxring[$ring].set desc_lo_thresh $rxInterruptThreshold -l nul
+
+###############################################################################
+# Enable EEE
+if $eee == True:
+    mac.mcp.set CAPS_HI_1000BASET_FD_EEE 1
+    mac.mcp.set CAPS_HI_2P5GBASET_FD_EEE 1
+    mac.mcp.set CAPS_HI_5GBASET_FD_EEE 1
+    mac.mcp.set CAPS_HI_10GBASET_FD_EEE 1
+    
+    mac.mcp.apply CAPS_HI_1000BASET_FD_EEE
+    mac.mcp.apply CAPS_HI_2P5GBASET_FD_EEE
+    mac.mcp.apply CAPS_HI_5GBASET_FD_EEE
+    mac.mcp.apply CAPS_HI_10GBASET_FD_EEE
+
+###############################################################################
+# Enable PFC for 2.x 
+readreg 0x18 -n fwVerFull
+fw_branch = $fwVerFull >> 24
+is_fw_2x = (True if $fw_branch == 2 else False)
+is_fw_3x = (True if $fw_branch == 3 else False)
+
+if '$flow_control' == 'pfc' and ($is_fw_2x == True or $is_fw_3x == True):     
+    echo Enabling PFC for firmware 2.x/3.x
+    exec $(PWD)/pfc_en_2x_3x.txt
+
+###############################################################################
+# Enable link after rx ring enabling
+mac.get -l nul -n setlink link
+mac.link Up -n linkstate -l nul
+if '$setlink' != 'None' and '$linkstate' == 'None' and not '$loopback' in ['Shallow', 'Deep']:
+    echo Error! No link!
+    mac.uninit
+    exit
+echo Link                           : $setlink/$linkstate
+
+###############################################################################
+echo Fill rings
+for ring in $ring_lst:
+    #count = random.randint($minBatchCount, $maxBatchCount) + $maxBatchCount
+    txcount$ring = 0
+    rxcount$ring = 0
+    txbytesize$ring = 0
+    prev_done_percent = 0
+    for j = 0; $(rxcount$ring) < $(rxRingSize$ring) and $minSegCount <= $(txRingSize$ring) - $(txcount$ring); j += 1:#$j < $count and 
+        done_percent = ($(txcount$ring) * 40)/$(txRingSize$ring)
+        if $prev_done_percent != $done_percent:
+            dot $done_percent
+            prev_done_percent = $done_percent
+        maxSegCountItr = min($(txRingSize$ring) - $(txcount$ring), $maxSegCount)
+        minSegCountItr = min($minSegCount, $maxSegCountItr)
+
+        segcount = random.randint($minSegCountItr, $maxSegCountItr)
+        curPktIdTag = pkt$(ring)_i$(pkt$(ring)Cur)
+        packetSize = $minSize if random.randint(0, 1) == 1 else $maxSize #random.randint($minSize, min($maxSize, $segcount*$(txRingBufSize$ring)))
+        pkt.len -i $($curPktIdTag) -n hdr_size -l nul
+        pay_len = ($packetSize - $hdr_size)
+        pkt.layer -i $($curPktIdTag) -L 200 -t HEX -f rand_crc --pay_len $pay_len
+
+        restSize = $packetSize
+        minSegSize = 1
+        maxSegSize = min($maxSize, $(txRingBufSize$ring))
+        for k = 0; $k < $segcount and $restSize > 0; k += 1:
+            params = -p $packetSize
+            segSize = random.randint($minSegSize, $maxSegSize)
+
+            segSize = max($segSize, $(txRingBufSize$ring) if $(txRingBufSize$ring) < ($restSize + $(txRingBufSize$ring) - $segSize + $segcount - $k - 1)/($segcount - $k) else 0)
+            if $restSize < $segSize or $k >= $segcount - 1:
+                segSize = $restSize
+
+            offset = random.randint($minOffset, max($minOffset, $(maxOffset$ring)-$segSize))
+            if $offset + $segSize > $(txRingBufSize$ring):
+                echo Warning! Wrong offset $offset and segsize $segSize
+                if $k < $segcount - 1:
+                    segSize = ($(txRingBufSize$ring) - $offset)
+                else:
+                    offset = ($(txRingBufSize$ring) - $segSize)
+
+            pktOffset = ($packetSize - $restSize)
+            restSize -= $segSize
+            minSegSize = 1
+            maxSegSize = min($restSize, $(txRingBufSize$ring))
+
+            params = -p $packetSize -o $offset -O $pktOffset -i $($curPktIdTag)
+
+            if $restSize > 0:
+                params = $params -e 0
+            else:
+                rxcount$ring += ($packetSize + $(rxRingBufSize$ring) - 1) // $(rxRingBufSize$ring)
+            if ($(txcount$ring) == 0) or ($(txRingSize$ring)//2 == $(txcount$ring)):
+                params = $params -w 1
+                #echo mark batch tx $(txcount$ring) rx $(rxcount$ring) j $j count $count rxRingSize $(rxRingSize$ring) txRingSize $(txRingSize$ring)
+
+            params = $params -b $segSize
+
+            #echo mac.txring[$ring].insert $params
+            mac.txring[$ring].insert $params
+            txcount$ring += 1
+            txbytesize$ring += $segSize
+            #params = -T 1 -l dumptx
+            #mac.txring[$ring].dumpdesc $params
+            #mac.txring[$ring].dumpbuf $params
+        pkt.delayer -i $($curPktIdTag) -L 200
+
+    lastBatchCount$ring = $j  #for packet and desc counting
+    mac.rxring[$ring].fill $rxRingSize
+    mac.rxring[$ring].dumpdesc 0:$rxRingSize -l nul
+    #echo tx $txcount rx $rxcount j $j count $count rxRingSize $rxRingSize txRingSize $txRingSize
+	echo $newline
+txDmaPacketCounter = 0
+rxDmaPacketCounter = 0
+txDmaBytesCounter = 0
+rxDmaBytesCounter = 0
+txMsmPacketCounter = 0
+rxMsmPacketCounter = 0
+txMsmBytesCounter = 0
+rxMsmBytesCounter = 0
+
+###############################################################################
+echo Start statistic before
+
+echo TX DMA    
+readreg 0x8800:0x880c
+echo RX DMA    
+readreg 0x6800:0x680c
+
+echo TX/RX MSM PKT/OCT
+mac.mpi.msm.counters -a base
+
+echo TX/RX MSM PAUSE
+mac.mpi.msm.counters -a pause
+
+echo RPB status
+readreg main 0x5710:0x5718 0x5720:0x5728 0x5730:0x5738 0x5740:0x5748
+echo End statistic before
+
+###############################################################################
+echo Start boost
+rxboostparam = -e 1 -s 65536
+if $integrity:
+    rxboostparam = $rxboostparam -v
+else:
+    rxboostparam = $rxboostparam -t wrong_desc
+
+log.hw disable
+log.boost disable
+for ring in $ring_lst:
+    rx_desc_cnt$ring = $rx_desc_cnt[$ring_lst.index($ring)]
+    rxpause$ring = $rxpause[$ring_lst.index($ring)]
+    rxinterpause$ring = $rxinterpause[$ring_lst.index($ring)]
+    mac.rxring[$ring].boost $rxboostparam -c $(rx_desc_cnt$ring) -p $(rxpause$ring) -i $(rxinterpause$ring)
+
+pause
+echo TX/RX MSM PAUSE
+mac.mpi.msm.counters -a pause
+
+if $txImmidiateRun:
+    txBoostOption = '-n'
+else:
+    txBoostOption = ''
+    
+for ring in $ring_lst:
+    #mac.txring[$ring].status -l cli
+    tx_desc_cnt$ring = $tx_desc_cnt[$ring_lst.index($ring)]
+    mac.txring[$ring].boost -e 1 -c $(tx_desc_cnt$ring) #$txBoostOption 
+
+if $txImmidiateRun:
+    mac.llhcache invalidate
+    for ring in $ring_lst:
+        newTail = ($(lastBatchCount$ring)//2)
+        #mac.txring[$ring].commit -c $newTail
+        mac.llh -C tdmTxDescriptorTailPointerSet $newTail $ring
+    mac.llhcache flush
+last_time = time.time()
+
+txBoostEnable = True
+txMsmPacketCounter = 0
+rxMsmPacketCounter = 0
+
+for ring in $ring_lst:
+    txLastBoostTotalBytes$ring = 0
+    txLastBoostTotalPackets$ring = 0
+    rxLastBoostTotalBytes$ring = 0
+    rxLastBoostTotalPackets$ring = 0
+    lastBoostTxTime$ring = 0
+    lastBoostRxTime$ring = 0
+    lastRxWrongPacketCount$ring = 0
+
+if $mcp_log == True:
+    mac.mcp.dbgBuffer -e
+
+###############################################################################
+# Main loop/waiting
+if $boosttime > 0:
+    pause $boosttime
+else:
+    pausetime = -($boosttime)
+    for i = 0; $i < $boost_iter; i += 1:
+        ###############################################################################
+        # handling of key pressing
+        getch -n key #-l cli
+        if $key == ord('q'):
+            echo Quit
+            break
+        if $key == ord('m'):
+            msmstat = not $msmstat
+            string = ('enabled' if $msmstat else 'disabled')
+            echo MSM Statistic $string
+        if $key == ord('b'):
+            booststat = not $booststat
+            string = ('enabled' if $booststat else 'disabled')
+            echo Boost Statistic $string
+        if $key == ord('d'):
+            dmastat = not $dmastat
+            string = ('enabled' if $dmastat else 'disabled')
+            echo DMA Statistic $string
+        if $key == ord('r'):
+            ringbooststat = not $ringbooststat
+            string = ('enabled' if $ringbooststat else 'disabled')
+            echo Boost statistic per ring $string
+        if $key == ord('+'):
+            pausetime = (10 if $pausetime >= 10 else $pausetime + 1)
+            echo Boost statistic time: $pausetime sec
+        if $key == ord('-'):
+            pausetime = (1 if $pausetime <= 1 else $pausetime - 1)
+            echo Boost statistic time: $pausetime sec
+        if $key == ord('t'):
+			for ring in $ring_lst:
+				if $txBoostEnable:
+					mac.txring[$ring].boost -e 0
+				else:
+					mac.txring[$ring].boost -e 1 -c $tx_desc_cnt
+            txBoostEnable = (not $txBoostEnable)
+            string = ('enabled' if $txBoostEnable else 'disabled')
+            echo TX boost $string
+                
+        ###############################################################################
+        # Main pause
+        pause $pausetime
+        
+        ###############################################################################
+        # Get boost statistic
+        totalBoostTxPkt = 0
+        totalBoostRxPkt = 0
+        totalBoostTxCount = 0
+        totalBoostRxCount = 0
+        boostTxSpeed = 0
+        boostRxSpeed = 0
+        boostTxMpps = 0
+        boostRxMpps = 0
+
+        for ring in $ring_lst:
+            if $txBoostEnable:
+                mac.txring[$ring].boostStat -t boostTxTime$ring -H boostTxHead$ring -c boostTxCount$ring
+            mac.rxring[$ring].boostStat -t boostRxTime$ring -H boostRxHead$ring -c boostRxCount$ring -s rxBoostTotalBytes$ring -w rxWrongDescCount$ring -W rxWrongPacketCount$ring
+
+        for ring in $ring_lst:
+            if $(rxWrongPacketCount$ring) - $(lastRxWrongPacketCount$ring) > 0:
+                wpkt = ($(rxWrongPacketCount$ring) - $(lastRxWrongPacketCount$ring))
+                echo Warning! Ring $ring received $wpkt packets with wrong crc!
+                lastRxWrongPacketCount$ring = $(rxWrongPacketCount$ring)
+
+            if $txBoostEnable and $(boostTxTime$ring) != $(lastBoostTxTime$ring):
+                boostTxTime = ($(boostTxTime$ring) - $(lastBoostTxTime$ring)) if $(lastBoostTxTime$ring) != 0 else ($pausetime * 10000000)
+                txBoostTotalBytes$ring = $(txbytesize$ring) * $(boostTxCount$ring) + $(txbytesize$ring) * $(boostTxHead$ring) // $(txRingSize$ring)
+                txBoostTotalPackets$ring = $(lastBatchCount$ring) * $(boostTxCount$ring) + $(lastBatchCount$ring) * $(boostTxHead$ring) // $(txRingSize$ring)
+                totalBoostTxPkt += $(txBoostTotalPackets$ring)
+                totalBoostTxCount += $(txBoostTotalBytes$ring)
+                txSpeed = 8 * (($(txBoostTotalBytes$ring) - $(txLastBoostTotalBytes$ring)) * 10000000.0 / ($boostTxTime.0 * 1000 * 1000 * 1000))
+                txMpps = ($(txBoostTotalPackets$ring) - $(txLastBoostTotalPackets$ring)) * 10.0 / $boostTxTime
+                boostTxSpeed += $txSpeed
+                boostTxMpps += $txMpps
+                
+                txLastBoostTotalBytes$ring = $(txBoostTotalBytes$ring)
+                txLastBoostTotalPackets$ring = $(txBoostTotalPackets$ring)
+                if $ringbooststat:
+                    txBoostAvgMpps = '%01.03f' % $txMpps
+                    txBoostAvgGbps = '%01.03f' % $txSpeed
+                    txBoostTxTimeSec = '%01.03f' % ($boostTxTime / 10000000.0)
+
+                    echo TX Boost[$ring]: ~$txBoostAvgMpps Mpps, ~$txBoostAvgGbps Gbps for $txBoostTxTimeSec sec
+            elif $txBoostEnable:
+                if $ringbooststat:
+                    echo TX Raw[$ring]: Time $(boostTxTime$ring) (100 ns), counter $(boostTxCount$ring) (of $(lastBatchCount$ring) packets), head $(boostTxHead$ring)
+
+            if $(boostRxTime$ring) != $(lastBoostTxTime$ring):
+                boostRxTime = ($(boostRxTime$ring) - $(lastBoostRxTime$ring)) if $(lastBoostRxTime$ring) != 0 else ($pausetime * 10000000)
+                rxBoostTotalPackets$ring = $(rxRingSize$ring) * $(boostRxCount$ring) + $(boostRxHead$ring) - $(rxWrongDescCount$ring)
+                rxSpeed = 8 * ($(rxBoostTotalBytes$ring) - $(rxLastBoostTotalBytes$ring)) * 10000000.0 / ($boostRxTime.0 * 1000 * 1000 * 1000)
+                rxMpps = ($(rxBoostTotalPackets$ring) - $(rxLastBoostTotalPackets$ring)) * 10.0 / $boostRxTime
+                totalBoostRxPkt += $(rxBoostTotalPackets$ring)
+                totalBoostRxCount += $(rxBoostTotalBytes$ring)
+                boostRxSpeed += $rxSpeed
+                boostRxMpps += $rxMpps
+                rxLastBoostTotalBytes$ring = $(rxBoostTotalBytes$ring)
+                rxLastBoostTotalPackets$ring = $(rxBoostTotalPackets$ring)
+
+                if $ringbooststat:
+                    rxBoostAvgMpps = '%01.03f' % $rxMpps
+                    rxBoostAvgGbps = '%01.03f' % $rxSpeed
+                    rxBoostRxTimeSec = '%01.03f' % ($boostRxTime / 10000000.0)
+
+                    echo RX Boost[$ring]: ~$rxBoostAvgMpps Mpps, ~$rxBoostAvgGbps Gbps for $rxBoostRxTimeSec sec
+            else:
+                if $ringbooststat:
+                    echo RX Raw[$ring]: Time $(boostRxTime$ring) (100 ns), counter $(boostRxCount$ring) (of $(rxRingSize$ring) descriptors), head $(boostRxHead$ring), received data size $(rxBoostTotalBytes$ring), wrong descriptor count $(rxWrongDescCount$ring)
+
+            lastBoostTxTime$ring = $(boostTxTime$ring)
+            lastBoostRxTime$ring = $(boostRxTime$ring)
+        
+        ###############################################################################
+        # Get time for statistic
+        cur_time = time.time()
+        mes_time = ($cur_time - $last_time)
+        last_time = $cur_time
+
+        ###############################################################################
+        # Get DMA statistic
+		readreg 0x8800 -l nul -n txCounterlo
+		readreg 0x8804 -l nul -n txCounterhi
+
+        curTxDmaPacketCounter = ($txCounterhi << 32) + $txCounterlo
+        txDmaMpps = ($curTxDmaPacketCounter.0 - $txDmaPacketCounter.0)/($mes_time * 1000000)
+        txDmaPacketCounter = $curTxDmaPacketCounter
+		
+		readreg 0x6800 -l nul -n rxCounterlo
+		readreg 0x6804 -l nul -n rxCounterhi
+        curRxDmaPacketCounter = ($rxCounterhi << 32) + $rxCounterlo
+        rxDmaMpps = ($curRxDmaPacketCounter.0 - $rxDmaPacketCounter.0)/($mes_time * 1000000)
+        rxDmaPacketCounter = $curRxDmaPacketCounter
+		
+		readreg 0x8808 -l nul -n txCounterlo
+		readreg 0x880c -l nul -n txCounterhi
+        curTxDmaBytesCounter = ($txCounterhi << 32) + $txCounterlo
+        txDmaGbps = 8*($curTxDmaBytesCounter.0 - $txDmaBytesCounter.0)/($mes_time * 1000 * 1000 * 1000)
+        txDmaBytesCounter = $curTxDmaBytesCounter
+		
+		readreg 0x6808 -l nul -n rxCounterlo
+		readreg 0x680c -l nul -n rxCounterhi
+        curRxDmaBytesCounter = ($rxCounterhi << 32) + $rxCounterlo
+        rxDmaGbps = 8*($curRxDmaBytesCounter.0 - $rxDmaBytesCounter.0)/($mes_time * 1000 * 1000 * 1000)
+        rxDmaBytesCounter = $curRxDmaBytesCounter
+		
+        ###############################################################################
+        # Get MSM statistic
+        if $msmstat:
+            readreg msm 0x80 -l nul -n txMsmPktCntr
+            curTxMsmPacketCounter = ($txMsmPacketCounter & 0xffffffff00000000) + $txMsmPktCntr + ((1<<32) if $txMsmPktCntr < $txMsmPacketCounter else 0)
+            txMsmMpps = ($curTxMsmPacketCounter.0 - $txMsmPacketCounter.0)/($mes_time * 1000000)
+            txMsmPacketCounter = $curTxMsmPacketCounter
+            
+            readreg msm 0x88 -l nul -n rxMsmPktCntr
+            readreg msm 0x90 -l nul -n rxMsmWrFcsPktCntr
+            readreg msm 0x98 -l nul -n rxMsmWrAlignPktCntr
+            curRxMsmPacketCounter = ($rxMsmPacketCounter & 0xffffffff00000000) + $rxMsmPktCntr + ((1<<32) if $rxMsmPktCntr < $rxMsmPacketCounter else 0)
+            rxMsmMpps = ($curRxMsmPacketCounter.0 - $rxMsmPacketCounter.0)/($mes_time * 1000000)
+            rxMsmPacketCounter = $curRxMsmPacketCounter
+
+            readreg msm 0x80 -l nul -n txMsmPktCntr
+            readreg msm 0xD0 -l nul -n txMsmCntrLo
+            readreg msm 0xD4 -l nul -n txMsmCntrHi
+            curTxMsmBytesCounter = ($(txMsmCntrHi) << 32) + $txMsmCntrLo
+            txMsmGbps = 8*($curTxMsmBytesCounter.0 - $txMsmBytesCounter.0)/($mes_time * 1000 * 1000 * 1000)
+            txMsmBytesCounter = $curTxMsmBytesCounter
+            
+            readreg msm 0xD8 -l nul -n rxMsmCntrLo
+            readreg msm 0xDC -l nul -n rxMsmCntrHi
+            
+            curRxMsmBytesCounter = ($(rxMsmCntrHi) << 32) + $rxMsmCntrLo
+            rxMsmGbps = 8*($curRxMsmBytesCounter.0 - $rxMsmBytesCounter.0)/($mes_time * 1000 * 1000 * 1000)
+            rxMsmBytesCounter = $curRxMsmBytesCounter
+
+        ###############################################################################
+        # Print statistic
+        if $booststat or $dmastat or $msmstat:
+            echo $newline
+        if $booststat:
+            txAvgGbps = '%01.03f' % $boostTxSpeed
+            rxAvgGbps = '%01.03f' % $boostRxSpeed
+            txAvgMpps = '%01.03f' % $boostTxMpps
+            rxAvgMpps = '%01.03f' % $boostRxMpps
+            echo Boost Packet/Bytes: TX $totalBoostTxPkt/$totalBoostTxCount, RX $totalBoostRxPkt/$totalBoostRxCount, Mpps:Gbps TX/RX: $txAvgMpps/$rxAvgMpps : $txAvgGbps/$rxAvgGbps
+        if $dmastat:
+            txAvgGbps = '%01.03f' % $txDmaGbps
+            rxAvgGbps = '%01.03f' % $rxDmaGbps
+            txAvgMpps = '%01.03f' % $txDmaMpps
+            rxAvgMpps = '%01.03f' % $rxDmaMpps
+            echo DMA   Packet/Bytes: TX $txDmaPacketCounter/$txDmaBytesCounter, RX $rxDmaPacketCounter/$rxDmaBytesCounter, Mpps:Gbps TX/RX: $txAvgMpps/$rxAvgMpps : $txAvgGbps/$rxAvgGbps
+        if $msmstat:
+            txAvgGbps = '%01.03f' % $txMsmGbps
+            rxAvgGbps = '%01.03f' % $rxMsmGbps
+            txAvgMpps = '%01.03f' % $txMsmMpps
+            rxAvgMpps = '%01.03f' % $rxMsmMpps
+            echo MSM   Packet/Bytes: TX $txMsmPacketCounter/$txMsmBytesCounter, RX $rxMsmPacketCounter/$rxMsmBytesCounter, Mpps:Gbps TX/RX: $txAvgMpps/$rxAvgMpps : $txAvgGbps/$rxAvgGbps
+		echo $newline
+		
+###############################################################################
+# Stop boosting
+for ring in $ring_lst:
+    mac.txring[$ring].boost -e 0
+pause 10
+for ring in $ring_lst:
+    mac.rxring[$ring].boost -e 0
+log.hw enable
+log.boost enable
+for ring in $ring_lst:
+    mac.txring[$ring].clean
+echo Stop boost
+###############################################################################
+# Gathering of statistic
+echo Get statistic
+for ring in $ring_lst:
+    mac.txring[$ring].boostStat -t lastBoostTxTime$ring -H lastBoostTxHead$ring -c lastBoostTxCount$ring
+    mac.rxring[$ring].boostStat -t lastBoostRxTime$ring -H lastBoostRxHead$ring -c lastBoostRxCount$ring -s rxBoostTotalBytes$ring -w rxWrongDescCount$ring -W rxWrongPacketCount$ring
+
+for ring in $ring_lst:
+    if $(rxWrongPacketCount$ring) > 0:
+        echo Warning! Ring $ring received $(rxWrongPacketCount$ring) packets with wrong crc!
+    txBoostTotalBytes$ring = $(txbytesize$ring) * $(lastBoostTxCount$ring) + $(txbytesize$ring) * $(lastBoostTxHead$ring) // $(txRingSize$ring)
+    txBoostTotalPackets$ring = $(lastBatchCount$ring) * $(lastBoostTxCount$ring) + $(lastBatchCount$ring) * $(lastBoostTxHead$ring) // $(txRingSize$ring)
+    rxBoostTotalPackets$ring = $(rxRingSize$ring) * $(lastBoostRxCount$ring) + $(lastBoostRxHead$ring) - $(rxWrongDescCount$ring)
+        
+echo Boost resuslts
+###############################################################################
+echo Start statistic after
+for ring in $ring_lst:
+    if $(lastBoostTxTime$ring) != 0:
+        txBoostAvgMpps = '%01.03f' % ($(txBoostTotalPackets$ring) * 10.0 / $(lastBoostTxTime$ring))
+        txBoostAvgGbps = '%01.03f' % ($(txBoostTotalBytes$ring) * 80000000.0 / ($(lastBoostTxTime$ring) * 1000 * 1000 * 1000))
+        txBoostTxTimeSec = '%01.03f' % ($(lastBoostTxTime$ring) / 10000000.0)
+        echo TX Boost[$ring]: ~$txBoostAvgMpps Mpps, ~$txBoostAvgGbps Gbps for $txBoostTxTimeSec sec
+    else:
+        echo TX Raw[$ring]: Time $(lastBoostTxTime$ring) (100 ns), counter $(boostTxCount) (of $(lastBatchCount$ring) packets), head $(boostTxHead$ring)
+
+    if $(lastBoostRxTime$ring):
+        rxBoostAvgMpps = '%01.03f' % ($(rxBoostTotalPackets$ring) * 10.0 / $(lastBoostRxTime$ring))
+        rxBoostAvgGbps = '%01.03f' % ($(rxBoostTotalBytes$ring) * 80000000.0 / ($(lastBoostRxTime$ring) * 1000 * 1000 * 1000))
+        rxBoostRxTimeSec = '%01.03f' % ($(lastBoostRxTime$ring) / 10000000.0)
+
+        echo RX Boost[$ring]: ~$rxBoostAvgMpps Mpps, ~$rxBoostAvgGbps Gbps for $rxBoostRxTimeSec sec
+    else:
+        echo RX Raw[$ring]: Time $(boostRxTime$ring) (100 ns), counter $(lastBoostRxCount$ring) (of $(rxRingSize$ring) descriptors), head $(boostRxHead$ring), received data size $(rxBoostTotalBytes$ring), wrong descriptor count $(rxWrongDescCount$ring)
+
+echo TX DMA    
+readreg 0x8800:0x880c
+echo RX DMA    
+readreg 0x6800:0x680c
+
+echo TX/RX MSM PKT/OCT
+mac.mpi.msm.counters -a base
+
+echo TX/RX MSM PAUSE
+mac.mpi.msm.counters -a pause
+
+echo RPB status
+readreg main 0x5710:0x5718 0x5720:0x5728 0x5730:0x5738 0x5740:0x5748
+echo End statistic after
+
+###############################################################################
+#mac.mpi.msm.counters
+for i = 0; $i < $vc; i += 1:
+    mac.isr.boost -v $i -e 0
+
+for ring in $ring_lst:
+    mac.txring[$ring].set wbThreshold 1 -l nul
+    mac.rxring[$ring].set -l nul wholeRing False #Fill whole ring
+
+mac.txuninit
+mac.rxuninit
+mac.uninit

@@ -1,0 +1,26 @@
+rand_sc = False
+if $frag == -1:
+	rand_sc = True
+
+for run_ct = 0; $run_ct < $testloop_end; run_ct += 1:
+	shell echo $run_ct > $run_ct_file
+	if $rand_sc:
+		frag = random.randint(1,16)  #random for each case in loop
+		pb_limit = eval("$tbp_rpb_tuple[0]")  #temporary fix
+		pb_limit = ($pb_limit * 1024) - (128 * 8)
+		maxPacketSize = min($pb_limit, 0x4000)   # 16 KB
+		
+		potential_limit = ($frag * 2047)
+		if $potential_limit >= $maxPacketSize:
+			frag_limit = ($maxPacketSize // $frag)
+		else:
+			frag_limit = 2047
+		ss_tuple = [$frag_limit for _ in xrange($frag)]
+	BP = random.randint(0,1)
+	echo BP = $BP
+	exec $path/run_test.txt
+	if $error != 0:
+		break
+	echo $run_ct HAD NO ERRORS
+
+shell echo $run_ct > $run_ct_file

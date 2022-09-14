@@ -1,0 +1,54 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4295.txt $
+# $Revision: #6 $
+# $DateTime: 2016/01/25 21:30:00 $
+# $Author: oxy $
+#
+#Vlan insertion/filtering and striping
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+ifndef logTag:
+    logTag = -l cli
+
+dstRing = 12
+vlan_tag = 0x123
+mac.set loopback System Packet      $logTag
+mac.rfc.set VlanPromiscousMode False $logTag
+
+mac.rfc.vlan[0].set vlan $vlan_tag   $logTag
+mac.rfc.vlan[0].set queue $dstRing   $logTag
+mac.rfc.vlan[0].set action Host      $logTag
+mac.rfc.vlan[0].set action Host      $logTag
+mac.rfc.vlan[0].set enable True      $logTag
+
+mac.init                           
+mac.txinit                    
+mac.rxinit
+mac.rxring[$dstRing].set vlanStrip True $logTag
+mac.rxring[$dstRing].enable            
+mac.rxring[$dstRing].fill 1
+mac.rxring[$dstRing].commit
+mac.txring[0].enable
+mac.txring[0].insertcontext -I 0 -V $vlan_tag
+mac.txring[0].insert -C 0 -f tcp_ip_indexed_uniq_ramp -v 1 -b 64
+mac.txring[0].dumpdesc -T 2:1       $logTag
+mac.txring[0].dumpbuf -T 1          $logTag
+mac.txring[0].commit
+pause 100 ms
+mac.txring[0].clean
+mac.rxring[$dstRing].clean 
+mac.txring[0].status                $logTag
+mac.rxring[$dstRing].status         $logTag
+mac.rxring[$dstRing].dumpdesc -H 1  $logTag
+mac.rxring[$dstRing].dumpbuf -H 1   $logTag
+
+mac.txring[0].isEmpty -n txempty    $logTag   
+mac.rxring[$dstRing].isEmpty -n rxempty $logTag
+
+if $rxempty and $txempty:
+else:
+    finalReport = $finalReport + ['$rxempty or not $txempty']
+
+exec $(PWD)/helpers/showTestResult.txt #to show results [] in manual run mode
+
+mac.uninit
+mac.rfc.set VlanPromiscousMode True $logTag  #workaround to cleanup

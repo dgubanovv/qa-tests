@@ -1,0 +1,15 @@
+#check error from status register
+#use global variables: queue, expectedPacketOffset, 
+#   expectedIsFull, expectedTruncationError, expectedOverflowError, 
+#   expectedParityError, expectedPacketCount, finalReport
+
+mac.llhcache on
+exec $(SCRIPT_PATH)/injectorCheckers/checkPacketOffset.txt
+if '$injType' == 'rx':
+    exec $(SCRIPT_PATH)/injectorCheckers/checkFull.txt
+exec $(SCRIPT_PATH)/injectorCheckers/checkTruncationError.txt
+exec $(SCRIPT_PATH)/injectorCheckers/checkOverflowError.txt
+exec $(SCRIPT_PATH)/injectorCheckers/checkParityError.txt
+mac.llhcache on
+    
+

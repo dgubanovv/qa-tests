@@ -1,0 +1,93 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/QoS/baseTps.txt $
+# $Revision: #7 $
+# $DateTime: 2016/11/30 02:25:33 $
+# $Author: stalanin $
+#
+#Base TPS test script
+
+hostAlreadyInitiated = False
+log.hw.disable
+
+ifndef rxRingNo:
+    rxRingNo = 0
+ifndef logTag:
+    logTag = -l cli
+
+tpbsize = 128               # FPGA limitation
+
+ifndef test_num:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+	targetByteCount = 4096
+	basePacketLength = 1024
+	
+maxtc = 8
+tpbPerTcSize = ($tpbsize/$maxtc)
+mac.txpb[0:$maxtc].set -l nul size $tpbPerTcSize
+mac.set txDcbTcCount $maxtc $logTag
+
+outputFile = $LOG_PATH/out.txt
+
+packetCount = 950
+ramSize = 0x7800
+
+txRings = 0,1,2,3
+txRingSize = 1024
+txRingsArr = [$txRings]
+
+
+if $hostAlreadyInitiated == False:
+    mac.set loopback None
+    #mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    
+    for txRingNo in $txRingsArr:
+        mac.txring[$txRingNo].set PacketMark None -l nul
+        mac.txring[$txRingNo].set size $txRingSize -l nul
+    mac.txinit
+    mac.txring[$txRings].enable    # Prepare Tx ring
+
+    mac.isr.disable
+    mac.mcp.bootLoadCld $SCRIPT_PATH/atlantic_Ram.cld
+
+exec $(PWD)/../helpers/workaroundBug4921.txt	
+mac.llh regGlobalMicroprocessorScratchPadSet 0x8808 1
+mac.llh regGlobalMicroprocessorScratchPadSet 1 0
+
+mac.llh tpsTxPacketSchedulerVmTargetByteCountProfileSet $targetByteCount 0
+
+pause 1 s
+for txRingNo in $txRingsArr:
+    packetLength = ($basePacketLength & 0xFFFFFFE0 )| $txRingNo
+    #echo $packetLength
+    for i = 0; $i < $packetCount; i += 1:
+        mac.txring[$txRingNo].insert -b $packetLength -p $packetLength -f indexed_uniq_ramp
+
+readMux -s 256 main 0x7700 0x7704 -l nul
+
+mac.llhcache invalidate
+for txRingNo in $txRingsArr:
+    mac.txring[$txRingNo].commit -c
+mac.llhcache flush
+
+pause 3 s
+
+readMux -s 256 main 0x7700 0x7704 -l nul
+
+mac.txring[$txRings].clean
+mac.txring[0:32].status -l cli
+
+mac.llh -v baseAddr regGlobalMicroprocessorScratchPadGet 4
+baseAddr = ($baseAddr - 0x80000000)
+
+mac.llh -v pCount regTxDmaStatisticsCounter1Get
+exec $SCRIPT_PATH/helpers/readSingleValues.txt
+
+outputFileName=$outputFile
+byteCountValIndex=0
+exec $SCRIPT_PATH/helpers/calcRingNumByByteCount.txt
+
+
+echo See output in $outputFile
+mac.uninit
+
+log.hw.enable

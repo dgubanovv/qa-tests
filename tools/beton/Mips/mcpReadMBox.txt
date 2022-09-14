@@ -1,0 +1,74 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mips/mcpReadMBox.txt $
+# $Revision: #3 $
+# $DateTime: 2016/06/10 02:38:43 $
+# $Author: oxy $
+#
+# Reads F/W<->Driver xchange MailBox
+
+# WW stuf {
+finalReport = []
+
+test_num_ndef = True
+ifdef test_num:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    logTag = -l cli
+else:
+    ifndef logTag:
+        logTag = -l cli
+# WW stuf }
+
+MBoxBaseAddr = 0
+readreg 0x360 -n MBoxBaseAddr $logTag
+if 0 == $MBoxBaseAddr:
+    finalReport = $finalReport + ["(0) F/W is not started 0 == MBoxBaseAddr"]
+if 0x1FB00000 != ($MBoxBaseAddr&0xFFF00000):
+    MBoxBaseAddrHex = hex($MBoxBaseAddr)
+    finalReport = $finalReport + ["(1) Invalid base addr $MBoxBaseAddrHex == MBoxBaseAddr"]
+
+sema = 0
+for i = 0 ; $i<100; i += 1:
+    readreg 0x03a8 -n sema        $logTag
+    if $sema:
+        break
+
+if not $sema:
+    finalReport = $finalReport + ["(2) Can't aquire RAM semaphore $sema == [0x03a8]"]
+else:
+    MBoxVer = 0
+    writereg 0x0208 $MBoxBaseAddr $logTag
+    writereg 0x0200 0x00008000    $logTag
+    readreg  0x020C -n MBoxVer    $logTag
+    #mac.mcp.readmem $MBoxBaseAddr -n MBoxVer $logTag
+    if 10 < $MBoxVer:
+        finalReport = $finalReport + ["(3) Invalid MBoxVer  $MBoxVer == MBoxVer"]
+
+    MBoxTidOld = 0
+    writereg 0x0200 0x00008000    $logTag
+    readreg  0x020C -n MBoxTidOld $logTag
+    MBoxTidNew = 0
+    MBoxAddr = $MBoxBaseAddr + 4
+    writereg 0x0208 $MBoxAddr     $logTag
+    writereg 0x0200 0x00008000    $logTag
+    readreg  0x020C -n MBoxTidNew $logTag
+    if $MBoxTidNew == $MBoxTidOld:
+        finalReport = $finalReport + ["(4) Transaction Id doesnt work $MBoxTidNew == MBoxTidNew $MBoxTidOld == MBoxTidOld"]
+
+    MBoxErr = 0
+    writereg 0x0200 0x00008000    $logTag
+    readreg  0x020C -n MBoxErr    $logTag
+    if $MBoxErr:
+        finalReport = $finalReport + ["(5) $MBoxErr == MBoxErr"]
+
+    counters = ["uprc","mprc","bprc","erpt","uptc","mptc","bptc","erpr","mbtc","bbtc","mbrc","ubrc","ubtc","bbrc"]
+    for i = 0 ; $i<13; i += 1:
+        writereg 0x0200 0x00008000  $logTag
+        readreg  0x020C -n cnt      $logTag
+        $name = $counters[$i]
+        echo $name == $cnt
+        
+    writereg 0x03a8 1               $logTag
+
+exec helpers/showTestResult.txt #to show results [] in manual run mode

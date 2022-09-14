@@ -1,0 +1,18 @@
+#drvMsgOffloadAdd
+
+addr = $BASEADDR
+
+mac.mcp.writemem $addr $drvMsgOffloadAdd -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $priority -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $protocolOffloadType -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $protocolOffloadId -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $nextProtocolOffloadOffset -l nul
+addr = $addr + 4

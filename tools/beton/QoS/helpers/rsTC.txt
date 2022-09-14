@@ -1,0 +1,11 @@
+#Enable rate shapers
+#INPUT: rateMode - Q-RS or TC-RS, tcArr - array of TCs, ratesInt - array of integral part, ratesFrac - array of fractional part
+mac.tps.set descRateMode $rateMode
+i=0
+for tcNo in $tcArr:
+    curRateInt = $ratesInt[$i]
+    curRateFrac = $ratesFrac[$i]
+    mac.tps.rs $tcNo set enable True
+    mac.tps.rs $tcNo set int $curRateInt
+    mac.tps.rs $tcNo set frac $curRateFrac
+    i+=1

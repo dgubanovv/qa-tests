@@ -1,0 +1,260 @@
+# Script for extraction overflow on mng queue0 using mac filter
+
+hostAlreadyInitiated = False
+txRingNo = 0
+truncatePackets = True
+packetLen = 128
+
+segCount = 1 #Number of segments to split packet onto
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq
+
+# Tx Extractor prepare
+
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+
+readreg $txExtStatus2Reg -n status2Reg
+nPackets = $status2Reg & $txExtCntMask
+if $nPackets > 0:
+    echo Please run script on clear queue
+    exit
+
+# Set mode
+# Set corresponding filters enable and clear other
+
+readreg $txExtCtrlReg -n txExtCtrl
+if $truncatePackets == True:
+    txExtCtrl = $txExtCtrl | $txExtLimitMask
+else:
+    txExtCtrl = $txExtCtrl & ~$txExtLimitMask
+txExtCtrl = $txExtCtrl & ~$txExtReplicateMask
+txExtCtrl = $txExtCtrl | $txExtMACFilterMask
+txExtCtrl = $txExtCtrl & ~$txExtIPFilterMask
+txExtCtrl = $txExtCtrl & ~$txExtARPFilterMask
+writereg $txExtCtrlReg $txExtCtrl
+
+macFilterLSW = 0x02030405
+macFilterMSW = 0x00000001
+writereg $txExtMACFilter0LSWReg $macFilterLSW
+writereg $txExtMACFilter0MSWReg $macFilterMSW 
+
+# Read status reg1 to self-clear errors
+readreg $txExtStatus1Reg
+
+# Read other status regs for information
+readreg $txExtStatus2Reg
+readreg $txExtStatus3Reg
+
+finalReport = [] # final report is useful when command line window has huge output
+
+segmentLen = ($packetLen / $segCount / 4) * 4
+segmentLenLast = $packetLen - ($segmentLen * ($segCount - 1))
+
+# Multiple packets send
+extQueueSize = 8
+nPacketsToOverflow = 0 # (0, 1, 2, ...), after fix 4030 (1, 2, ...)
+nPacketsToOverflow = $extQueueSize + $nPacketsToOverflow
+nReleasePackets = 2 # (2, 3, ...), after fix 4030 (1, 2, 3, ...) will be possible
+for packetCnt = 0; $packetCnt < $nPacketsToOverflow; packetCnt += 1:
+    for segment = 0; $segment < $segCount; segment += 1:
+        if $segment < $segCount - 1:
+            len = $segmentLen
+        else:
+            len = $segmentLenLast
+        mac.txring[$txRingNo].insert -b $len -p $packetLen -f indexed_uniq_ramp
+    if $packetCnt == $nReleasePackets - 1:
+    # save buffer address of the packet that will be readen last during space releasing
+    mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr
+
+totalSegments = $packetCnt * $segCount
+mac.txring[$txRingNo].dumpdesc -T $totalSegments:1 -l dumptx
+mac.txring[$txRingNo].dumpbuf -T $totalSegments:1 -l dumptx
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+# Check overflow flag
+readreg $txExtStatus1Reg -n status1Reg
+if ($status1Reg & $txExtOfMask) != $txExtOfMask:
+    status1RegStr = hex($status1Reg)
+    str = 'Overflow Error bit is not set $status1RegStr after multiple packets send (1)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+
+# Send more packets (queue has no enough space)
+for packetCnt = 0; $packetCnt < 2; packetCnt += 1:
+    mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+
+mac.txring[$txRingNo].dumpdesc -T $packetCnt:1 -l dumptx
+mac.txring[$txRingNo].dumpbuf -T $packetCnt:1 -l dumptx
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+# Check overflow flag again
+readreg $txExtStatus1Reg -n status1Reg
+if ($status1Reg & $txExtOfMask) != $txExtOfMask:
+    status1RegStr = hex($status1Reg)
+    str = 'Overflow Error bit is not set $status1RegStr after send more packets (2)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+
+# Read several first packets from the queue (and release some space)
+readreg $txExtStatus2Reg -n status2Reg
+nPackets = $status2Reg & $txExtCntMask
+if $nPackets != $extQueueSize:
+    str = 'Wrong packet count $nPackets on $nReleasePackets first packet read (3)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+    exit
+if ($status1Reg & $txExtRdyMask) != $txExtRdyMask:
+    status1RegStr = hex($status1Reg)
+    str = 'Ready bit is not set $status1RegStr (4)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+
+# Select Queue
+txExtCtrl = $txExtCtrl & ~$txExtSelectQueueMask
+writereg $txExtCtrlReg $txExtCtrl
+txExtCtrl0 = $txExtCtrl & ~$txExtReadMask
+txExtCtrl1 = $txExtCtrl | $txExtReadMask
+
+for readCnt = 0; $readCnt < $nReleasePackets; readCnt += 1:
+    bufStr = ' '
+    for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+        # generate rising edge
+        writereg $txExtCtrlReg $txExtCtrl0
+        writereg $txExtCtrlReg $txExtCtrl1
+        readreg $txExtDataReg -n dataExtracted
+        bufStr = '$bufStr' + ' ' + hex($dataExtracted)
+
+        readreg $txExtStatus2Reg -n status2Reg
+        eop = $status2Reg & $txExtEopMask
+        if $eop <> 0:
+            byteCnt += 4
+            break
+    writereg $txExtCtrlReg $txExtCtrl0
+
+# Process data_vld field for last readen packet
+valid = ($status2Reg & $txExtDataValidMask) >> $txExtDataValidShift
+if $valid > 0:
+    for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+        byteCnt = $byteCnt + 0 - 1
+else:
+    byteCnt = $byteCnt + 0 - 4
+
+readreg $txExtStatus3Reg -n extOffset
+if $extOffset != 0:
+    extOffsetStr = hex($extOffset)
+    str = 'Wrong ext_offset $extOffsetStr after extraction (5)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+
+nPackets = $status2Reg & $txExtCntMask
+if $nPackets != $extQueueSize - $nReleasePackets:
+    str = 'Wrong packet count $nPackets after $nReleasePackets first packet read (6)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+
+# Check received data
+# @note: is there any way to acquire mem.cmp result to stop next execution?
+if $byteCnt != $packetLen:
+    str = 'Wrong byte count $byteCnt on first packet read (7)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+mem.cmp -p $pAddr -s $byteCnt -V $bufStr
+
+# Read the status reg after space was released to clear overflow flag
+readreg $txExtStatus1Reg -n status1Reg
+if ($status1Reg & $txExtOfMask) == 0:
+    status1RegStr = hex($status1Reg)
+    str = 'Overflow Error bit is cleared $status1RegStr after space was released without reading (8)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+    readreg $txExtStatus1Reg -n status1Reg
+    if ($status1Reg & $txExtOfMask) != 0:
+        status1RegStr = hex($status1Reg)
+        str = 'Overflow Error bit is set $status1RegStr after space was released and re-read (9)'
+        echo $str
+        finalReport = $finalReport + ['$str']
+
+# Send next packet (after some space was released)
+mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr
+mac.txring[$txRingNo].dumpdesc -T 1 -l dumptx
+mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+# Check packet received successfully
+readreg $txExtStatus1Reg -n status1Reg
+if ($status1Reg & $txExtOfMask) != 0:
+    status1RegStr = hex($status1Reg)
+    str = 'Overflow Error bit is set $status1RegStr after send packet on some space released (10)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+
+startExtCnt = ($nReleasePackets - 1)
+for extCnt = $startExtCnt; $extCnt < $extQueueSize; extCnt = $extCnt + 1:
+    readreg $txExtStatus2Reg -n status2Reg
+    nPackets = $status2Reg & $txExtCntMask
+    if $nPackets != $extQueueSize - $extCnt:
+        str = 'Wrong packet count $nPackets after queue re-fill on $extCnt packets readen (11)'
+        echo $str
+        finalReport = $finalReport + ['$str']
+    
+    # Select Queue
+    writereg $txExtCtrlReg $txExtCtrl
+    
+    bufStr = ' '
+    for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+        # generate rising edge
+        writereg $txExtCtrlReg $txExtCtrl0
+        writereg $txExtCtrlReg $txExtCtrl1
+        readreg $txExtDataReg -n dataExtracted
+        bufStr = '$bufStr' + ' ' + hex($dataExtracted)
+
+        readreg $txExtStatus2Reg -n status2Reg
+        eop = $status2Reg & $txExtEopMask
+        if $eop <> 0:
+            byteCnt += 4
+            break
+    writereg $txExtCtrlReg $txExtCtrl0
+
+# Process data_vld field for last readen packet
+valid = ($status2Reg & $txExtDataValidMask) >> $txExtDataValidShift
+if $valid > 0:
+    for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+        byteCnt = $byteCnt + 0 - 1
+else:
+    byteCnt = $byteCnt + 0 - 4
+
+nPackets = $status2Reg & $txExtCntMask
+if $nPackets != 0:
+    str = 'Wrong packet count $nPackets after all packets read (12)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+
+# Check received data
+# @note: is there any way to acquire mem.cmp result to stop next execution?
+if $byteCnt != $packetLen:
+    str = 'Wrong byte count $byteCnt on last packet read (13)'
+    echo $str
+    finalReport = $finalReport + ['$str']
+mem.cmp -p $pAddr -s $byteCnt -V $bufStr
+
+if len($finalReport) > 0:
+    echo
+    echo FinalReport:
+    for str in $finalReport:
+        echo $str
+echo Script done
+cmd

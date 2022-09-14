@@ -1,0 +1,33 @@
+#extraction helper script
+#Use global values: 
+#IN: queue - num of tested queue
+#pAddr - memory address of begin of expected packet
+#logTag - defined logging
+#INOUT: finalReport
+
+bufStr = ' '
+mac.llh $extractionSelectSet $queue
+for byteCnt = 0; $byteCnt < 2048; byteCnt += 4:
+    # generate rising edge
+    mac.llh $extractionReadSet 0
+    mac.llh $extractionReadSet 1
+    mac.llh -v dataExtracted $extractionQueuePacketDataGet
+    if '$extractionReadSet' == 'rpoRxExtractionReadSet':
+        dataExtracted = ($dataExtracted & 0xFF) << 24 | ($dataExtracted & 0xFF00) << 8 | ($dataExtracted & 0xFF0000) >> 8 | ($dataExtracted & 0xFF000000) >> 24
+    bufStr = '$bufStr' + ' ' + hex($dataExtracted)
+    mac.llh -v eop $extractionQueueEopGet
+    if $eop <> 0:
+        byteCnt += 4
+        break
+mac.llh $extractionReadSet 0
+mac.llh -v valid $extractionQueueByteValidGet
+if $valid > 0:
+    for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+        byteCnt = $byteCnt + 0 - 1
+else:
+    byteCnt = $byteCnt + 0 - 4
+mem.cmp -p $pAddr -s $byteCnt -V $bufStr -n compareResult $logTag
+#mem.dump -p $pAddr -s $byteCnt -l cli
+#echo bufStr = $bufStr
+if $compareResult != True:
+    finalReport = $finalReport + ['Memory compare failed']

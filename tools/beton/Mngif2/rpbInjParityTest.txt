@@ -1,0 +1,189 @@
+# Script for injection with par_chk_sense on mng queue0
+# To make test packets unique, $mark variable is used. It is incremented on every run.
+# But it should be initialized with start value before first run, e.g. mark = 0 in cli
+# or by pseudo-condition in this script
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    rxRingNo = 0
+    injType = tx
+    queue = 0
+    queueActive = [1, 0]
+    txRingNo = 0
+    packetLen = 129
+    logTag = -l cli
+else:
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef injType:
+        injType = tx
+    ifndef queue:
+        queue = 0
+    ifndef queueActive:
+        queueActive = [1, 0]
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef packetLen:
+        packetLen = 129
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef mark:
+    mark = 0
+
+# Packet receive prepare
+if $hostAlreadyInitiated == False:
+    if '$injType' == 'tx':
+        mac.set loopback System Packet $logTag # deep loopback
+    else:
+        mac.set loopback None $logTag # No loopback
+    mac.init
+    mac.isr.disable
+    if '$injType' == 'tx':
+        mac.txinit
+        mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill      # Without parameters: by default 0xFFFF
+    mac.rxring[$rxRingNo].commit    # Without parameters: by default 0xFFFF
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+
+if '$injType' == 'tx':
+    exec $PWD/helpers/tpbInjectorLlhNames.txt
+else:
+    exec $PWD/helpers/rpbInjectorLlhNames.txt
+# Rx Injector prepare
+
+if '$injType' == 'tx':
+    mac.llh rpfL2PromiscuousModeEnableSet 1
+    mac.llh rpfVlanPromiscuousModeEnableSet 1
+    mac.llh rpfL2BroadcastCountThresholdSet 256
+    mac.llh rpfL2BroadcastFilterActionSet 2
+    mac.llh rpfL2BroadcastCountResetSet 0
+    mac.llh rpfRxPathByteSwapEnableSet 0
+    mac.llh rpfL2BroadcastEnableSet 0
+
+rpbHdrQueueNumShift = 12
+rpbHdrPktTypeShift = 4
+
+pktType = 0
+if '$injType' == 'tx':
+    headerLen = 12
+else:
+    headerLen = 16
+
+# Inject
+
+# Select injection queue
+mac.llh $injectionSelectSet $(queue)
+
+# Send packet with rxParChkSenseMask = 0 (default),
+# packet with rxParChkSenseMask = 1 (to set parity error),
+# and then packet with rxParChkSenseMask = 0 again
+for packetNo = 0; $packetNo < 3; packetNo += 1:
+    checkMask = 0
+    if $packetNo == 1:
+        checkMask = 1
+        mac.llh $pathParityCheckSenseSet 1
+    else:
+        if $packetNo == 2:
+            mac.llh $pathParityCheckSenseSet 0
+    # 1. Injection
+    mark = $mark + 1
+    
+    # SOP = 1
+    mac.llh $injectionPacketSopSet 1
+
+    # Packet Len Header Word
+    if '$injType' == 'tx':
+        headerWord = $packetLen
+    else:
+        headerWord = ($packetLen << 16)
+
+    mac.llh $injectionPacketDataSet $headerWord
+
+    # SOP = 0
+    mac.llh $injectionPacketSopSet 0
+
+    # Header Rest
+    for hdrByteCnt = 4; $hdrByteCnt < $headerLen; hdrByteCnt += 4:
+        if $hdrByteCnt == 8:
+            headerWord = ($rxRingNo << $rpbHdrQueueNumShift) | ($pktType << $rpbHdrPktTypeShift)
+        else:
+            headerWord = 0
+        mac.llh $injectionPacketDataSet $headerWord
+    
+    bufStr = ' '
+    for byteCount = 0; $byteCount < $packetLen; byteCount += 4:
+        if $byteCount + 4 >= $packetLen:
+            # EOP = 1
+            mac.llh $injectionPacketEopSet 1
+            byte3 = $mark
+        else:
+            byte3 = $byteCount + 3
+        
+        byte0 = $byteCount
+        byte1 = $byteCount + 1
+        byte2 = $byteCount + 2
+        packetWord = (($byte3 << 24) & 0xFF000000) | (($byte2 << 16) & 0x00FF0000) | (($byte1 << 8) & 0x00000FF00) | ($byte0 & 0x0000000FF)
+        mac.llh $injectionPacketDataSet $packetWord
+        packetWordToCompare = (($byte3 << 24) & 0xFF000000) | (($byte2 << 16) & 0x00FF0000) | (($byte1 << 8) & 0x00000FF00) | ($byte0 & 0x0000000FF)      
+        bufStr = '$bufStr' + ' ' + hex($packetWordToCompare)
+
+    # EOP = 0
+    mac.llh $injectionPacketEopSet 0
+
+    # Check errors
+    
+    expectedPacketOffset = 0
+    expectedIsFull = 0
+    expectedTruncationError = 0
+    expectedOverflowError = 0
+    expectedParityError = $checkMask
+    stringId = '(2)'
+    exec $PWD/helpers/checkInjQueueErrors.txt
+    
+    # 2. Reception
+
+    mac.rxring[$rxRingNo].clean
+    mac.rxring[$rxRingNo].status $logTag
+    mac.rxring[$rxRingNo].dumpdesc -H 1 -l dumprx
+    mac.rxring[$rxRingNo].dumpbuf -H 1 -l dumprx --size 80
+
+    mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n pAddr $logTag
+    mac.rxring[$rxRingNo].getdescval -H 1 -f size -n byteCnt $logTag
+    # Check received data
+    if $byteCnt != $packetLen:
+        str = 'Wrong byte count $byteCnt received; iter = $packetNo'
+        finalReport = $finalReport + [$str]
+    mem.cmp -p $pAddr -s $packetLen -V $bufStr -n compareResult $logTag
+    mem.dump -p $pAddr -s $packetLen -l cli
+    if $compareResult != True:
+        finalReport = $finalReport + ['(3) Memory compare failed']
+    
+    mac.llh -v regVal regRxPacketBufferControl1Get
+    regVal = $regVal | 0x4
+    mac.llh regRxPacketBufferControl1Set $regVal
+    
+    # 3. Check selfclean Parity Error
+    expectedParityError = 0
+    stringId = '(3)'
+    exec $PWD/helpers/checkInjQueueErrors.txt
+
+readreg 0x7040
+exec $PWD/helpers/showTestResult.txt
+mac.uninit
+
+echo TODO: byte ordering, use BitFieldFunc instead of RegisterFunction

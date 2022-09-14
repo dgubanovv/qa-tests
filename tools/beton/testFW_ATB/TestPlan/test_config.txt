@@ -1,0 +1,90 @@
+###############################################################################
+# TEST CONFIG
+###############################################################################
+
+#temporary values
+maxPktSize = 1500
+maxSegSize = 1500
+
+#random segment counts set frag = -1
+rand_sc = False
+if $frag == -1:
+	rand_sc = True
+	frag = random.randint(1,16)
+
+#max size of each descriptor (of each traffic class) for each test
+tc_num = 0
+for pb_size in $tbp_rpb_tuple: 
+	if $rand_sc == True:
+		pb_limit = ($pb_size * 1024) - (128 * 8)
+		curr_maxPacketSize = min($pb_limit, $maxPktSize)
+		
+		potential_limit = ($frag * $maxSegSize)
+		if $potential_limit >= $curr_maxPacketSize:
+			frag_limit = ($curr_maxPacketSize // $frag)
+		else:
+			frag_limit = $maxSegSize
+		ss_tuple = [$frag_limit for _ in xrange($frag)]
+	
+	frag_num = 1
+	echo ss_tuple = $ss_tuple
+	for segment_size in $ss_tuple:
+		frag$(frag)Size$(frag_num)Tc$(tc_num) = $segment_size
+		frag_num += 1
+	tc_num += 1
+tc_num -= 1
+
+#number of packets to send
+#sp = 65536  #CHANGE
+
+#indicates whether packet offset needed
+withOffset = 1
+
+#max packet offset
+maxOffset = 16
+
+#min size of each packet for each test
+minSize = 64
+
+txBufSize = 0x800 		# 2 KB - SW designed
+rxBufSize = 0x800 		# 2 KB - SW designed
+lastRingItem = ($ringSize - 1)
+
+#CHANGECHANGE delete ringsPerClass
+
+#offset value
+randomOffset1 = 0
+randomOffset2 = 0
+randomOffset3 = 0
+randomOffset4 = 0
+randomOffset5 = 0
+randomOffset6 = 0
+randomOffset7 = 0
+randomOffset8 = 0
+randomOffset9 = 0
+randomOffset10 = 0
+randomOffset11 = 0
+randomOffset12 = 0
+randomOffset13 = 0
+randomOffset14 = 0
+randomOffset15 = 0
+randomOffset16 = 0
+
+#is back pressure
+#BP = 1
+
+refreshCounter = 0
+rrStart = 0
+mark = "newline"
+error = 0
+files = 
+testplanName = Test_plan.xls
+
+z = 0
+fixtureName = info__
+for pb_size in $tbp_rpb_tuple:
+	fixtureName = $(fixtureName)_tpbsize$(z)=$(pb_size)
+	fixtureName = $(fixtureName)_rpbsize$(z)=$(pb_size)___
+	z += 1
+
+scmp.loopbackAutofill

@@ -1,0 +1,63 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Regression/test0152_bugs.txt $
+# $Revision: #22 $
+# $DateTime: 2016/06/27 04:19:57 $
+# $Author: dmitryb $
+#
+# Thi is sample auto-test runner code, ready to copy&paste
+#
+testSetUp    = $(PWD)/helpers/testSetUp.txt
+testRunner   = $(PWD)/helpers/testRun.txt
+testTearDown = $(PWD)/helpers/testTearDown.txt
+path = $(PWD)/Bugs/                            #Path to test scripts, for real could be Mngif2/ or Mips/ etc
+
+exec $testSetUp                                #Copy&Paste as many sections between test-separator-s as you need tests
+#------------------test-separator--------------------
+testName = bug4663.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------                                             
+testName = bug4247.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4295.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4400.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4646.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4654.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4594.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4650.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4780.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4641.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4761.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4837.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug4841.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug5069.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug5085.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+testName = bug5138.txt                         #Test file name, will be displayed 
+exec $testRunner
+#------------------test-separator--------------------
+exec $testTearDown

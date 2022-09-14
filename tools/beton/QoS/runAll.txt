@@ -1,0 +1,354 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/QoS/runAll.txt $
+# $Revision: #4 $
+# $DateTime: 2016/11/30 02:25:33 $
+# $Author: stalanin $
+#
+#auto run test cases
+
+testResultPath=$LOG_PATH/results
+shell mkdir $testResultPath
+outputFile = $LOG_PATH/out.txt
+main=$SCRIPT_PATH/main.txt
+txRingSize = 1024
+targetByteCountArr=[64]  # TBC = 4096 removed - see 4619
+basePacketLength = 1300
+packetCount = 950
+logTag=-l nul
+test_num = 1
+#------------------------------------------------------------
+#------------------------------------------------------------
+#    \\   // ||\  /||  ||--\\ ||--\\
+#     \\ //  || \/ ||  ||__// ||__//
+#      \\/   ||    ||  || \\  || \\
+#------------------------------------------------------------
+#------------------------------------------------------------
+testCaseFolder = $testResultPath/vmRR
+shell mkdir $testCaseFolder
+txRings = 0,1
+txRingsArr = [$txRings]
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outRR2QL$(basePacketLength)TBC$(targetByteCount).txt
+    exec $main
+#------------------------------------------------------------
+txRings = 0,1,2,3
+txRingsArr = [$txRings]
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outRR4QL$(basePacketLength)TBC$(targetByteCount).txt
+    exec $main
+#------------------------------------------------------------
+txRings = 0,1,4,5
+txRingsArr = [$txRings]
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outRR2TCL$(basePacketLength)TBC$(targetByteCount).txt
+    exec $main
+
+#------------------------------------------------------------
+#------------------------------------------------------------
+#    \\   // ||\  /||  \\   //\\   // ||--\\ ||--\\
+#     \\ //  || \/ ||   \\ //  \\ //  ||__// ||__//
+#      \\/   ||    ||    \\/    \\/   || \\  || \\
+#------------------------------------------------------------
+#------------------------------------------------------------
+testCaseFolder = $testResultPath/vmWRR
+shell mkdir $testCaseFolder
+
+resetParameters = $SCRIPT_PATH/helpers/vmWeightedRRReset.txt
+txRings = 0,1
+txRingsArr = [$txRings]
+
+weightes = [1280, 2560]
+maxCredits = [1280, 2560]
+exec $SCRIPT_PATH/helpers/vmWeightedRR.txt
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outWRR2QL$(basePacketLength)TBC$(targetByteCount)DiffWeights.txt
+    exec $main
+exec $resetParameters
+#------------------------------------------------------------
+txRings = 0,1
+txRingsArr = [$txRings]
+
+weightes = [1280, 1280]
+maxCredits = [1280, 1280]
+exec $SCRIPT_PATH/helpers/vmWeightedRR.txt
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outWRR2QL$(basePacketLength)TBC$(targetByteCount)SameWeights.txt
+    exec $main
+exec $resetParameters
+#------------------------------------------------------------
+txRings = 0,1,2,3
+txRingsArr = [$txRings]
+
+weightes = [1280, 2560, 5120, 7680]
+maxCredits = [1280, 2560, 5120, 7680]
+exec $SCRIPT_PATH/helpers/vmWeightedRR.txt
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outWRR4QL$(basePacketLength)TBC$(targetByteCount)DiffWeights.txt
+    exec $main
+exec $resetParameters
+#------------------------------------------------------------
+#--2TC-------------------------------------------------------
+txRings = 2,3,4,5
+txRingsArr = [$txRings]
+
+weightes = [1280, 2560, 5120, 7680]
+maxCredits = [1280, 2560, 5120, 7680]
+exec $SCRIPT_PATH/helpers/vmWeightedRR.txt
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outWRR2TCL$(basePacketLength)TBC$(targetByteCount)DiffWeights.txt
+    exec $main
+exec $resetParameters
+#------------------------------------------------------------
+#------------------------------------------------------------
+#    ======  //\\    ||--\\ ||--\\
+#      ||   //       ||__// ||__//
+#      ||   \\       || \\  || \\
+#      ||    \\//    ||  \\ ||  \\
+#------------------------------------------------------------
+#------------------------------------------------------------
+testCaseFolder = $testResultPath/tcRR
+shell mkdir $testCaseFolder
+
+txRings = 0,4,8,12
+txRingsArr = [$txRings]
+tcArr = [0,1,2,3]
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outRRL$(basePacketLength)TBC$(targetByteCount).txt
+    exec $main
+
+#------------------------------------------------------------
+#------------------------------------------------------------
+#    ======  //\\   \\    //\\    // ||--\\ ||--\\
+#      ||   //       \\  //  \\  //  ||__// ||__//
+#      ||   \\        \\//    \\//   || \\  || \\
+#      ||    \\//      \/      \/    ||  \\ ||  \\
+#------------------------------------------------------------
+#------------------------------------------------------------
+testCaseFolder = $testResultPath/tcWRR
+shell mkdir $testCaseFolder
+
+resetParameters = $SCRIPT_PATH/helpers/tcWeightedArbitrationModeReset.txt
+arbitrationMode=WRR
+
+txRings = 0,4,8,12
+txRingsArr = [$txRings]
+tcArr = [0,1,2,3]
+weightes = [1280, 2560, 5120, 7680]
+maxCredits = [1280, 2560, 5120, 7680]
+exec $SCRIPT_PATH/helpers/tcWeightedArbitrationMode.txt
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outWRRL$(basePacketLength)TBC$(targetByteCount)DiffWeights.txt
+    exec $main
+exec $resetParameters
+#------------------------------------------------------------
+txRings = 0,4,8,12
+txRingsArr = [$txRings]
+tcArr = [0,1,2,3]
+weightes = [1280, 1280, 1280, 1280]
+maxCredits = [1280, 1280, 1280, 1280]
+exec $SCRIPT_PATH/helpers/tcWeightedArbitrationMode.txt
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outWRRL$(basePacketLength)TBC$(targetByteCount)SameWeights.txt
+    exec $main
+exec $resetParameters
+#------------------------------------------------------------
+#------------------------------------------------------------
+#    ======  //\\   \\    //\\    //  //\\  ||--\\
+#      ||   //       \\  //  \\  //   \\    ||__//
+#      ||   \\        \\//    \\//      \\  || 
+#      ||    \\//      \/      \/     \\//  || 
+#------------------------------------------------------------
+#------------------------------------------------------------
+testCaseFolder = $testResultPath/tcWSP
+shell mkdir $testCaseFolder
+
+arbitrationMode=WSP
+
+txRings = 0,4,8,12
+txRingsArr = [$txRings]
+tcArr = [0,1,2,3]
+weightes = [1280, 2560, 5120, 7680]
+maxCredits = [1280, 2560, 5120, 7680]
+exec $SCRIPT_PATH/helpers/tcWeightedArbitrationMode.txt
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outWSPL$(basePacketLength)TBC$(targetByteCount)DiffWeights.txt
+    exec $main
+exec $resetParameters
+#------------------------------------------------------------
+txRings = 0,4,8,12
+txRingsArr = [$txRings]
+tcArr = [0,1,2,3]
+weightes = [1280, 1280, 1280, 1280]
+maxCredits = [1280, 1280, 1280, 1280]
+exec $SCRIPT_PATH/helpers/tcWeightedArbitrationMode.txt
+
+for targetByteCount in $targetByteCountArr:
+    outputFileParsed = $testCaseFolder/outWSPL$(basePacketLength)TBC$(targetByteCount)SameWeights.txt
+    exec $main
+exec $resetParameters
+#------------------------------------------------------------
+#------------------------------------------------------------
+#   \\     // ||\  /||   ||--\\  //\\ 
+#    \\   //  ||\\//||   ||__//  \\    
+#     \\ //   || \/ ||   || \\     \\ 
+#      \\/    ||    ||   ||  \\  \\//
+#------------------------------------------------------------
+#------------------------------------------------------------
+main = $SCRIPT_PATH/checkTime.txt
+testCaseFolder = $testResultPath/rsVM/OneQueue_Q0
+shell mkdir $testCaseFolder
+calcScript = $SCRIPT_PATH/helpers/calcTimeForQueue.txt
+
+resetParameters = $SCRIPT_PATH/helpers/rsVMDisable.txt
+outTimeFileName = $testCaseFolder/resTimes.txt
+shell echo>$outTimeFileName
+txRings = 0
+txRingsArr = [$txRings]
+
+ratesIntArr = [[1000], [100], [10], [5], [2]] 
+ratesFracArr = [[0], [0], [0], [0], [5]]
+rateMode = Q
+cnt=0
+for ratesInt in $ratesIntArr:
+    ratesFrac = $ratesFracArr[$cnt]
+    exec $SCRIPT_PATH/helpers/rsVM.txt
+    tmpIntPart=($ratesInt[0])
+    tmpFracPart=($ratesFrac[0])
+    tmpRate = $tmpIntPart.$tmpFracPart
+    for targetByteCount in $targetByteCountArr:
+        outputFileParsed = $testCaseFolder/outRS_L$(basePacketLength)TBC$(targetByteCount)R$tmpRate.txt
+        shell echo -------------------------------->>$outTimeFileName
+        shell echo R=$tmpRate,TBC=$(targetByteCount)>>$outTimeFileName
+        exec $main
+    exec $resetParameters
+    cnt+=1
+#------------------------------------------------------------
+testCaseFolder = $testResultPath/rsVM/OneQueue_Q1
+shell mkdir $testCaseFolder
+
+outTimeFileName = $testCaseFolder/resTimes.txt
+shell echo>$outTimeFileName
+txRings = 1
+txRingsArr = [$txRings]
+
+ratesIntArr = [[1000], [100], [10]] 
+ratesFracArr = [[0], [0], [0]]
+rateMode = Q
+cnt=0
+for ratesInt in $ratesIntArr:
+    ratesFrac = $ratesFracArr[$cnt]
+    exec $SCRIPT_PATH/helpers/rsVM.txt
+    tmpIntPart=($ratesInt[0])
+    tmpFracPart=($ratesFrac[0])
+    tmpRate = $tmpIntPart.$tmpFracPart
+    for targetByteCount in $targetByteCountArr:
+        outputFileParsed = $testCaseFolder/outRS_L$(basePacketLength)TBC$(targetByteCount)R$tmpRate.txt
+        shell echo -------------------------------->>$outTimeFileName
+        shell echo R=$tmpRate,TBC=$(targetByteCount)>>$outTimeFileName
+        exec $main
+    exec $resetParameters
+    cnt+=1
+#------------------------------------------------------------
+testCaseFolder = $testResultPath/rsVM/2Queue
+shell mkdir $testCaseFolder
+
+outTimeFileName = $testCaseFolder/resTimes.txt
+shell echo>$outTimeFileName
+txRings = 0,1
+txRingsArr = [$txRings]
+
+ratesIntArr = [[1000,100], [100,1000], [1000,10], [10,1000]] 
+ratesFracArr = [[0,0], [0,0], [0,0], [0,0]]
+rateMode = Q
+cnt=0
+for ratesInt in $ratesIntArr:
+    ratesFrac = $ratesFracArr[$cnt]
+    exec $SCRIPT_PATH/helpers/rsVM.txt
+    tmpIntPart1=($ratesInt[0])
+    tmpFracPart1=($ratesFrac[0])
+    tmpRate1 = $tmpIntPart1.$tmpFracPart1
+    tmpIntPart2=($ratesInt[1])
+    tmpFracPart2=($ratesFrac[1])
+    tmpRate2 = $tmpIntPart2.$tmpFracPart2
+    for targetByteCount in $targetByteCountArr:
+        outputFileParsed = $testCaseFolder/outRS_L$(basePacketLength)TBC$(targetByteCount)R1_$(tmpRate1)_R2_$(tmpRate2).txt
+        shell echo -------------------------------->>$outTimeFileName
+        shell echo R1=$tmpRate1,R2=$tmpRate2,TBC=$(targetByteCount)>>$outTimeFileName
+        exec $main
+    exec $resetParameters
+    cnt+=1
+#------------------------------------------------------------
+#------------------------------------------------------------
+#  ======    //\\    ||--\\  //\\ 
+#    ||     //       ||__//  \\    
+#    ||     \\       || \\     \\ 
+#    ||      \\//    ||  \\  \\//
+#------------------------------------------------------------
+#------------------------------------------------------------
+calcScript = $SCRIPT_PATH/helpers/calcTimeForTC.txt
+testCaseFolder = $testResultPath/rsTC/OneTC
+shell mkdir $testCaseFolder
+
+resetParameters = $SCRIPT_PATH/helpers/rsVMDisable.txt
+outTimeFileName = $testCaseFolder/resTimes.txt
+shell echo>$outTimeFileName
+txRings = 0,1
+txRingsArr = [$txRings]
+tcArr = [0] #TC0->RS0, TC1->RS4,TC2->RS8,TC3->RS12
+ratesIntArr = [[1000], [100], [10]] 
+ratesFracArr = [[0], [0], [0]]
+rateMode = TC
+cnt=0
+for ratesInt in $ratesIntArr:
+    ratesFrac = $ratesFracArr[$cnt]
+    exec $SCRIPT_PATH/helpers/rsVM.txt
+    tmpIntPart=($ratesInt[0])
+    tmpFracPart=($ratesFrac[0])
+    tmpRate = $tmpIntPart.$tmpFracPart
+    for targetByteCount in $targetByteCountArr:
+        outputFileParsed = $testCaseFolder/outRS_L$(basePacketLength)TBC$(targetByteCount)R$tmpRate.txt
+        shell echo -------------------------------->>$outTimeFileName
+        shell echo R=$tmpRate,TBC=$(targetByteCount)>>$outTimeFileName
+        exec $main
+    exec $resetParameters
+    cnt+=1
+#------------------------------------------------------------
+testCaseFolder = $testResultPath/rsTC/TwoTC
+shell mkdir $testCaseFolder
+
+resetParameters = $SCRIPT_PATH/helpers/rsTCDisable.txt
+outTimeFileName = $testCaseFolder/resTimes.txt
+shell echo>$outTimeFileName
+txRings = 0,4
+txRingsArr = [$txRings]
+tcArr = [0, 1] #TC0->RS0, TC1->RS4
+ratesIntArr = [[1000,100], [100,1000], [1000,10], [10,1000]] 
+ratesFracArr = [[0,0], [0,0], [0,0], [0,0]]
+rateMode = TC
+cnt=0
+for ratesInt in $ratesIntArr:
+    ratesFrac = $ratesFracArr[$cnt]
+    exec $SCRIPT_PATH/helpers/rsVM.txt
+    tmpIntPart0=($ratesInt[0])
+    tmpFracPart0=($ratesFrac[0])
+	tmpIntPart1=($ratesInt[1])
+    tmpFracPart1=($ratesFrac[1])
+    tmpRate0 = $tmpIntPart0.$tmpFracPart0
+	tmpRate1 = $tmpIntPart1.$tmpFracPart1
+    for targetByteCount in $targetByteCountArr:
+        outputFileParsed = $testCaseFolder/outRS_L$(basePacketLength)TBC$(targetByteCount)R1_$(tmpRate0)_R2_$tmpRate1.txt
+        shell echo -------------------------------->>$outTimeFileName
+        shell echo R1=$tmpRate0, R2=$tmpRate1, TBC=$(targetByteCount)>>$outTimeFileName
+        exec $main
+    exec $resetParameters
+    cnt+=1

@@ -1,0 +1,25 @@
+#disable txExt filters
+#enable rx Unicast filters
+
+macAddrFilter0 = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05]
+macAddrFilter1 = [0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F]
+
+for queue = 0; $queue < 2; queue += 1:
+    mac.llhcache on
+    mac.llh -C tpoTxExtractionMacFilterEnableSet 0 $queue
+    mac.llh -C tpoTxExtractionIpFilterEnableSet 0 $queue
+    mac.llh -C tpoTxExtractionArpFilterEnableSet 0 $queue
+    mac.llhcache off
+    macAddrFilterStr$(queue) = ' '.join([hex(elem) for elem in $(macAddrFilter$queue)])
+
+macAddrFilters = ['$macAddrFilterStr0', '$macAddrFilterStr1']
+
+for queue = 0; $queue < 2; queue += 1:
+    filterUnicastIndex = $queue
+    filterUnicastMngQueue = $queue
+    filterUnicastEnable = 1
+    filterUnicastAction = 2 #0=Discard, 1=Host, 2=Management, 3=Host & Management, 4=Wake-on-LAN, 5 to 7=Reserved
+    filterUnicastMacAddr = $(macAddrFilter$queue)
+    exec $(SCRIPT_PATH)/filtersConfigurators/rxUnicastFilter.txt
+queue = 0
+

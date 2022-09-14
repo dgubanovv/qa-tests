@@ -1,0 +1,11 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/helpers/helperHeadSplit.txt $
+# $Revision: #3 $
+# $DateTime: 2016/05/03 04:25:42 $
+# $Author: dmitryb $
+#
+# Framework to simplify all HeadSplitBug writing
+
+
+exec $(PWD)/helpers/headSplit/headSplitSetUp.txt
+exec $(PWD)/helpers/headSplit/headSplitRun.txt
+exec $(PWD)/helpers/headSplit/headSplitTearDown.txt

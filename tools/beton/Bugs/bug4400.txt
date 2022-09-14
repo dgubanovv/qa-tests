@@ -1,0 +1,19 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4400.txt $
+# $Revision: #2 $
+# $DateTime: 2015/11/16 02:47:32 $
+# $Author: oxy $
+#
+# MSM reset works
+#
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+ifndef logTag:
+    logTag = -l cli
+
+readreg msm 0x0 -n val 
+if  0xBAD3BAD3 == $val:
+    finalReport = $finalReport + ['(0) 0xBAD3BAD3 == val //MSM is absent']
+
+                                               #put test fixture teardown here
+
+exec $(PWD)/helpers/showTestResult.txt #to show results [] in manual run mode

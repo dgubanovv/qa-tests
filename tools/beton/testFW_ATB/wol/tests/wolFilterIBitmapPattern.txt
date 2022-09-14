@@ -1,0 +1,38 @@
+
+#####################################################
+### Test pattern 0
+#####################################################
+
+echo Test "wolFilterBitmapPattern", option 0
+
+for byteNo=0; $byteNo < 128; byteNo += 1:
+    Bitmap$byteNo = byteNo;
+
+Mask0 = 0xFFFFFFFF
+Mask1 = 0xFFFFFFFF
+Mask2 = 0xFFFFFFFF
+Mask3 = 0xFFFFFFFF
+
+exec $root/wol/lib/wolFilterTestBitmapPattern.txt
+
+if $result != 0:
+    echo _____________FAILED
+
+#####################################################
+### Test pattern 1
+#####################################################
+
+echo Test "wolFilterBitmapPattern", option 1
+
+for byteNo=0; $byteNo < 128; byteNo += 1:
+    Bitmap$byteNo = byteNo;
+
+Mask0 = 0xAAAAAAAA
+Mask1 = 0xAAAAAAAA
+Mask2 = 0xAAAAAAAA
+Mask3 = 0xAAAAAAAA
+
+exec $root/wol/lib/wolFilterTestBitmapPattern.txt
+
+if $result != 0:
+    echo _____________FAILED

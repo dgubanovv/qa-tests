@@ -1,0 +1,47 @@
+#####################################################
+### Config
+#####################################################
+
+flags = 0
+
+# 169.254.0.100
+remoteIPv4Address = 0x6400FEA9
+
+# 169.254.1.1
+hostIPv4Address = 0x0101FEA9
+
+# 00:17:B6:00:00:8D
+Mac0 = 0x1700
+Mac1 = 0x00B6
+Mac2 = 0x8D00
+
+test_result = 0
+
+echo Test "arpOffload"
+
+#####################################################
+### Central state
+#####################################################
+
+exec testFW/offloads/lib/offloadCentralState.txt
+
+#####################################################
+### DRV_MSG_OFFLOAD_ADD
+#####################################################
+
+exec testFW/offloads/lib/arpOffloadAdd.txt
+if $result != 0:
+    echo arpOffload: Add offload failed
+    test_result = -1
+
+#####################################################
+### DRV_MSG_ENABLE_WAKEUP
+#####################################################
+
+exec testFW/offloads/lib/offloadEnableAll.txt
+if $result != 0:
+    echo arpOffload: Enable offload failed
+    test_result = -1
+
+if $test_result != 0:
+    echo _____________FAILED

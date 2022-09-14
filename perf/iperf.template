@@ -1,0 +1,25 @@
+import pytest
+
+from iperf_test_base import TestIperfBase
+from infra.test_base import idparametrize
+from scapy.all import *
+from iperf_result import IperfResult
+from tools.constants import DIRECTION_RXTX, LINK_SPEED_10G, LINK_SPEED_5G, LINK_SPEED_2_5G, \
+    LINK_SPEED_1G, LINK_SPEED_100M, LINK_SPEED_10M, DIRECTION_TX, DIRECTION_RX, OFFLOADS_STATE_DSBL, OFFLOADS_STATE_ENBL, \
+    CARD_FIJI, MTU_1500, MTU_2000, MTU_4000, MTU_9000, MTU_16000, DUPLEX_HALF, DUPLEX_FULL
+from tools.utils import get_atf_logger
+
+log = get_atf_logger()
+
+
+def setup_module(module):
+    # import tools._test_setup  # uncomment for manual test setup
+    os.environ["TEST"] = "iperf"
+
+
+class TestIperf(TestIperfBase):
+
+#@tests
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-s", "-v"])

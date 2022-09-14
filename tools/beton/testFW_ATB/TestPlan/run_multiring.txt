@@ -1,0 +1,4 @@
+if $shallowLoopback:
+    exec $scriptDir/TestPlan/run_chorus.txt
+else:
+    exec $scriptDir/TestPlan/run_band.txt

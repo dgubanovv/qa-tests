@@ -1,0 +1,38 @@
+#Vlan insertion/filtering and striping
+dstRing = 12
+vlan_tag = 0x123
+mac.set loopback System Packet
+mac.rfc.set VlanPromiscousMode False
+
+mac.rfc.vlan[0].set vlan $vlan_tag
+#mac.rfc.vlan[0].set queue $dstRing
+mac.rfc.vlan[0].set action Wake-on-LAN
+mac.rfc.vlan[0].set enable True
+
+mac.init
+mac.txinit
+mac.rxinit
+#mac.rxring[$dstRing].set vlanStrip True
+mac.rxring[$dstRing].enable
+mac.rxring[$dstRing].fill 1
+mac.rxring[$dstRing].commit
+mac.txring[0].enable
+mac.txring[0].insertcontext -I 0 -V $vlan_tag
+mac.txring[0].insert -C 0 -f tcp_ip_indexed_uniq_ramp -v 1 -b 64
+mac.txring[0].dumpdesc -T 2:1 -l cli
+mac.txring[0].dumpbuf -T 1 -l cli
+mac.txring[0].commit
+pause 100 ms
+mac.txring[0].clean
+mac.rxring[$dstRing].clean
+mac.txring[0].status
+mac.rxring[$dstRing].status
+mac.rxring[$dstRing].dumpdesc -H 1 -l cli
+mac.rxring[$dstRing].dumpbuf -H 1 -l cli
+readreg 0x1204
+readreg 0x5600
+readreg 0x5610
+readreg 0x5614
+readreg 0x5618
+readreg 0x561C
+mac.uninit

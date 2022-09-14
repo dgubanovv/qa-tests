@@ -1,0 +1,22 @@
+#INPUT: txRingsArr - array of rings, values - values from DRAM, outTimeFileName - file name for output
+for txRingNo in $txRingsArr:
+    prevByteCount = 0
+    for elem in $values:
+        if $elem[0] != 0:
+            if (($elem[0] - $prevByteCount)&0x1F) == $txRingNo:
+                firstTime = $elem[1]
+                break
+        prevByteCount = $elem[0]
+    i=0
+    prevByteCount = 0
+    for elem in $values:
+        tmp = $elem[1]
+        if ($i!=0 and $tmp==0):
+            break
+        if (($elem[0] - $prevByteCount)&0x1F) == $txRingNo:
+            lastTime = $tmp
+        prevByteCount = $elem[0]
+        i+=1
+    resTime = ($lastTime - $firstTime)
+    echo Ring$txRingNo resTime = $resTime
+    shell echo Ring$txRingNo resTime = $resTime>> $outTimeFileName

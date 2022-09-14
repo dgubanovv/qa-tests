@@ -1,0 +1,6 @@
+#disable vm arbitration mode WRR
+#INPUT: txRingsArr - array of enabled rings
+mac.tps.set vmDescArbitrationMode RR
+for txRingNo in $txRingsArr:
+    mac.tps.vm $txRingNo set vmWeight 0
+    mac.tps.vm $txRingNo set vmMaxCredit 0

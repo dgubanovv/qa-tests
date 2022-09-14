@@ -1,0 +1,155 @@
+# ! Script for verifying RSS feature in Atlantic. Different cases are using for RSS check
+# !    Variants
+# !    - 8/4 TC ()
+# !    - random IPv4/IPv6 (packets with random IP adresses for IPv4 and IPv6)
+# !    - random TCP port/select RSS hash calculation without TCP port (packets with random TCP port,no TCP port)
+# !    - change few bytes in RSS key
+# ! - random RSS redirection table
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRing = 0
+    rxRing = 0
+    maxtc = 4
+    logTag = -l cli
+else:
+    ifndef txRing:
+        txRing = 0
+    ifndef rxRing:
+        rxRing = 0
+    ifndef maxtc:
+        maxtc = 4
+    ifndef logTag:
+        logTag = -l cli
+
+mac.set glb_reg_reset_dis False
+mac.set tx_reg_rst_dis False
+mac.set rx_reg_rst_dis False
+
+
+if $hostAlreadyInitiated == False:
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.rfc.rss.enable
+    # Set default key
+    mac.rfc.rss.set key (0xBEAC01FA, 0x6A42B73B, 0x8030F20C, 0x77CB2DA3, 0xAE7B30B4, 0xD0CA2BCB, 0x43A38FB0, 0x4167253D, 0x255B0EC2, 0x6D5A56DA)
+    mac.rfc.rss.apply
+        
+    mac.init
+    mac.txinit
+    mac.txring[$txRing].enable    # Prepare Tx ring
+    mac.txring[$txRing].set PacketMark None $logTag
+     
+    mac.rxinit
+    mac.rxring[$rxRing].enable    # Prepare Rx ring
+    mac.rxring[$rxRing].fill
+    mac.rxring[$rxRing].commit
+    
+    mac.isr.disable
+
+ 
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/enableTPO2.txt
+exec $(PWD)/helpers/enableRPF2.txt
+
+# Send all packets to Rx ring = 0
+mac.rfc.rss.set map (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+mac.rfc.rss.apply
+
+# Deifine test cases
+testCases = ['TC4','TC8','randomIPv4','randomIPv6','randomTCP','noTCP','rssKeyModif','randomRedirTable']
+
+# Generate packets
+for test in $testCases:
+    ipAddressSrc = "192.168.0.1"
+    ipAddressDst = "192.168.0.2"
+    sport = 1234
+    dport = 4321
+    
+    pkt.new -n pkt$test -p 64
+    if '$test' == 'randomIPv4':
+        ipAddressSrc = '"' + '.'.join(map(str, (random.randint(0, 255) for _ in range(4)))) + '"'
+        ipAddressDst = '"' + '.'.join(map(str, (random.randint(0, 255) for _ in range(4)))) + '"'
+    elif '$test' == 'randomIPv6':
+        ipAddressSrc = '"' + ':'.join(map(str, (hex(random.randint(0, 0xffff))[2:] for _ in range(8)))) + '"'
+        ipAddressDst = '"' + ':'.join(map(str, (hex(random.randint(0, 0xffff))[2:] for _ in range(8)))) + '"'
+    elif '$test' == 'randomTCP':
+        sport = random.randint(0,65535)
+        dport = random.randint(0,65535)
+        
+    pkt.layer -i $(pkt$test) -L 55 -t TCP sport=$sport dport=$dport
+    if '$test' == 'randomIPv6':
+        pkt.layer -i $(pkt$test) -L 50 -t IPv6 ttl=100 dst=$ipAddressDst src=$ipAddressSrc
+    else:
+        pkt.layer -i $(pkt$test) -L 50 -t IP ttl=100 dst=$ipAddressDst src=$ipAddressSrc
+    pkt.layer -i $(pkt$test) -L 25 -t Ether dst="00:80:00:00:00:02" src="00:80:00:00:00:01"
+
+# Execute  test case
+for test in $testCases:
+    pkt.rss -i $(pkt$test) -n expectedRssHashpkt$test
+    
+    if '$test' == 'noTCP':
+        # Skip for now
+        # pkt.rss -i $(pkt$test) -o ip -n expectedRssHashpkt$test
+        # readreg -n bit5040 0x5040
+        # bit5040 = $bit5040 | (1<<4)
+        # writereg 0x5040 $bit5040       
+    
+    if '$test' == 'rssKeyModif':
+        echo !!! Set custom RSS key !!!
+        mac.rfc.rss.set key (0xa9351fa, 0x63460739, 0x7334224c, 0x76cad3aa, 0xae7b786f, 0x34ca2bcb, 0x43a38800, 0x5827253d, 0xbc511ee2, 0x6d5afcda)
+        mac.rfc.rss.apply
+        pkt.rss -i $(pkt$test) -n expectedRssHashpkt$test
+    
+    if '$test' == 'randomRedirTable':
+        echo !!! Set expected Rx ring to 4,traffic class count = 8!!!
+        rxRing = 2
+        mac.rxring[$rxRing].enable
+        mac.rxring[$rxRing].fill
+        mac.rxring[$rxRing].commit
+        mac.rfc.rss.set map ($rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing)
+        mac.rfc.rss.apply
+       
+    
+    if '$test' == 'TC4':
+        echo !!! Set TC to 4 !!!
+        mac.set rx_tc_cnt 4
+        mac.apply rx_tc_cnt
+    elif '$test' == 'TC8':
+        echo !!! Set TC to 8 !!!
+        mac.set rx_tc_cnt 8
+        mac.apply rx_tc_cnt
+    
+    mac.txring[$txRing].insert -i $(pkt$test) -b 128 -p 128
+    mac.txring[$txRing].commit
+    pause 300 ms    
+    mac.txring[$txRing].clean
+    mac.rxring[$rxRing].clean  
+    mac.rxring[$rxRing].getdescval -H 1 -f RSS_HASH -n actualRssHash $logTag    
+    # mac.rxring[$rxRing].dumpbuf -H 1 -l cli
+    
+    if $actualRssHash != $(expectedRssHashpkt$test):
+        actualRssHash = hex($actualRssHash)
+        expectedRssHashpkt$test = hex($(expectedRssHashpkt$test))
+        finalReport += ['(0)actualRssHash != expectedRssHash ($actualRssHash != $(expectedRssHashpkt$test)) for test $test']
+    
+    # Set redirection table back
+    if '$test' == 'randomRedirTable':
+		rxRing = 0
+        mac.rfc.rss.set map ($rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing,$rxRing)
+        mac.rfc.rss.apply
+        
+        
+        
+exec $(PWD)/helpers/showTestResult.txt
+mac.txuninit
+mac.rxuninit
+mac.uninit

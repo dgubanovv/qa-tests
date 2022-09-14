@@ -1,0 +1,202 @@
+# Script for various length packets injection on mng queue0
+# To make test packets unique, $mark variable is used. It is incremented on every run.
+# But it should be initialized with start value before first run, e.g. mark = 0 in cli
+# or by pseudo-condition in this script
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    injType = tx
+    mark = 0
+    startPacketLen = 64
+    endPacketLen = 520
+    packetLenStep = 1
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef injType:
+        injType = tx
+    ifndef mark:
+        mark = 0
+    ifndef startPacketLen:
+        startPacketLen = 64
+    ifndef endPacketLen:
+        endPacketLen = 520
+    ifndef packetLenStep:
+        packetLenStep = 1
+    ifndef logTag:
+        logTag = -l cli
+
+# Packet receive prepare
+if $hostAlreadyInitiated == False:
+    if '$injType' == 'tx':
+        mac.set loopback System Packet $logTag # deep loopback
+    else:
+        mac.set loopback None $logTag # No loopback
+    mac.init
+    if '$injType' == 'tx':
+        mac.txinit
+        mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill      # Without parameters: by default 0xFFFF
+    mac.rxring[$rxRingNo].commit    # Without parameters: by default 0xFFFF
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+
+if '$injType' == 'tx':
+    exec $PWD/helpers/tpbInjectorLlhNames.txt
+else:
+    exec $PWD/helpers/rpbInjectorLlhNames.txt
+
+# Rx Injector prepare
+
+pktType = 0
+
+# Set mode
+
+if '$injType' == 'tx':
+    headerLen = 12
+else:
+    headerLen = 16
+
+if '$injType' == 'tx':
+    mac.llh rpfL2PromiscuousModeEnableSet 1
+    mac.llh rpfVlanPromiscuousModeEnableSet 1
+    mac.llh rpfL2BroadcastCountThresholdSet 256
+    mac.llh rpfL2BroadcastFilterActionSet 2
+    mac.llh rpfL2BroadcastCountResetSet 0
+    mac.llh rpfRxPathByteSwapEnableSet 0
+    mac.llh rpfL2BroadcastEnableSet 0
+
+# Inject
+
+# Select injection queue
+mac.llh $injectionSelectSet $(queue)
+
+rpbHdrQueueNumShift = 12
+rpbHdrPktTypeShift = 4
+
+mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+mac.rxring[$rxRingNo].get -n rxRingSize size
+for packetLen = $startPacketLen; $packetLen <= $endPacketLen; packetLen = $packetLen + $packetLenStep:
+    mark = $mark + 1
+    
+    # SOP = 1
+    mac.llh $injectionPacketSopSet 1
+
+    # Packet Len Header Word
+    if '$injType' == 'tx':
+        headerWord = $packetLen
+    else:
+        headerWord = ($packetLen << 16)
+    
+    mac.llh $injectionPacketDataSet $headerWord
+
+    # SOP = 0
+    mac.llh $injectionPacketSopSet 0
+    
+    # Header Rest
+    for hdrByteCnt = 4; $hdrByteCnt < $headerLen; hdrByteCnt += 4:
+        if $hdrByteCnt == 8:
+            headerWord = ($rxRingNo << $rpbHdrQueueNumShift) | ($pktType << $rpbHdrPktTypeShift)
+        else:
+            headerWord = 0x0
+        mac.llh $injectionPacketDataSet $headerWord
+
+    bufStr = ' '
+    for byteCount = 0; $byteCount < $packetLen; byteCount += 4:
+        if $byteCount + 4 >= $packetLen:
+            # EOP = 1
+            mac.llh $injectionPacketEopSet 1
+            byte3 = $mark
+            expectedPacketOffset = 0
+        else:
+            byte3 = $byteCount + 3
+            expectedPacketOffset = ($byteCount + $headerLen + 4) / 4
+        
+        byte0 = $byteCount
+        byte1 = $byteCount + 1
+        byte2 = $byteCount + 2
+        packetWord = (($byte3 << 24) & 0xFF000000) | (($byte2 << 16) & 0x00FF0000) | (($byte1 << 8) & 0x00000FF00) | ($byte0 & 0x0000000FF)
+        bufStr = '$bufStr' + ' ' + hex($packetWord)
+# Little endian
+#       if '$injType' == 'tx':
+#            packetWord = (($byte0 << 24) & 0xFF000000) | (($byte1 << 16) & 0x00FF0000) | (($byte2 << 8) & 0x00000FF00) | ($byte3 & 0x0000000FF)
+        mac.llh $injectionPacketDataSet $packetWord
+
+        expectedIsFull = 0
+        expectedTruncationError = 0
+        expectedOverflowError = 0
+        expectedParityError = 0
+        stringId = '(2)'
+        exec $PWD/helpers/checkInjQueueErrors.txt
+
+    # EOP = 0
+    mac.llh $injectionPacketEopSet 0
+
+    # Check errors
+    expectedPacketOffset = 0
+    expectedIsFull = 0
+    expectedTruncationError = 0
+    expectedOverflowError = 0
+    expectedParityError = 0
+    stringId = '(3)'
+    exec $PWD/helpers/checkInjQueueErrors.txt
+
+    # Packet Show
+    mac.rxring[$rxRingNo].dumpdesc -H 0 -l dumprx
+    mac.rxring[$rxRingNo].dumpbuf -H 0 -l dumprx --size 80
+    mac.rxring[$rxRingNo].clean
+    mac.rxring[$rxRingNo].status $logTag
+    
+    mac.rxring[$rxRingNo].fill 1
+    mac.rxring[$rxRingNo].commit
+    
+    mac.llh -v rxHead rdmRxDescriptorHeadPointerGet $rxRingNo
+    if $rxHead == $rxHeadBefore + 1:
+        mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n pAddr $logTag
+        mac.rxring[$rxRingNo].getdescval -H 1 -f size -n byteCnt $logTag
+        #mem.dump -p $pAddr -s $byteCnt# -l cli 
+        # Check received data
+        if $byteCnt != $packetLen:
+            str = Wrong byte count $byteCnt received, $packetLen expected
+            echo $str
+            finalReport = $finalReport + ['$str']
+            
+        mem.cmp -p $pAddr -s $packetLen -V $bufStr -n compareResult $logTag
+        
+        if $compareResult != True:
+            finalReport = $finalReport + ['(4) Memory compare failed']
+            #break;
+    else:
+        str = '(5)Unexpected rxHead = $rxHead rxHeadBefore = $rxHeadBefore'
+        echo $str
+        finalReport = $finalReport + ['$str']
+        break
+    rxHeadBefore = $rxHead
+    if $rxHeadBefore == $rxRingSize + 0 - 1:
+        rxHeadBefore = -1
+
+readreg 0x7040		
+mac.uninit
+exec $PWD/helpers/showTestResult.txt
+echo TODO: byte ordering

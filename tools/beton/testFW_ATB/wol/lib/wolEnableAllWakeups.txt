@@ -1,0 +1,14 @@
+# drvMsgEnableWakeup header
+patternMaskWindows = ((1 << (($ndisPMWoLPacketMagicPacket & 0xFFFF) - 1)) | (1 << (($ndisPMWoLPacketIPv4TcpSyn & 0xFFFF) - 1)) | (1 << (($ndisPMWoLPacketIPv6TcpSyn & 0xFFFF) - 1)))
+patternMaskAquantia = (  (1 << (($aqPMWoLPacketArp & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonIpv4PingPacket & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonIpv6PingPacket & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonLinkDown & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonLinkUp & 0xFFFFF) - 0x10001)))
+patternMaskOther = 0
+offloadsMaskWindows = 0
+offloadsMaskAquantia = 0
+
+exec testFW/drvIface/drvMsgEnableWakeup.txt
+
+#### Run transaction
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+$result = $transactionResult
+

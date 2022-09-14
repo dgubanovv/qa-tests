@@ -1,0 +1,18 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Regression/testSample.txt $
+# $Revision: #3 $
+# $DateTime: 2016/04/08 08:55:16 $
+# $Author: dgubanov $
+#
+# sample auto-test script sample, ready to copy&paste
+#
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+
+#exec $(PWD)/helpers/workaroundBug3991.txt #refactor every workaround to appropriate named script
+
+if $testSampleSouldPass != True:
+    finalReport = $finalReport + ['(1) Sample test testSampleSouldPass != True'] #add as many lines as many errors happened
+
+                                               #put test fixture teardown here
+
+exec $(PWD)/helpers/showTestResult.txt #to show results [] in manual run mode

@@ -1,0 +1,45 @@
+# Script for one packet extraction with IP filter
+
+bufLen = 64
+
+# Packet Send
+
+mac.txring[$txRingNo].insert -b $bufLen -p $bufLen -f ramp
+mac.txring[$txRingNo].dumpdesc -T 1 -l cli
+mac.txring[$txRingNo].getdescval -T 1 -f paddr -n pAddr
+
+if $ipVersion == 4:
+    da1 = (($filter1 << 8) & 0xFF000000) | (($filter1 >> 8) & 0x00FF0000) | 0x1d1c
+    da2 = 0x23220000 | (($filter1 << 8) & 0x0000FF00) | (($filter1 >> 8) & 0x000000FF)
+    # set EtherType, IP Version
+    addr = $pAddr
+    mem.put 0x03020100 0x07060504 0x0b0a0908 0x00450008 -p $addr
+    # set DA Address (2 bytes)
+    addr = $addr+0x10
+    mem.put 0x13121110 0x17161514 0x1b1a1918 $da1 -p $addr
+    # set DA Address (other 2 bytes)
+    addr = $addr+0x10
+    mem.put $da2 0x27262524 0x2b2a2928 0x2f2e2d2c -p $addr
+else:
+    # set EtherType, IP Version
+    da1 = (($filter4 << 8) & 0xFF000000) | (($filter4 >> 8) & 0x00FF0000) | 0x2524
+    da2 = (($filter3 << 8) & 0xFF000000) | (($filter3 >> 8) & 0x00FF0000) | (($filter4 << 8) & 0x0000FF00) | (($filter4 >> 8) & 0x000000FF)
+    da3 = (($filter2 << 8) & 0xFF000000) | (($filter2 >> 8) & 0x00FF0000) | (($filter3 << 8) & 0x0000FF00) | (($filter3 >> 8) & 0x000000FF)
+    da4 = (($filter1 << 8) & 0xFF000000) | (($filter1 >> 8) & 0x00FF0000) | (($filter2 << 8) & 0x0000FF00) | (($filter2 >> 8) & 0x000000FF)
+    da5 = 0x37360000 | (($filter1 << 8) & 0x0000FF00) | (($filter1 >> 8) & 0x000000FF)    
+    addr = $pAddr
+    mem.put 0x03020100 0x07060504 0x0b0a0908 0x0060DD86 -p $addr
+    # set DA Address (10 bytes)
+    addr = $addr+0x20
+    mem.put 0x23222120 $da1 $da2 $da3 -p $addr
+    # set DA Address (other 6 bytes)
+    addr = $addr+0x10
+    mem.put $da4 $da5 0x3b3a3938 0x3f3e3d3c -p $addr
+echo
+
+mac.txring[$txRingNo].dumpbuf -T 1 -l cli
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+cmd

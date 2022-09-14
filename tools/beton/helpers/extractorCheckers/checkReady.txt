@@ -1,0 +1,5 @@
+mac.llh -v isReady -C $extractionQueueReadyGet $queue
+if  $(isReady) != $expectedIsReady:
+    str = '$stringId Ready bit for queue $queue not equal to expected (which is $expectedIsReady)'
+    echo $str
+    finalReport = $finalReport + ['$str']

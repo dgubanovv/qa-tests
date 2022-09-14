@@ -1,0 +1,41 @@
+# Script for bootloading images with different ISA
+# DRAM addresses are taken from map files
+
+dramLocation3 = 0x1fb00018
+dramLocation4 = 0x1fb00014
+dramLocation5 = 0x1fb00010
+
+mac.mcp.set type MIPS
+
+for image in ['$(SCRIPT_PATH)/isaTest/atlantic_Ram_32.cld', '$(SCRIPT_PATH)/isaTest/atlantic_Ram_mmips.cld']:
+    # clear test addresses
+    for regAddr = 0x300; $regAddr <= 0x320; regAddr += 4:
+        writereg $regAddr 0
+    
+    mac.mcp.stall
+    mac.mcp.writemem $dramLocation3 0
+    mac.mcp.writemem $dramLocation4 0
+    mac.mcp.writemem $dramLocation5 0
+    
+    mac.mcp.bootLoadCld $image
+    
+    readreg 0x300 -c 0x1234
+    readreg 0x304 -c 0x5678
+    readreg 0x308 -c 0xABCD
+    
+    readreg 0x30c -c 0x1234
+    readreg 0x310 -c 0x5678
+    readreg 0x314 -c 0xABCD
+    
+    readreg 0x318 -c 0xDEAD
+    readreg 0x31c -c 0xBEAD
+    readreg 0x320 -c 0xBABA
+    
+    mac.mcp.stall
+    mac.mcp.readmem $dramLocation3
+    mac.mcp.readmem $dramLocation4
+    mac.mcp.readmem $dramLocation5
+    echo
+
+echo Script done
+cmd

@@ -1,0 +1,21 @@
+#drvMsgEnableWakeup
+
+addr = $BASEADDR
+
+mac.mcp.writemem $addr $drvMsgEnableWakeup -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $patternMaskWindows -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $patternMaskAquantia -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $patternMaskOther -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $offloadsMaskWindows -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $offloadsMaskAquantia -l nul
+addr = $addr + 4

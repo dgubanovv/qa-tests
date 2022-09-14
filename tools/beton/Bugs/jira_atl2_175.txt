@@ -1,0 +1,52 @@
+finalReport = []
+
+undefine = m0 m1 m2 m3 m4 m5 i pkt1 pkt_count
+
+ifndef packet_size:
+    packet_size = random.randint(0, 1514)
+    undefine = $undefine packet_size
+
+ifndef eth_type:
+    eth_type = random.choice([0x800, 0x801])
+    undefine = $undefine eth_type
+
+ifndef mac_addr:
+    mac_addr = '"' + ':'.join(map(str, (hex(random.randint(0, 0xff))[2:] for _ in range(6)))) + '"'
+    undefine = $undefine mac_addr
+
+l_mac_addr = $mac_addr.split(":")
+for i in range(6):
+    m$i = int($l_mac_addr[$i], 16)
+
+mac.init
+mac.txring[0].enable
+mac.tfc.ext[0].set txExtractionMACFilterEnable True
+mac.tfc.ext[0].apply txExtractionMACFilterEnable
+mac.tfc.ext[0].set mac ($m0, $m1, $m2, $m3, $m4, $m5)
+mac.tfc.ext[0].apply mac
+# Change value in one of next two lines on commented out and script pass
+pkt.new -n pkt1 -p $packet_size
+pkt.layer -i $pkt1 -L 25 -t Ether dst=$mac_addr type=$eth_type
+
+mac.txextractor[0].reset
+
+mac.txring[0].insert -i $pkt1
+mac.txring[0].insert
+
+mac.txring[0].commit
+pause 1
+mac.txring[0].clean
+mac.txring[0].status
+
+# check that we have the packet in extractor
+mac.txextractor[0].readstatus
+mac.txextractor[0].dumpstatus -f packet_count -n pkt_count
+mac.tfc.counters
+
+if $pkt_count != 1:
+    finalReport += ['Failed! Packet count in extractor (should be 1): $pkt_count. Packet size: $packet_size']
+
+exec $PWD/helpers/showTestResult.txt
+mac.uninit
+
+undef -n $undefine

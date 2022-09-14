@@ -1,0 +1,211 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Offloads/txLargeSegmentOffload.txt $
+# $Revision: #15 $
+# $DateTime: 2016/09/06 10:04:58 $
+# $Author: vryabov $
+
+# Script description:
+# Number of iterations can be set by variable "packetLengthVariationsCount". If it is set, random sequence of LSO packet sizes will be generated, additionally script checks packet sizes 1 Byte and 256 kBytes
+# All other variables are defined randomly, some of them have predefined list of allowed values:
+# = Header size = 54 Bytes only (L2 = 14, L3 = 20, L4 = 20)
+# = EtherType = 0x800 only
+# == SupportedMTU is a list of most significant values. MSS is calculated as "MTU - Header Size". Each iteration makes random choice of MSS
+# == Tx Buffer Size is chosen randomly from 1024 Bytes to maxBufferSize (8192 Bytes in current implementation) with step 1024 Bytes. Each iteration makes random choice of Tx Buffer Size
+# == LSO packet size is generated randomly based on number of iterations and LSO packet size limit
+# == MAC addresses (source and destination) are generated randomly
+# == IP addresses (source and destination) are generated randomly
+# == TCP ports (source and destination) are generated randomly based on minTcpPort, maxTcpPort limits
+# == Tx ring number can be generated randomly, but now only 0 is supported due to script limitations or bug
+# == IPv4/IPv6 generated randomly
+# Script is applicable for TCP only
+
+# Expect to have one fail while Bug #5143 is open
+
+seed = random.randint(0, 2 ** 32 - 1)
+
+temp = random.seed($seed)
+
+finalReport = []
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    packetLengthVariationsCount = 50    
+    logTag = -l cli
+    TPO2 = False
+    RPF2 = False
+else:
+    ifndef packetLengthVariationsCount:
+        packetLengthVariationsCount = 50
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef TPO2:
+    TPO2 = False
+
+ifndef RPF2:
+    RPF2 = False
+
+l2headerSize = 14
+l3headerSizeV4 = 20
+l3headerSizeV6 = 40
+l4headerSize = 20
+headerSizeV4 = $l2headerSize + $l3headerSizeV4 + $l4headerSize
+headerSizeV6 = $l2headerSize + $l3headerSizeV6 + $l4headerSize
+
+supportedMTU = [800, 1000, 1514, 2044, 4088, 9014]
+actualMSSV4 = [(i - $headerSizeV4) for i in $supportedMTU]
+actualMSSV6 = [(i - $headerSizeV6) for i in $supportedMTU]
+
+maxBufferSize = 8192
+maxPacketSize = 262143   # Maximal Payload length to be off-loaded, bits [48:63] of TX Descriptor
+packetSizes = random.sample(range(0, $maxPacketSize), $packetLengthVariationsCount)
+packetSizes = [1, $maxPacketSize] + $packetSizes
+
+minTcpPort = 0
+maxTcpPort = 65535
+
+for payloadLen in $packetSizes:
+    bufferSize = random.randint(1, ($maxBufferSize // 1024)) * 1024
+    ring = random.randint(0, 31)
+    ipv6 = random.choice([True, False])
+    echo IPv6 is $ipv6
+    
+    if ($ipv6):
+        etherType = 0x86DD
+        headerSize = $l2headerSize + $l3headerSizeV6 + $l4headerSize
+        l3headerSize = $l3headerSizeV6
+        actualMSS = $actualMSSV6
+    else:
+        etherType = 0x800
+        headerSize = $l2headerSize + $l3headerSizeV4 + $l4headerSize
+        l3headerSize = $l3headerSizeV4
+        actualMSS = $actualMSSV4
+    
+    mss = random.choice($actualMSS)
+    echo MSS is $mss
+    packetLen = ($payloadLen + $headerSize)
+    
+    ipAddressSrc = '"' + '.'.join(map(str, (random.randint(0, 255) for _ in range(4)))) + '"'
+    ipAddressDst = '"' + '.'.join(map(str, (random.randint(0, 255) for _ in range(4)))) + '"'
+    if ($ipv6):
+        ipAddressSrc = '"' + ':'.join(map(str, (hex(random.randint(0, 0xffff))[2:] for _ in range(8)))) + '"'
+        ipAddressDst = '"' + ':'.join(map(str, (hex(random.randint(0, 0xffff))[2:] for _ in range(8)))) + '"'
+    
+    macAddressSrc = '"' + ':'.join(map(str, (hex(random.randint(0, 0xff))[2:] for _ in range(6)))) + '"'
+    macAddressDst = '"' + ':'.join(map(str, (hex(random.randint(0, 0xff))[2:] for _ in range(6)))) + '"'
+    
+    portSrc = random.randint($minTcpPort, $maxTcpPort)
+    portDst = random.randint($minTcpPort, $maxTcpPort)
+    
+    mac.set glb_reg_reset_dis False $logTag
+    mac.set tx_reg_rst_dis False $logTag
+    mac.set rx_reg_rst_dis False $logTag
+    
+    mac.set loopback System Packet $logTag
+    mac.init
+    
+    if $TPO2:
+        exec $(PWD)/helpers/enableTPO2.txt
+    
+    if $RPF2:
+        exec $(PWD)/helpers/enableRPF2.txt
+    
+    mac.isr.disable
+    mac.txinit
+    mac.rxinit
+    writereg 0x7800 0x01200000 $logTag
+    writereg 0x7800 0x00200000 $logTag
+    
+    mac.txring[$ring].set bufSize $bufferSize $logTag
+    mac.txring[$ring].set maxDmaSize $bufferSize $logTag
+    mac.txring[$ring].set size 512 $logTag
+    
+    bitmask = (1 << $ring)
+    
+    mac.rxring[0].set batchFill 0 $logTag
+    mac.rxring[0].enable
+    mac.rxring[0].fill
+    mac.rxring[0].commit
+    mac.txring[$ring].enable
+    mac.llh tpoIpv4HeaderChecksumOffloadEnableSet 1 # Don't forget to set 1 here
+    mac.llh tpoTcpUdpChecksumOffloadEnableSet 1 # And here
+    mac.llh tdmLargeSendOffloadEnableSet $bitmask
+    
+    mac.rxring[0].get bufSize -n rxRingBufSize -l nul
+
+    # Added from here - A.K.     
+    if ($payloadLen % $mss) > 0:  
+        lastSegmentLength = (($payloadLen % $mss) + $headerSize)
+    else:
+        lastSegmentLength=0
+#  - A.K.
+
+    echo LastSegmentLength = $lastSegmentLength
+    
+    lastPacketLength = (($lastSegmentLength // $rxRingBufSize) + (($lastSegmentLength % $rxRingBufSize) > 0))
+    fullSegmentCount = ($payloadLen // $mss)
+    echo fullSegmentCount = $fullSegmentCount
+    echo --------
+    
+    descriptorsInOneSegment = ((($mss + $headerSize) // $rxRingBufSize) + ((($mss + $headerSize) % $rxRingBufSize) > 0))
+    
+    brokenPacket = 0
+    moreDescriptors = 0 #Added - A. K.    
+    if ($lastSegmentLength > 0):
+        moreDescriptors = ($lastSegmentLength // $rxRingBufSize) + (($lastSegmentLength % $rxRingBufSize) > 0)
+        brokenPacket = 1
+    expectedRdmRxDescriptorHeadPointer = ($fullSegmentCount * $descriptorsInOneSegment)
+    expectedRdmRxDescriptorHeadPointer += $moreDescriptors
+    
+    lastPacketLength = ($payloadLen % $bufferSize)
+    brokenPacket = 0
+    if ($lastPacketLength > 0):
+        brokenPacket = 1
+    txRingCommitIterations = ($payloadLen // $bufferSize)
+    txRingCommitIterations += $brokenPacket
+    
+    mac.txring[$ring].insertcontext -I 0 -M 0x4 -S $mss -E $l2headerSize -P $l3headerSize -T $l4headerSize -O 0 -U 0
+    
+    for i in range(0, ($txRingCommitIterations + 1)):
+        eop = 0
+        sop = 0
+        offset = ($i * $bufferSize)
+        if ($i == ($txRingCommitIterations)):
+            eop = 1
+        if ($i == 0):
+            sop = 1
+            descBufferLength = $headerSize
+            offset = 0
+        elif ($i == $txRingCommitIterations):
+            if not($lastPacketLength == 0):
+                descBufferLength = $lastPacketLength
+            else:
+                descBufferLength = $bufferSize
+        else:
+            descBufferLength = $bufferSize
+        
+        pkt.new -n pkt$i -p $bufferSize
+        pkt.layer -i $(pkt$i) -L 40 -t TCP sport=$portSrc dport=$portDst
+        if ($ipv6):
+            pkt.layer -i $(pkt$i) -L 30 -t IPv6 ttl=100 src=$ipAddressSrc dst=$ipAddressDst
+        else:
+            pkt.layer -i $(pkt$i) -L 30 -t IP ttl=100 src=$ipAddressSrc dst=$ipAddressDst
+        pkt.layer -i $(pkt$i) -L 20 -t Ether type=$etherType src=$macAddressSrc dst=$macAddressDst
+        mac.txring[$ring].insert -C 0 -i $(pkt$i) -l 1 -b $descBufferLength -e $eop -p $packetLen -u 1 -s 1 -m 0x10
+    mac.txring[$ring].commit
+    mac.txring[$ring].clean
+    mac.rxring[0].clean
+    mac.llh -v rdmRxDescriptorHeadPointer rdmRxDescriptorHeadPointerGet 0
+    
+    if not($rdmRxDescriptorHeadPointer == $expectedRdmRxDescriptorHeadPointer):
+        finalReport += ['Incorrect descriptor count on Rx ring: $rdmRxDescriptorHeadPointer, expected value: $expectedRdmRxDescriptorHeadPointer for payload length $payloadLen. Dump of random variabes: MSS: $mss. Tx Buffer Size: $bufferSize. Mac Addresses (Src, Dst): $macAddressSrc, $macAddressDst. IP addresses (Src, Dst): $ipAddressSrc, $ipAddressDst. TCP ports (Src, Dst): $portSrc, $portDst. Ring: $ring. Seed: $seed']
+    mac.uninit
+
+readreg 0x7040
+readreg 0x5040
+exec $(PWD)/helpers/showTestResult.txt

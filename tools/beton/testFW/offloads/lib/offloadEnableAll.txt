@@ -1,0 +1,14 @@
+# drvMsgEnableWakeup header
+patternMaskWindows = 0
+patternMaskAquantia = 0
+patternMaskOther = 0
+offloadsMaskWindows = (  (1 << (($ndisPMProtocolOffloadIdIPv4ARP & 0xFFFFF) - 0x1)) | (1 << (($ndisPMProtocolOffloadIdIPv6NS  & 0xFFFFF) - 0x1)) ) 
+offloadsMaskAquantia = 0
+
+exec testFW/drvIface/drvMsgEnableWakeup.txt
+
+#### Run transaction
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+$result = $transactionResult
+

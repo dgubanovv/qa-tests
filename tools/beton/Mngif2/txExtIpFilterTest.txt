@@ -1,0 +1,143 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mngif2/txExtIpFilterTest.txt $
+# $Revision: #8 $
+# $DateTime: 2016/08/11 02:22:39 $
+# $Author: dgubanov $
+#
+# Script for one packet extraction with IP IpFilter
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    queue = 0
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef logTag:
+        logTag = -l cli
+
+extReplicate = 0   # replicate after Extraction
+#ipVersion = 4
+IpVersions = [4,6]
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback None $logTag # No loopback
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+
+exec $(PWD)/helpers/tpoExtractorLlhNames.txt
+# Tx Extractor prepare
+
+mac.llh -v packetCount tpoTxExtractionQueuePacketCountGet $queue
+if $packetCount > 0:
+    echo Please run script on clear queue
+    exit
+
+# Set corresponding IpFilter enable and clear another
+
+mac.llhcache on
+mac.llh -C tpoTxExtractionQueueModeSet $extReplicate $queue
+mac.llh -C tpoTxExtractionMacFilterEnableSet 0 $queue
+mac.llh -C tpoTxExtractionIpFilterEnableSet 1 $queue
+mac.llh -C tpoTxExtractionArpFilterEnableSet 0 $queue
+mac.llhcache off
+
+IpFilter0 = 0x00010203
+IpFilter1 = 0x04050607
+IpFilter2 = 0x08090A0B
+IpFilter3 = 0x0C0D0E0F
+
+bufLen = 64
+
+mac.llh tpoTxExtractionIpDestinationAddressWord0Set $IpFilter0 $queue
+for ipVersion in $IpVersions:
+    if $ipVersion == 6:
+        mac.llh tpoTxExtractionIpDestinationAddressWord1Set $IpFilter1 $queue
+        mac.llh tpoTxExtractionIpDestinationAddressWord2Set $IpFilter2 $queue
+        mac.llh tpoTxExtractionIpDestinationAddressWord3Set $IpFilter3 $queue
+
+    # Send Packets: ETH_TYPE IP, !ETH_TYPE IP, ETH_TYPE !IP
+    expectedPacketAddress = 0
+    for packetNum = 0; $packetNum < 3; packetNum += 1:
+        
+        mac.txring[$txRingNo].insert -b $bufLen -p $bufLen -f ramp
+        mac.txring[$txRingNo].dumpdesc -T 1 $logTag
+        mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+        if $packetNum == 0:
+            expectedPacketAddress = $pAddr
+        if $packetNum == 0 or $packetNum == 2:
+            if $ipVersion == 4:
+                forthDword = 0x00450008
+            else:
+                forthDword = 0x0060DD86
+        else:
+            if $ipVersion == 4:
+                forthDword = 0x00450608 # arp for example
+            else:
+                forthDword = 0x00600608
+        addr = $pAddr
+        # set EtherType, Start of IP header
+        mem.put 0x03020100 0x07060504 0x0b0a0908 $forthDword -p $addr
+        if $ipVersion == 4:
+            da1 = (($IpFilter0 << 8) & 0xFF000000) | (($IpFilter0 >> 8) & 0x00FF0000) | 0x1d1c
+            da2 = 0x23220000 | (($IpFilter0 << 8) & 0x0000FF00) | (($IpFilter0 >> 8) & 0x000000FF)
+            if $packetNum == 2:
+                da2 = $da2 + 1
+            # set DA Address (2 bytes)
+            addr = $addr+0x10
+            mem.put 0x13121110 0x17161514 0x1b1a1918 $da1 -p $addr
+            # set DA Address (other 2 bytes)
+            addr = $addr+0x10
+            mem.put $da2 0x27262524 0x2b2a2928 0x2f2e2d2c -p $addr
+        else:
+            da1 = (($IpFilter3 << 8) & 0xFF000000) | (($IpFilter3 >> 8) & 0x00FF0000) | 0x2524
+            da2 = (($IpFilter2 << 8) & 0xFF000000) | (($IpFilter2 >> 8) & 0x00FF0000) | (($IpFilter3 << 8) & 0x0000FF00) | (($IpFilter3 >> 8) & 0x000000FF)
+            da3 = (($IpFilter1 << 8) & 0xFF000000) | (($IpFilter1 >> 8) & 0x00FF0000) | (($IpFilter2 << 8) & 0x0000FF00) | (($IpFilter2 >> 8) & 0x000000FF)
+            da4 = (($IpFilter0 << 8) & 0xFF000000) | (($IpFilter0 >> 8) & 0x00FF0000) | (($IpFilter1 << 8) & 0x0000FF00) | (($IpFilter1 >> 8) & 0x000000FF)
+            da5 = 0x37360000 | (($IpFilter0 << 8) & 0x0000FF00) | (($IpFilter0 >> 8) & 0x000000FF)
+            if $packetNum == 2:
+                da2 = $da2 + 1
+            
+            # set DA Address (10 bytes)
+            addr = $addr+0x20
+            mem.put 0x23222120 $da1 $da2 $da3 -p $addr
+            # set DA Address (other 6 bytes)
+            addr = $addr+0x10
+            mem.put $da4 $da5 0x3b3a3938 0x3f3e3d3c -p $addr
+
+
+    mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size 80
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.txring[$txRingNo].status $logTag
+
+    expectedPacketCount = 1
+    stringId = '(1)'
+    mac.llhcache on
+    exec $(PWD)/helpers/extractorCheckers/checkPacketCount.txt
+    
+    pAddr = $expectedPacketAddress
+    if $packetCount > 0:
+        exec $(PWD)/helpers/extractAndCompare.txt
+    
+readreg 0x7040    
+mac.uninit
+exec $(PWD)/helpers/showTestResult.txt

@@ -1,0 +1,125 @@
+#####################################################
+# Input args:
+#
+# IPv4Address 
+#
+# Returns
+# result
+#
+#####################################################
+
+#####################################################
+### Init
+#####################################################
+
+reg1 = 0
+reg2 = 0
+
+exec testFW/wol/lib/wolConstants.txt
+exec testFW/drvIface/getBaseAddress.txt
+
+priority             = 0
+packetType           = $aqPMWoLPacketArp
+patternId            = 6
+nextWolPatternOffset = 0
+
+#####################################################
+### CRC Calculation
+#####################################################
+
+exec testFW/wol/lib/crc32/init.txt
+
+byte = 0x08
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x06
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x00
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x01
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x08
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x00
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x06
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x04
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x00
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x01
+exec testFW/wol/lib/crc32/addByte.txt
+
+if $IPv4Address != 0:
+    exec testFW/wol/lib/crc32/addIPv4.txt
+
+#####################################################
+### Mask Calculation
+#####################################################
+
+exec testFW/wol/lib/mask/init.txt
+
+bitNumber = 12
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 13
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 14
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 15
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 16
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 17
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 18
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 19
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 20
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 21
+exec testFW/wol/lib/mask/setBit.txt
+
+if $IPv4Address != 0:
+    for bitNumber = 38; $bitNumber <= 41; bitNumber += 1:
+        exec testFW/wol/lib/mask/setBit.txt
+
+#####################################################
+### Write header, drvMsgWoLAdd
+#####################################################
+
+exec testFW/drvIface/drvMsgWolAdd.txt
+
+#####################################################
+### Write wolPattern.wolIpv4Ping
+#####################################################
+
+mac.mcp.writemem $addr $flags -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv4Address -l nul
+addr = $addr + 4
+
+#####################################################
+### Exec and validate
+#####################################################
+
+exec testFW/wol/lib/wolSendEnableCheck.txt

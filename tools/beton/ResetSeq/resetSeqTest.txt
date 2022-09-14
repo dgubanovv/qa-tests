@@ -1,0 +1,100 @@
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef is_felicity:
+    is_felicity = True
+
+ifndef num_lanes:
+    num_lanes = 1
+
+ifndef iterations:
+    iterations = 1000
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!!! APPLYING DEFAULT PARAMS !!!!!
+    txRingNo = 0
+    rxRingNo = 0
+    logTag = -l cli
+    TPO2 = False
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback None $logTag
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag
+
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+
+################## Main loop ##################
+#if $is_felicity:
+#    reg368value = 0x3b0002
+#else:
+#    reg368value = 0x0f20
+
+echo ITERATIONS: $iterations
+for j = 0; $j < $iterations; j += 1:
+    echo !!!!!!!!!! Iteration: $j !!!!!!!!!!
+
+    echo !!!!! Executing reset sequence !!!!!
+    exec $resetScriptPath
+
+    echo !!!!! Checking if FW is alive !!!!!
+    writereg 0x368 0x1
+
+    echo !!!!! Resetting register 0x36c (dropping link) !!!!!
+    writereg 0x370 0x0
+
+    for i = 0; $i < 10; i += 1:
+        readreg  0x370 -n reg370 -l nul
+        if $reg370 == 0x0:
+            break
+        pause 100 ms
+
+    if $reg370 != 0x0:
+        echo ERROR: Cannot reset 0x370
+        finalReport = $finalReport + ['(4) Cannot reset 0x370']
+        exit
+    echo !!!!! Register 0x370 has been reset !!!!!
+
+    echo !!!!! Setting link AUTO !!!!!
+    writereg 0x368 $reg368value
+
+    isLinkUp = 0
+    for i = 0; $i < 150; i += 1:
+        readreg  0x370 -n reg370 -l nul
+        link = $reg370
+        if $link != 0:
+            isLinkUp = 1
+            break
+        pause 100 ms
+
+    if $isLinkUp == 0:
+        echo ERROR: No link after 15 seconds
+        finalReport = $finalReport + ['(5) ERROR: No link after 15 seconds']
+        break
+    echo !!!!! Link is UP ($reg370) !!!!!
+    pause 1 s
+
+mac.uninit
+exec $(SCRIPT_PATH)/showTestResult.txt

@@ -1,0 +1,59 @@
+mvm = True #Interrupt mode MvM or SM
+autoclear = False #Autoclear for MSI-X
+mac.isr.get availableVectorCount -n int_count
+wait_count = 5
+wait_timeout = 100
+
+#Set interrupt mode
+intmode = 'Multi-Vector' if ($mvm) else 'Single'
+
+mac.isr.set Mode $intmode
+mac.isr.set iacmEnable $autoclear
+mac.isr.set iacsEnable $autoclear
+
+#Add interrupt handlers
+int_lst = [i for i in range($int_count)]
+int_mask = 0
+for int in $int_lst:
+    source_bit = (1 << $int)
+    int_mask = $int_mask | $source_bit
+    mac.isr.regHandler -v $int -c $int -t 10000000 -n interrupt$int
+    interrupt$int = 0
+
+#Call direct HW interrupt
+mac.isr.reset
+mac.isr.enable
+mac.llh regInterruptMaskFollowStatusForce1Set $int_mask
+mac.llh regInterruptMaskFollowStatusClear1Set $int_mask
+mac.llh itrInterruptStatusSetLSW_Set $int_mask
+
+#Wait all handlers
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for int in $int_lst:
+        if $(interrupt$int) != 1:
+            error = 1
+            break
+    if $error == 0:
+        break
+
+    pause $wait_timeout ms
+#Stop all handlers
+mac.isr.disable
+
+#Remove all handlers
+for int in $int_lst:
+    source_bit = (1 << $int)
+    mac.isr.unregHandler --v $int -c $int
+
+#Check
+if $error > 0:
+    echo FAILED
+    for int in $int_lst:
+        if $(interrupt$int) != 1:
+            res = failed
+        else:
+            res = passed
+        echo Interrupt $int is $res
+else:
+    echo PASSED

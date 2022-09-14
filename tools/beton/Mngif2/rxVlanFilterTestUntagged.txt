@@ -1,0 +1,206 @@
+# Author: dgubanov
+# Verify single filter for untagged vlan packets
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    logTag = -l cli
+    RPF2 = False
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef RPF2:
+    RPF2 = False 
+        
+exec $(PWD)/helpers/versionSpecificInit.txt
+mac.set glb_reg_reset_dis False
+mac.set tx_reg_rst_dis False
+mac.set rx_reg_rst_dis False
+
+
+if $hostAlreadyInitiated == False:
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+    
+    mac.txring[$txRingNo].status $logTag 
+    mac.rxring[$rxRingNo].status $logTag
+
+  
+if $RPF2:
+    exec $(PWD)/helpers/enableRPF2.txt    
+    
+#Enable Promisc
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 256
+mac.llh -C rpfL2BroadcastFilterActionSet 1
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 1
+mac.llh -C rpfL2BroadcastEnableSet 0
+mac.llh -C rpfVlanPromiscuousModeEnableSet 0
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llh -C rpfVlanInnerEthertypeSet 0x8100
+mac.llhcache off
+
+
+macAddrSrcStr = '[0xAA,0xBB,0xCC,0xDD,0xEE,0xFF]'
+macAddrDstStr = '[0xA1,0xB1,0xC1,0xD1,0xE1,0xF1]'
+packetLen = 14
+Vlans = ['NoVlan', 'Vlan0','Vlan10']
+l3Protocols = ['IP', 'None', 'PTP']
+l4ProtoForL3 = [['ICMP']]
+l4ProtoForL3 += [['ARP']]
+l4ProtoForL3 += [['None']]
+countL3Proto = 0
+for l3Proto in $l3Protocols:
+    l4Protocols = $l4ProtoForL3[$countL3Proto]
+    for l4Proto in $l4Protocols:
+        for vlan in $Vlans:
+            #Generate one packet without VLAN tag
+            pkt.new -n pkt$vlan$l3Proto$l4Proto -p $packetLen
+            if '$l4Proto' != 'None':
+                pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 60 -t $l4Proto
+            if '$l3Proto' != 'None' and '$l3Proto' != 'PTP':
+                pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto
+            if '$vlan' == 'Vlan0':
+                if '$l3Proto' == 'PTP':
+                    pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 40 -t Dot1Q prio=6 type=0x88F7 vlan=0x00 #VLAN ID=0
+                else:
+                    pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 40 -t Dot1Q prio=6 type=0x800 vlan=0x00 #VLAN ID=0                
+                pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 25 -t Ether src=$macAddrSrcStr dst=$macAddrDstStr type=0x8100  
+            elif '$vlan' == 'Vlan10':
+                if '$l3Proto' == 'PTP':
+                    pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 40 -t Dot1Q prio=6 type=0x88F7 vlan=0x0a #VLAN ID=10
+                else:
+                    pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 40 -t Dot1Q prio=6 type=0x800 vlan=0x0a #VLAN ID=10 
+                pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 25 -t Ether src=$macAddrSrcStr dst=$macAddrDstStr type=0x8100
+            else:
+                pkt.layer -i $(pkt$vlan$l3Proto$l4Proto) -L 25 -t Ether src=$macAddrSrcStr dst=$macAddrDstStr
+
+            # Common untagged VLAN values
+            filterVlanUntgRxQueueEnable = 0
+            filterVlanUntgMngmtQueue = 0
+            filterVlanUntgRxQueueNum = 0
+            filterVlanDblVlan = 0
+
+
+            #Format of test:
+            #(untaggedFltrEnable,untaggedFltrAction,promiscuousModeEnable,mngQueue)
+
+            #Define packets to send(givenPackets), packet names(givenPacketsStrs), expected packet count on Rx ring(expectRxCounts)
+            tests = [ [0,0,0,0],[0,0,1,0],[1,0,0,0],[1,1,0,0],[1,2,0,0],[1,3,0,1] ]
+            #tests = [ [1,2,0,0] ]
+
+            for test in $tests:
+                #Filter config    
+                filterVlanUntgAction = $test[1]
+                filterVlanUntgPktAccept = $test[0]
+                filterVlanPromisc = $test[2]
+                
+                #Set mngQueue for test with action = 'To Manage' and 'To Host And Manage'
+                if $test[1] == 2 or $test[1] == 3:
+                    filterVlanUntgMngmtQueue = $test[3]
+                
+                exec $(PWD)/helpers/filtersConfigurators/rxVlanFilterUntagged.txt
+                
+                #Define packet expectations
+               
+                if $test[2] == 1:
+                    #untaggedFltrEnable = 0,untaggedFltrAction = 0,promiscuousModeEnable = 1
+                    expectRxCount = 1
+                elif $test[0] == 1 and $test[1] == 0: 
+                    #untaggedFltrEnable = 1,untaggedFltrAction = 0,promiscuousModeEnable = 0
+                    #For test [1,0,0]
+                    expectRxCount = 0
+                elif $test[0] == 1 and $test[1] == 1 and '$vlan' == 'NoVlan': 
+                    #untaggedFltrEnable = 1,untaggedFltrAction = 1,promiscuousModeEnable = 0
+                    #For test [1,1,0]
+                    expectRxCount = 1
+                elif $test[0] == 1 and $test[1] == 2: 
+                    #untaggedFltrEnable = 1,untaggedFltrAction = 2,promiscuousModeEnable = 0
+                    #For test [1,2,0]
+                    expectRxCount = 0
+                elif $test[0] == 1 and $test[1] == 3 and '$vlan' == 'NoVlan': 
+                    #untaggedFltrEnable = 1,untaggedFltrAction = 3,promiscuousModeEnable = 0
+                    #For test [1,3,0]
+                    expectRxCount = 1
+                else:
+                    #For test [0,0,0]
+                    #untaggedFltrEnable = 0,untaggedFltrAction = 0,promiscuousModeEnable = 0
+                    expectRxCount = 0
+                
+                
+                #currentPacketsIndex = 0
+                mac.txring[$txRingNo].status $logTag 
+                mac.rxring[$rxRingNo].status $logTag
+                #Send packet one by one
+                mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+                pkt.len -i $(pkt$vlan$l3Proto$l4Proto) -n packetLen $logTag
+                mac.txring[$txRingNo].insert -i $(pkt$vlan$l3Proto$l4Proto) -b $packetLen
+                mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+                mac.txring[$txRingNo].commit
+                mac.rxring[$rxRingNo].clean
+                mac.txring[$txRingNo].clean
+
+                mac.txring[$txRingNo].status $logTag 
+                mac.rxring[$rxRingNo].status $logTag
+                    
+                mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+                rxCount = ($rxHeadGood - $rxHeadBefore)
+                    
+                #Check if packet has come or not,according test definition
+                if $rxCount != $expectRxCount:            
+                    #givenPacketStr = $givenPacketsStrs[$currentPacketsIndex]
+                    if $rxCount == 0:
+                        stringId = '(1)'
+                        finalReport += ['(1) pkt$vlan packet was not received for test case: $test']
+                    else:
+                        stringId = '(2)'
+                        finalReport += ['(2) pkt$vlan packet was received for test case: $test']
+                    
+                #If pktNoVlan goes to manage or manage-and-host
+                if ($test[1] == 2 and '$vlan' == 'NoVlan') or ($test[1] == 3 and '$vlan' == 'NoVlan'):
+                    exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+                    queue = $test[3]
+                        
+                    #Check number of packets in queue
+                    expectedPacketCount = 1
+                    stringId = '(3)'
+                    exec $(PWD)/helpers/extractorCheckers/checkPacketCount.txt
+                    stringId = '(4)'
+                    exec $(PWD)/helpers/extractAndCompare.txt
+                
+    countL3Proto += 1    
+    
+
+    
+readreg 0x5040 $logTag
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit
+    

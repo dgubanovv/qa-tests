@@ -1,0 +1,103 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mngif2/txExtMacFilterTest.txt $
+# $Revision: #7 $
+# $DateTime: 2016/08/11 02:22:39 $
+# $Author: dgubanov $
+#
+# Script for one packet extraction with different MAC filters
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+extReplicate = 0   # replicate after Extraction
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback None $logTag # No loopback
+    mac.init
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+    
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+
+exec $(PWD)/helpers/tpoExtractorLlhNames.txt
+# Tx Extractor prepare
+
+# Set MAC filter enable and clear IP enable
+
+for queue = 0; $queue < 2; queue += 1:
+    mac.llh -v packetCount tpoTxExtractionQueuePacketCountGet $queue
+    if $packetCount > 0:
+        echo Please run script on clear queue
+        exit
+
+for queue = 0; $queue < 2; queue += 1:
+    mac.llhcache on
+    mac.llh -C tpoTxExtractionQueueModeSet $extReplicate $queue
+    mac.llh -C tpoTxExtractionMacFilterEnableSet 1 $queue
+    mac.llh -C tpoTxExtractionIpFilterEnableSet 0 $queue
+    mac.llh -C tpoTxExtractionArpFilterEnableSet 0 $queue
+    mac.llhcache off
+
+macAddrFilter0 = 0x78563412
+macAddrFilter1 = 0xF0DEBC9A
+macAddr = ($macAddrFilter0 & 0xFFFF0000) | ($macAddrFilter1 & 0x000000FF)
+
+for queue = 0; $queue < 2; queue += 1:
+    macFilterLSW$(queue) = (($(macAddrFilter$queue) << 8) & 0xFF000000) | (($(macAddrFilter$queue) >> 8) & 0xFF0000) | (($(macAddrFilter$queue) << 8) & 0xFF00) | (($(macAddrFilter$queue) >> 8) & 0xFF)
+    macFilterMSW$(queue) = (($(macAddrFilter$queue) << 8) & 0xFF00) | (($(macAddrFilter$queue) >> 8) & 0xFF)
+    mac.llhcache on
+    mac.llh -C tpoTxExtractionMacDestinationAddressLSW_Set $(macFilterLSW$(queue)) $queue
+    mac.llh -C tpoTxExtractionMacDestinationAddressMSW_Set $(macFilterMSW$(queue)) $queue
+    mac.llhcache off
+
+bufLen = 64
+
+bufAddr = []
+
+# Packet Send: MAC, !MAC
+for queue = 0; $queue < 2; queue += 1:
+    for packetNum = 0; $packetNum < 2; packetNum += 1:
+        mac.txring[$txRingNo].insert -b $bufLen -p $bufLen -f $(macAddrFilter$queue)
+        mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+        if $packetNum == 1:
+            mem.put $macAddr -p $pAddr
+        else:
+            bufAddr += [$pAddr]
+
+mac.txring[$txRingNo].dumpdesc -T 1 $logTag
+mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size 80
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status $logTag
+
+for queue = 0; $queue < 2; queue += 1:
+    expectedPacketCount = 1
+    stringId = '(1)'
+    mac.llhcache on
+    exec $(PWD)/helpers/extractorCheckers/checkPacketCount.txt
+    
+    if $packetCount != 0:
+        pAddr = $bufAddr[$queue]
+        exec $(PWD)/helpers/extractAndCompare.txt
+
+readreg 0x7040		
+mac.uninit
+exec $(PWD)/helpers/showTestResult.txt

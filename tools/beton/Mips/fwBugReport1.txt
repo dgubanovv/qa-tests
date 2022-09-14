@@ -1,0 +1,37 @@
+readreg 0x404
+readreg 0x18
+readreg 0x520
+readreg 0x350:0x374
+readreg 0x704:0x714
+readphyreg -p 0 0x7.0x20
+readphyreg -p 0 0x7.0xc400
+readphyreg -p 0 0x7.0x10
+readphyreg -p 0 0x7.0x0
+readphyreg -p 0 0x7.0xe000
+readphyreg -p 0 0x4.0xe812
+readphyreg -p 0 0x1e.0xc896
+readphyreg -p 4 0x7.0x20
+readphyreg -p 4 0x7.0xc400
+readphyreg -p 4 0x7.0x10
+readphyreg -p 4 0x7.0x0
+readphyreg -p 4 0x7.0xe000
+readphyreg -p 4 0x4.0xe812
+readphyreg -p 4 0x1e.0xc896
+readreg 0x4000
+readreg 0x40B0
+readreg 0x4318
+readreg 0x4324
+readreg 0x4374
+readreg -n statAddress 0x374
+endAddress = $statAddress + 80
+
+#Enable memory access
+writereg 0x520 1
+for address=0x1fb00000; $address < 0x1fb00020; address+=4:
+    mac.mcp.readmem $address
+
+for address=$statAddress; $address < $endAddress; address+=4:
+    mac.mcp.readmem $address
+pause 1
+for address=$statAddress; $address < $endAddress; address+=4:
+    mac.mcp.readmem $address

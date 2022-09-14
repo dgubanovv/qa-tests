@@ -1,0 +1,535 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Offloads/txSegmentationOffload.txt $
+# $Revision: #16 $
+# $DateTime: 2016/07/22 01:35:19 $
+# $Author: dgubanov $
+
+#! Script was modified according to band.txt logic
+#! Actions to do:
+#! Generate all packets before main cycle
+#! Add stream comparer
+#! There are some issues for large iteration count >20
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    minMSS = 4                          #LSO
+    maxMSS = 1994                       #LSO
+    lsoMaxSize = 65535                  #LSO: max scapy packet len
+    minPortNum = 1
+    maxPortNum = 65535
+    logTag = -l cli
+    TPO2 = False
+	RPF2 = False
+else:
+    ifndef minMSS:
+        minMSS = 4
+    ifndef maxMSS:
+        maxMSS = 1994
+    ifndef lsoMaxSize:
+        lsoMaxSize = 65535
+    ifndef minPortNum:
+        minPortNum = 1
+    ifndef maxPortNum:
+        maxPortNum = 65535
+    ifndef logTag:
+        logTag = -l cli
+
+#ringPerTc = 8
+ifndef TPO2:
+    TPO2 = False 
+
+ifndef RPF2:
+    RPF2 = False 
+    
+    
+maxMSS = 104
+
+l3Type = 1			#0 - no dependency, 1 - IPv4, 2 - IPv6
+l4Type = 1 			#0 - no dependency, 1 - TCP, 2 - UDP (note: LSO not provided for UDP, so don't use it)
+l3Str = ('IPv4' if $l3Type == 1 else 'IPv6' if $l3Type == 2 else 'None')
+l4Str = ('TCP' if $l4Type == 1 else 'UDP' if $l4Type == 2 else 'None')
+#echo Layer 3 Protocol               : $l3Str
+#echo Layer 4 Protocol               : $l4Str
+
+#LSO
+ct_cmd = 0
+out_len = 0 #default: used for computing IPv4 length field
+tun_len = 0 #default: used for computing IPv4 length field
+l2_len = 18
+if $l3Type == 2:
+    ct_cmd = ($ct_cmd | 0x2)
+if $l4Type == 1:
+    ct_cmd = ($ct_cmd | 0x4)
+if $l3Type == 0:
+    l3_len = 0
+elif $l3Type == 1:
+    l3_len = 20 
+else:
+    l3_len = 40 
+if $l4Type == 0:
+    l4_len = 0
+elif $l4Type == 1:
+    l4_len = 20 
+else:
+    l4_len = 8 
+headerSize = ($l2_len + $l3_len + $l4_len)
+
+#Device parameters
+tpbsize = 128                # FPGA limitation
+rpbsize = 336               # FPGA limitation
+maxtc = 8                    # TC count 4 or 8
+shallowLoopback = False
+msmLoopback = False
+disableInterrupts = True
+singleInterrupt = False
+
+#Test parameters
+itr = 10                 # Send iteration count
+minSize = max(64, ($headerSize + $minMSS)) #LSO: Min packet size
+maxSize = 2048               # Max packet size
+minSegCount = 1             # Min segment count
+maxSegCount = 16              # Max segment count
+minBatchCount = 1            # Min iteration packet count
+maxBatchCount = 500           # Max iteration packet count
+minOffset = 0                # Min offset
+maxOffset = -1               # Max offset
+#useBackPreassure = 0         #
+#onlyBackPreassure = 0        # Always use back preassure
+loopbackPause = 50          #
+maxWaitCount = 30           #
+txInterruptMark = 1           #LSO 0 - Each descriptor, 1 - Each packet, 2 - Each batch
+ringMappingType = 0         # 0 - 1 to 1;#unsupported 1 - mess rss, tc is the same; 2 - mess tc, rss the same; 3 - mess all
+
+uniqPacketPerRing = 10
+
+maxSize = min($maxSize, 1024*(min($tpbsize, $rpbsize))-256) #LSO
+
+#echo Send iteration count           : $itr
+#echo Packet min/max size            : $minSize/$maxSize
+#echo Segment count min/max          : $minSegCount/$maxSegCount
+#echo Iteration packet count min/max : $minBatchCount/$maxBatchCount
+#echo Offset in buffer               : $minOffset/$maxOffset
+#echo Use/Only use back preassure    : $useBackPreassure/$onlyBackPreassure
+
+loopbackMode = ('System DMA' if $shallowLoopback else 'System Packet' if not $msmLoopback else 'None')
+
+mac.set loopback $loopbackMode -l nul
+if not $shallowLoopback and $msmLoopback:
+	loopbackMode = MSM System
+#echo Loopback                       : $loopbackMode
+
+mac.set txDcbTcCount $maxtc -l nul
+mac.set rxDcbTcCount $maxtc -l nul
+tpbPerTcSize = ($tpbsize/$maxtc)
+rpbPerTcSize = ($rpbsize/$maxtc)
+mac.txpb[0:$maxtc].set -l nul size $tpbPerTcSize
+mac.rxpb[0:$maxtc].set -l nul size $rpbPerTcSize
+#echo TC number $maxtc. TPB/RPB per TC    : $tpbPerTcSize/$rpbPerTcSize
+
+if $maxtc == 4:
+    q_ct = 8
+else:
+    q_ct = 4
+
+ringPerTc = $q_ct
+    
+#if $ringPerTc < 0:
+#    #echo INCORRECT VALUE, ringPerTc = $ringPerTc...Setting ringPerTc = 1
+#    ringPerTc = 1
+#elif $ringPerTc > $q_ct:
+#    #echo INCORRECT VALUE, ringPerTc = $ringPerTc...Setting ringPerTc = $q_ct (q_ct)
+#    ringPerTc = $q_ct
+ring_lst = [(i * $q_ct) + j for i in range($maxtc) for j in range($ringPerTc)]
+ring_lst = [0, 1] # Temporary workaround. Should be fixed
+#echo Test rings                     : $ring_lst
+
+mac.rfc.rss.enable -l nul
+#echo Enable RSS                     : True
+
+vlanPriority = ''
+
+vlanGen = 1
+rssMask = (0x3 if $maxtc == 8 else 0x7)
+
+#for ring in $ring_lst:
+    #packetCount = $uniqPacketPerRing
+
+    #pkt$(ring)Max = $uniqPacketPerRing
+    #pkt$(ring)Cur = 0
+    #for i = 0; $i < $uniqPacketPerRing; i += 1:
+        #pktId = $packetName$i
+        #echo !!!!!!!!!!!
+        #echo FROM MAIN: $pktId
+        #echo !!!!!!!!!!!
+        #echo dump packet with id $pktId
+        #pkt.dump -i $pktId -f HEX
+        #pause
+#echo Ring mapping type              : $ringMapTypeStr
+
+tpbPerTcSize = ($tpbsize) #LSO
+rpbPerTcSize = ($rpbsize) #LSO
+
+#echo TC number 1. TPB/RPB per TC    : $tpbPerTcSize/$rpbPerTcSize #LSO
+
+#scmp.clean
+#scmp.autofill -l -L $ringMapTypeStr
+
+#LSO
+#testGroupTag = scmp
+#scmp.clean
+#scmp.autofill -r
+#scmp.newGroup -g $testGroupTag
+
+if not $disableInterrupts:
+    interruptState = 'Single' if ($singleInterrupt) else 'Multi-Vector'
+    mac.isr.set Mode $interruptState -l nul
+    mac.isr.get Mode -n interruptState -l nul
+
+mac.init
+
+if $TPO2:
+        exec $(PWD)/helpers/enableTPO2.txt 
+
+if $RPF2:
+        exec $(PWD)/helpers/enableRPF2.txt 		
+        
+exec $(PWD)/helpers/versionSpecificInit.txt
+
+if $disableInterrupts:
+    interruptState = Disabled
+    mac.isr.disable
+
+#echo Interrupts                     : $interruptState
+
+if $txInterruptMark == 1:
+    markState = Each packet
+    wbthreshold = 0
+elif $txInterruptMark == 2:
+    markState = Each batch
+    wbthreshold = 0
+else:
+    markState = Each descriptor
+    wbthreshold = 1
+
+for ring in $ring_lst:
+    mac.txring[$ring].set wbThreshold $wbthreshold -l nul
+    mac.txring[$ring].set PacketMark None -l nul #LSO
+    if $txInterruptMark != 0:
+        vc = (31 - $ring)
+        mac.txring[$ring].set map2vector $vc -l nul
+        mac.txring[$ring].set map2cause $vc -l nul
+
+#echo Interrupt Mark                 : $markState
+
+if not $shallowLoopback and $msmLoopback:
+    writereg msm 0x8 0x1002000B $logtag
+    writereg msm 0x14 $maxSize $logtag
+    readreg msm 0x8
+
+mac.txinit
+mac.rxinit
+
+exec $PWD/helpers/workaroundBug4731.txt
+
+for ring in $ring_lst:
+    mac.txring[$ring].enable
+    mac.rxring[$ring].enable
+    
+    mac.txring[$ring].get -l nul -n txRingSize$ring size
+    mac.txring[$ring].get -l nul -n txRingBufSize$ring bufSize # Get value from dev config
+    mac.rxring[$ring].get -l nul -n rxRingSize$ring size
+    mac.rxring[$ring].get -l nul -n rxRingBufSize$ring bufSize
+    maxOffset$ring = ($maxOffset if $maxOffset >= 0 else $(txRingBufSize$ring) + $maxOffset)
+
+    rxRingSizeM1$ring = ($(rxRingSize$ring) - 1)
+    mac.llh -v txExpectHead$ring tdmTxDescriptorHeadPointerGet $ring
+    mac.llh -v rxExpectHead$ring rdmRxDescriptorHeadPointerGet $ring
+
+    txHead$ring = $(txExpectHead$ring)
+    rxHead$ring = $(rxExpectHead$ring)
+
+    #for packet and desc counting
+    curr_tx_headptr$ring = 0
+    prev_tx_headptr$ring = 0
+    curr_rx_headptr$ring = 0
+    prev_rx_headptr$ring = 0
+    successfulPacketCount$ring = 0
+    successfulTxCount$ring = 0
+    successfulRxCount$ring = 0
+    lastBatchCount$ring = 0
+#echo txExpectHead $txExpectHead, rxExpectHead $rxExpectHead
+#echo Start loop
+
+totalNonLSO = 0
+totalLSO = 0
+
+error = False
+
+for i = 0; $i < $itr; i += 1:
+    if ($i % ($itr/10)) == 0:
+        #mac.txring[0].status
+        #mac.rxring[0].status
+        progress = (($i * 100) / $itr)
+        #echo Progress: $progress%
+        
+    for ring in $ring_lst:
+        txcount$ring = 0
+        rxcount$ring = 0
+        #echo PROCESSING RING $ring
+        packetName = pkt$(ring)_
+        #packetName = pkt$ring
+        
+        if $ringMappingType == 0:
+            rssGen = ($ring & $rssMask)
+            vlanPriority = ($ring // $q_ct)
+            ringMapTypeStr = 1_to_1
+            ifndef groups:
+                groups = acRing0$ring
+            #elif $ring < 10:
+            #    groups = $groups acRing0$ring
+            #else:
+            #    groups = $groups acRing$ring
+
+        count = random.randint($minBatchCount, $maxBatchCount)
+        
+        totalPktSize = 0 #LSO
+        
+        #LSO TCP flag masking
+        first_lso_pkt_mask = random.randint(0x0, 0xFFF)
+        mid_lso_pkt_mask = random.randint(0x0, 0xFFF)
+        last_lso_pkt_mask = random.randint(0x0, 0xFFF)
+        lso_tcp_ctrl1_mask = ($mid_lso_pkt_mask << 16) | ($first_lso_pkt_mask)
+        mac.llh regTxLargeSendOffloadTcpControl1Set $lso_tcp_ctrl1_mask
+        mac.llh regTxLargeSendOffloadTcpControl2Set $last_lso_pkt_mask
+        
+        ii = 0
+        
+        for j = 0; $j < $count and $(rxcount$ring) < $(rxRingSize$ring) - 1 and $minSegCount < $(txRingSize$ring) - $(txcount$ring); j += 1:
+            tmpj = $j
+
+            maxSegCountItr = min($(txRingSize$ring) - 1 - $(txcount$ring), $maxSegCount)
+            minSegCountItr = min($minSegCount, $maxSegCountItr)
+        
+            segcount = random.randint($minSegCountItr, $maxSegCountItr)
+            minSegSize = 6
+            maxSegSize = min($maxSize, $(txRingBufSize$ring))
+            if ($(txcount$ring) + 1 + $segcount) > ($(txRingSize$ring) - 1):
+                break
+            
+            #LSO: set up variables and context descriptor, if lso_packet is True
+            lso_packet = random.choice([True, False])
+            
+            if $lso_packet:
+                packetCount = 1
+                ii += 1
+
+            packetIndex = $ii
+            pktName = $(packetName)$(packetIndex)
+            
+            if $lso_packet:
+                packetSize = random.randint($minSize, min($lsoMaxSize, $segcount*$(txRingBufSize$ring)))
+                pktSize = $packetSize
+                totalPktSize += $packetSize
+                if $totalPktSize > ($rpbsize * 1024): #avoid busy buffers
+                    break
+                MSS = random.randint($minMSS, $maxMSS)
+                requiredRxBufs = ($packetSize - $headerSize + $MSS - 1) // $MSS
+                rxBufsLeft = $(rxRingSize$ring) - 1 - $(rxcount$ring)
+                if $requiredRxBufs <= $rxBufsLeft:
+                    context = random.randint(0,1)
+                    context_params = -I $context -S $MSS --l2_len $l2_len --l3_len $l3_len --l4_len $l4_len --ct_cmd $ct_cmd --out_len $out_len --tun_len $tun_len
+                    #mac.txring[$ring].status
+                    mac.txring[$ring].insertcontext $context_params
+                    txcount$ring += 1 #for context descriptor
+                    totalLSO += 1
+                else:
+                    #echo NOT ENOUGH RX RINGS FOR LSO PACKET!!!
+                    break #force exit from j loop
+            else:
+                packetSize = random.randint($minSize, min($maxSize, $segcount*$(txRingBufSize$ring)))
+                totalPktSize += $packetSize
+                if $totalPktSize > ($rpbsize * 1024):  #avoid busy buffers
+                    break
+            restSize = $packetSize
+            #LSO: create packet that will be sent from TX00 to RX00
+            if not $lso_packet:
+                segcount = 0
+                oldPacketName = $packetName
+                oldPacketIndex = $packetIndex
+                packetName = nonLSOPacket_
+                packetIndex = $totalNonLSO
+                pktName = nonLSOPacket_$totalNonLSO
+                exec $(PWD)/helpers/packetgen.txt
+                packetName = $oldPacketName
+                packetIndex = $oldPacketIndex
+            else:
+                #L2 Layering Preparation
+                l2Protcol = Ether
+                for z = 0; $z < 6; z += 1:
+                    src$z = format(random.randint(0x0, 0xFF), 'x')  #get random string without 0x in front
+                    dest$z = format(random.randint(0x0, 0xFF), 'x')
+                l2_src_list = "$src0:$src1:$src2:$src3:$src4:$src5"
+                l2src = $l2_src_list
+                l2_dest_list = "$dest0:$dest1:$dest2:$dest3:$dest4:$dest5"
+                l2dst = $l2_dest_list
+                
+                #L3 Layering Preparation
+                if $l3Type != 0:
+                    l3_src_list = "  #create string with concatenation
+                    l3_dest_list = " #create string with concatenation
+                    if $l3Type == 1:
+                        l3Protocol = IP
+                        maxRandNum = 0xFF
+                        strDivider = .
+                        randNumCount = 4
+                        format_spec = 'd'
+                    elif $l3Type == 2:
+                        l3Protocol = IPv6
+                        maxRandNum = 0xFFFF
+                        strDivider = :
+                        randNumCount = 8
+                        format_spec = 'x'
+                    for z = 0; $z < $randNumCount; z += 1:
+                        src_num$z = format(random.randint(0x0, $maxRandNum), $format_spec)
+                        dest_num$z = format(random.randint(0x0, $maxRandNum), $format_spec)
+                        if $z > 0:
+                            l3_src_list = $(l3_src_list)$(strDivider)$(src_num$z)
+                            l3_dest_list = $(l3_dest_list)$(strDivider)$(dest_num$z)
+                        else:
+                            l3_src_list = $(l3_src_list)$(src_num$z)
+                            l3_dest_list = $(l3_dest_list)$(dest_num$z)
+                    l3_src_list = $(l3_src_list)" #add final quotation character
+                    l3Src = $l3_src_list
+                    l3DstNetAddr = $l3_src_list
+                    l3_dest_list = $(l3_dest_list)" #add final quotation character
+                    l3Dst = $l3_dest_list
+                    l3DstNetAddr = $l3_dest_list
+                    l3DstNetMask=16
+                    l3SrcNetMask=16
+                
+                #L4 layering Preparation
+                if $l4Type != 0:
+                    dport = random.randint($minPortNum, $maxPortNum)
+                    l4Dst = $dport
+                    sport = random.randint($minPortNum, $maxPortNum)
+                    #l4Src = $sport
+                    l4Protocol = ("TCP" if $l4Type == 1 else "UDP")
+                
+                exec $(PWD)/helpers/packetgen.txt
+                
+            j = $tmpj
+            
+            for k = 0; $k < $segcount and $restSize > 0; k += 1:
+                params = -p $packetSize
+                segSize = random.randint($minSegSize, $maxSegSize)
+        
+                segSize = max($segSize, $(txRingBufSize$ring) if $(txRingBufSize$ring) < ($restSize + $(txRingBufSize$ring) - $segSize + $segcount - $k - 1)/($segcount - $k) else 0)
+                if $restSize < $segSize or $k >= $segcount - 1:
+                    segSize = $restSize
+        
+                offset = random.randint($minOffset, max($minOffset, $maxOffset-$segSize))
+                if $offset + $segSize > $(txRingBufSize$ring):
+                    #echo Warning! Wrong offset $offset and segsize $segSize
+                    if $k < $segcount - 1:
+                        segSize = ($(txRingBufSize$ring) - $offset)
+                    else:
+                        offset = ($(txRingBufSize$ring) - $segSize)
+        
+                pktOffset = ($packetSize - $restSize) #LSO
+                restSize -= $segSize
+                minSegSize = 1
+                maxSegSize = min($restSize, $(txRingBufSize$ring))
+                
+                params = -p $packetSize -o $offset -O $pktOffset -i $($pktName)
+                
+                if $restSize > 0:
+                    params = $params -e 0
+                else:
+                    #LSO: calculate rxcount$ring differently, depending on which packet type was chosen
+                    if $lso_packet:
+                        rxcount$ring += $requiredRxBufs
+                        #echo rxcount$ring = $rxcount, MSS = $MSS, packetSize = $packetSize, requiredRxBufs = $requiredRxBufs, IPID = $IPID
+                    else:
+                        rxcount$ring += ($packetSize + $(rxRingBufSize$ring) - 1) // $(rxRingBufSize$ring)
+                        #echo .....rxcount$ring = $rxcount, packetSize = $packetSize
+                    if $txInterruptMark == 1:
+                        params = $params -w 1
+                        #echo mark packet
+                    elif $txInterruptMark == 2 and not ($j + 1 < $count and $(rxcount$ring) < $(rxRingSize$ring) - 1 and $minSegCount < $(txRingSize$ring) - $(txcount$ring) - 1):
+                        params = $params -w 1
+                        #echo mark batch tx $txcount$ring rx $rxcount$ring j $j count $count rxRingSize $rxRingSize txRingSize $txRingSize
+        
+                params = $params -b $segSize
+                
+                #LSO
+                if $lso_packet:
+                    ipv4_chksum = (1 if $l3Type == 1 else 0)
+                    params = $params -C $context -l 1 --l4_chksum 1 --ipv4_chksum $ipv4_chksum #LSO: always use l4 checksum
+        
+                mac.txring[$ring].insert $params
+                txcount$ring += 1
+                
+            lastBatchCount$ring = $j
+        
+        mac.rxring[$ring].fill
+
+        rxExpectHead$ring = ($(rxExpectHead$ring) + $(rxcount$ring)) % $(rxRingSize$ring)
+        
+        txExpectHead$ring = ($(txExpectHead$ring) + $(txcount$ring)) % $(txRingSize$ring)
+        #echo rxHead = $rxHead, rxExpectHead = $rxExpectHead, totalPktSize = $totalPktSize
+
+    mac.llhcache invalidate
+    for ring in $ring_lst:
+        mac.rxring[$ring].commit -c
+        mac.txring[$ring].commit -c
+    mac.llhcache flush
+
+    for ring in $ring_lst:
+        mac.rxring[$ring].clean
+
+    for ring in $ring_lst:
+        for j = 0; $j < $maxWaitCount; j += 1:
+            error$ring = False
+    
+            mac.llh -v rxActualHead$ring rdmRxDescriptorHeadPointerGet $ring
+            mac.llh -v txActualHead$ring tdmTxDescriptorHeadPointerGet $ring
+            if ($(rxExpectHead$ring) == ($(rxActualHead$ring))) and ($(txExpectHead$ring) == ($(txActualHead$ring))):
+                break
+            error$ring = True
+            pause $loopbackPause ms
+
+    for ring in $ring_lst:
+        #echo Error: $(error$ring)
+        error = $error | $(error$ring)
+        if $error:
+            break
+
+    #for aa in $ring_lst:
+    #    echo EXPECTED: $(rxExpectHead$aa)
+    #    echo ACTUAL:   $(rxActualHead$aa)
+    
+    if $error:
+        for ring in $ring_lst:
+            if ($(rxExpectHead$ring) != ($(rxActualHead$ring))):
+                finalReport += ['Incorrect descriptor count on Rx ring $ring. Actual value: $(rxActualHead$ring). Expected value: $(rxExpectHead$ring).']
+            
+            if ($(txExpectHead$ring) != ($(txActualHead$ring))):
+                finalReport += ['Incorrect descriptor count on Tx ring $ring. Actual value: $(txActualHead$ring). Expected value: $(txExpectHead$ring).']
+        
+        #mac.rxring[$ring].status -l cli
+
+mac.txuninit
+mac.rxuninit
+mac.uninit
+
+readreg 0x7040
+readreg 0x5040
+exec $(PWD)/helpers/showTestResult.txt

@@ -1,0 +1,18 @@
+finalReport = []
+
+echo TEST : Rates DUT Auto <-> LP Auto
+############################################################################################
+echo Link Speed must be set to Autonegatiation on LINK PARTNER
+#set Auto speed
+speed = 0xFFFF0002
+writereg 0x368 $speed -l nul
+#Checking link
+for i in range(1,100):
+    readreg 0x36c -n link -l nul
+    if ($link & 0xFFFF) = 2:
+        hlink = hex($link)
+        echo PASS: Link is UP on DUT
+        break
+    pause 100 ms
+############################################################################################
+#exec $(PWD)/helpers/showTestResult.txt

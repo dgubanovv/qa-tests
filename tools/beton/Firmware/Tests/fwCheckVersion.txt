@@ -1,0 +1,18 @@
+ifndef expFWVersion:
+    expFWVersion = 0x01050006   
+
+finalReport = []
+
+echo TEST : Check Version
+############################################################################################
+readreg 0x18 -n fwVersion -l nul
+actual = hex($fwVersion)
+expected = hex($expFWVersion)
+if $fwVersion == $expFWVersion:
+    echo PASS: FW Version is GOOD ($actual)
+else:
+    echo FAIL: FW Version is BAD. Expected : $actual. Actual : $expected
+    finalReport += ['(1) FW Version is BAD. Expected : $actual. Actual : $expected']
+############################################################################################        
+#exec $(PWD)/helpers/showTestResult.txt
+

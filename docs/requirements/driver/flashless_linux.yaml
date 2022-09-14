@@ -1,0 +1,93 @@
+includes: [ "flashless.yaml" ]
+
+features:
+  flashless:
+    requirement_list:
+      # Option require_reset was removed from design
+      # - id: DRV_LINUX_FLASHLESS_01
+      #   description: If the driver is loaded as kernel module with option require_reset=yes, driver should force board reset at the start even the device is ready for host boot.
+      # - id: DRV_LINUX_FLASHLESS_02
+      #   description: If the driver is loaded as kernel module with option require_reset=no, driver should not reset reset the board if it's ready for host boot.
+      # - id: DRV_LINUX_FLASHLESS_03
+      #   description: require_reset option can be equal only to "yes" or "no".
+
+      - id: DRV_LINUX_FLASHLESS_01
+        description: If the driver is loaded as kernel module with option aq_fw_did=0, driver should extract DID (device id) from PCI config space.
+      - id: DRV_LINUX_FLASHLESS_02
+        description: If no aq_fw_did option passed to insmod, driver should extract DID from PCI config space.
+      - id: DRV_LINUX_FLASHLESS_03
+        description: aq_fw_did option can be passed as an array; for example aq_fw_did=0,87b1,80b1; in that case for the first device driver should autodetect device id, for second and third device it should use specific firmwares for user-defined device ids.
+      - id: DRV_LINUX_FLASHLESS_04
+        description: If aq_fw_did option is passed as an array and the length of array is less than number of devices present in the system, driver should extract DID from PCI config space for missing devices.
+      - id: DRV_LINUX_FLASHLESS_05
+        description: If aq_fw_did option is passed as an array and the length of array is more than number of devices present in the system, driver should skip redundant ids.
+      - id: DRV_LINUX_FLASHLESS_06
+        description: If aq_fw_did is equal to unknown device id, driver should fail and trace dmesg error message.
+      - id: DRV_LINUX_FLASHLESS_07
+        description: If aq_fw_did is an array and some of it's values are unknown device id, driver should trace dmesg error message and skip them.
+      - id: DRV_LINUX_FLASHLESS_08
+        description: If aq_fw_did option can be 2-byte integer of array of 2-byte integers, it's value cannot be more than 0xffff, if it's value more than 0xffff driver should trace error message in dmesg and skip it.
+
+      - id: DRV_LINUX_FLASHLESS_09
+        description: If the driver is loaded as kernel module without aq_fw_sid option, driver should extract SVID (subvendor id) and SSID (subsystem id) from PCI config space or default_sid kernel parameter.
+      - id: DRV_LINUX_FLASHLESS_10
+        description: aq_fw_sid kernel module option can be 4-byte integer or array of 4-byte integers, it's value cannot be more than 0xffffffff, if it's value more than 0xffffffff driver should trace error message in dmesg and fail.
+      - id: DRV_LINUX_FLASHLESS_11
+        description: If aq_fw_sid option is passed to insmod; example aq_fw_sid=87b11d6a; driver should configure MAC/PHY BDPs according to specified value.
+      - id: DRV_LINUX_FLASHLESS_12
+        description: aq_fw_sid option can be passed as array of integers; example aq_fw_sid=87b11d6a,0; driver should use appropriate SVID and SSID for each device.
+      - id: DRV_LINUX_FLASHLESS_13
+        description: If aq_fw_sid option is passed as an array and the length of array is less than number of devices present in the system and default_sid option is specified driver should use default_sid.
+      - id: DRV_LINUX_FLASHLESS_14
+        description: If aq_fw_sid option is passed as an array and the length of array is less than number of devices present in the system and default_sid option is not specified driver should extract SVID/SSID from PCI config space.
+      - id: DRV_LINUX_FLASHLESS_15
+        description: If aq_fw_sid option is passed as an array and the length of array is more than number of devices present in the system, driver should skip redundant parameters.
+      - id: DRV_LINUX_FLASHLESS_16
+        description: If aq_fw_sid option is passed as single integer, the driver should use it only for the first device in the system.
+      - id: DRV_LINUX_FLASHLESS_17
+        description: If aq_fw_sid option is passed as single integer but number of devices if more than 1, the driver should act the same way when aq_fw_sid is an array.
+
+      - id: DRV_LINUX_FLASHLESS_18
+        description: The driver can be loaded with option force_host_boot which forces flashless load even the flash with correct firmware is present.
+      - id: DRV_LINUX_FLASHLESS_19
+        description: force_host_boot module option can have value 0 or not 0 (i. e. >= 0), it's also can be array of such values.
+      - id: DRV_LINUX_FLASHLESS_20
+        description: If the driver is loaded with force_host_boot module option as an array; example force_host_boot=1,0; the driver should take specified action for appropriate device in the system.
+      - id: DRV_LINUX_FLASHLESS_21
+        description: If force_host_boot option is passed as an array and the length of array is less than number of devices present in the system, driver should use force_host_boot=0 for the rest of devices.
+      - id: DRV_LINUX_FLASHLESS_22
+        description: If force_host_boot option is passed as an array and the length of array is more than number of devices present in the system, driver should skip redundant parameters.
+      - id: DRV_LINUX_FLASHLESS_23
+        description: If force_host_boot=1 option is passed, flash is present with correct firmware and driver failed to perform flashless boot due to any reason, the driver should trace error message and skip this device.
+      - id: DRV_LINUX_FLASHLESS_24
+        description: If force_host_boot option is passed as single integer but number of devices if more than 1, the driver should act the same way when force_host_boot is an array.
+
+      - id: DRV_LINUX_FLASHLESS_25
+        description: The driver can be loaded with option default_sid which specifies default SVID and SSID for devices with unknown SVID/SSID.
+      - id: DRV_LINUX_FLASHLESS_26
+        description: default_sid kernel module option can only be 4-byte integer, example default_sid=87b11d6a, it's value cannot be more than 0xffffffff, if it's value more than 0xffffffff the driver should trace error message and fail.
+
+      - id: DRV_LINUX_FLASHLESS_27
+        description: The driver should load firmware file using device id, that should be read from PCI config space.
+      - id: DRV_LINUX_FLASHLESS_28
+        description: If DID is present in PCI config space and aq_fw_did kernel option is also provided, the driver should use aq_fw_did parameter.
+      - id: DRV_LINUX_FLASHLESS_29
+        description: If DID in PCI config space or aq_fw_did are equal to 0x0001, that mean default DID and the driver should detect flashless firmware using Chip ID (see table in paragraph 1.4 in the documentation).
+      - id: DRV_LINUX_FLASHLESS_30
+        description: Flashless should never start on Apple IDs - DID 0x87b1 + SVID 0x106b or DID 0x91b1 + SVID 0x106b
+
+      - id: DRV_LINUX_FLASHLESS_31
+        description: After loading firmware file the driver should use SVID and SSID parameters to select MAC/PHY BDPs, SVID and SSID can be read from PCI config space.
+      - id: DRV_LINUX_FLASHLESS_32
+        description: If SVID/SSID are present in PCI config space and aq_fw_sid option is passed by the user the driver should use aq_fw_sid parameter.
+      - id: DRV_LINUX_FLASHLESS_33
+        description: If SVID/SSID are present in PCI config space, aq_fw_sid and default_sid options are passed by the user the driver should use aq_fw_sid parameter.
+      - id: DRV_LINUX_FLASHLESS_34
+        description: If SVID/SSID are present in PCI config space, aq_fw_sid is not passed and default_sid option is passed by the user the driver should use SVID/SSID from PCI config space.
+      - id: DRV_LINUX_FLASHLESS_35
+        description: If for some reason SVID/SSID are not present in PCI config space (or have unknown value), aq_fw_sid is not passed and default_sid option is not passed by the user the driver should use 1d6a0001 for SVID/SSID.
+        note: Impossible to implement such scenario.
+
+      - id: DRV_LINUX_FLASHLESS_36
+        description: If flash is present and firmware can be loaded successfully from it and if hostboot firmware files are not found the driver shall not trace any messages the file doesn't exist.
+    products: [PROD_LINUX_DRIVER]

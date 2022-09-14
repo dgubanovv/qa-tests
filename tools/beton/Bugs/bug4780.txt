@@ -1,0 +1,130 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4780.txt $
+# $Revision: #1 $
+# $DateTime: 2016/03/18 07:21:40 $
+# $Author: pbelous $
+#
+# Bug4780 - RPF: VLAN untagged filter (same as VLAN filters) must be processed before UCAST,MCAST&MCAST filter 
+
+finalReport = [] #mandatory clear, empty means tests passed.
+
+ifndef logTag:
+    logTag = -l cli
+ifndef rxRingNo:
+    rxRingNo = 0
+ifndef txRingNo:
+    txRingNo = 0
+    
+mac.set loopback System Packet $logTag #deep loopback
+
+
+mac.init
+mac.txinit
+mac.txring[$txRingNo].enable
+
+mac.rxinit
+mac.rxring[$rxRingNo].enable
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+
+#Disable Promisc
+
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 256
+mac.llh -C rpfL2BroadcastFilterActionSet 1
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llh -C rpfL2BroadcastEnableSet 1
+mac.llh -C rpfVlanPromiscuousModeEnableSet 0
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+
+#configure Unicast Filter[0]
+filterUnicastIndex = 0
+filterUnicastMngQueue = 0
+filterUnicastAction = 1 #Host
+filterUnicastMacAddr = [0x10,0x12,0x13,0x14,0x15,0x16]
+
+
+#configure multicast filter
+filterMulticastIndex = 0
+filterMulticastAction = 1
+filterMulticastMacAddr = 0x010
+mac.llh rpfL2MulticastDestinationAddressMaskSet 0xfff
+
+
+givenMacAddrSrcStr = '[0x21,0x22,0x23,0x24,0x25,0x26]'
+givenMacAddrDstStrs = ['[0x10,0x12,0x13,0x14,0x15,0x16]', '[0x10,0x15,0x15,0x15,0x15,0x15]', '[0xff,0xff,0xff,0xff,0xff,0xff]', '[0x01,0x00,0x5e,0x01,0x02,0x03]']
+
+givenPacketsTypesStr = ['Unicast (filter match)','Unicast (flter not match)','Broadcast', 'Multicast IPv4']
+
+
+#[VLAN untagged enabled],[unicast filter enabled],[milticast enabled],[broadcast enabled]
+testCases = [[1,1,1,1],[0,1,1,1],[1,0,1,1],[1,1,0,1],[1,1,1,0]]
+
+#[unicast (match) received],[unicast (not match) received],[broadcast received],[multicast received]
+
+espectRxCounts = [[1,0,1,1],[0,0,0,0],[0,0,1,1],[1,0,1,0],[1,0,0,1]]
+
+#espectRxCounts = [[0,1,0,0],[1,1,1,1],[1,1,0,0],[0,1,0,1],[0,1,1,0]] #fail
+
+testCaseNum = 0
+
+for testCase in $testCases :
+    vlanUntaggedEnabled = $testCase[0]
+    mac.llh rpfVlanAcceptUntaggedPacketsSet $vlanUntaggedEnabled
+    mac.llh rpfVlanUntaggedActionSet 1
+    
+    filterUnicastEnable  = $testCase[1]
+    exec $(PWD)/helpers/filtersConfigurators/rxUnicastFilter.txt
+    
+    filterMulticastEnable = $testCase[2]
+    exec $(PWD)/helpers/filtersConfigurators/rxMulticastFilter.txt
+    
+    enabledBroadcast = $testCase[3]
+    mac.llh rpfL2BroadcastEnableSet $enabledBroadcast
+    
+    packetNum = 0
+     
+    espectRxCount = $espectRxCounts[$testCaseNum]
+      
+    for givenMacAddrDstStr in $givenMacAddrDstStrs :
+        # Get Rx head before packet insertion
+        mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+        pkt.new -n pkt$packetNum -p 18
+        pkt.layer -i $(pkt$packetNum) -L 60 -t ICMP
+        pkt.layer -i $(pkt$packetNum) -L 50 -t IP
+        pkt.layer -i $(pkt$packetNum) -L 25 -t Ether src=$givenMacAddrSrcStr type=0x800 dst=$givenMacAddrDstStr
+
+        mac.txring[$txRingNo].insert -i $(pkt$packetNum) -b 60
+
+        mac.txring[$txRingNo].commit
+        mac.txring[$txRingNo].clean
+        mac.rxring[$rxRingNo].clean
+
+        mac.txring[$txRingNo].status $logTag
+        mac.rxring[$rxRingNo].status $logTag
+        
+        #Check packet in rx ring
+        mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+        
+        rxCount = ($rxHeadGood - $rxHeadBefore)
+
+        packetType = $givenPacketsTypesStr[$packetNum]
+        
+        if $rxCount != $espectRxCount[$packetNum]:
+            if $rxCount == 0 :
+                finalReport += ['($testCaseNum):($packetNum):$packetType packet was not received']
+            else :
+                finalReport += ['($testCaseNum):($packetNum):$packetType packet was received']
+        packetNum += 1
+        
+    testCaseNum += 1
+
+
+#Show result
+exec $(PWD)/helpers/showTestResult.txt
+
+
+mac.uninit

@@ -1,0 +1,15 @@
+# Script for simpleResponder responses check
+# linkSimulatorProtocolDefinitions.txt should be executed first (once is enough)
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+
+mac.mcp.enterLoadMode
+result = 0
+mac.mcp.testMemory -a 0x1fc00000 -s 0x4000 -l non -n result
+if $result == 0:
+    finalReport = $finalReport + ["(1) FAIL: IRAM access test failed"]
+mac.mcp.testMemory -a 0x1fb00000 -s 0x4000 -l non -n result
+if $result == 0:
+    finalReport = $finalReport + ["(2) FAIL: DRAM access test failed"]
+
+exec helpers/showTestResult.txt #to show results [] in manual run mode

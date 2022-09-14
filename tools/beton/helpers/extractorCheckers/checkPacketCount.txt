@@ -1,0 +1,5 @@
+mac.llh -v packetCount -C $extractionQueuePacketCountGet $queue
+if  $(packetCount) != $expectedPacketCount:
+    str = '$stringId Packet count (which is $packetCount) for queue $queue not equal to expected (which is $expectedPacketCount)'
+    echo $str
+    finalReport = $finalReport + ['$str']

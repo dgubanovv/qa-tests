@@ -1,0 +1,188 @@
+# Script for one packet extraction with ARP filter
+
+finalReport = []
+hostAlreadyInitiated = False
+
+exec $(SCRIPT_PATH)/linkSimulatorProtocolDefinitions.txt
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef logTag:
+        logTag = -l cli
+
+filterActionDiscard = 0
+filterActionHost = 1
+filterActionManagement = 2
+filterActionHostManagement = 3
+filterActionWoL = 4
+filterActionReserved = 5
+
+macAddrSrcStr = 0x10 0xdd 0xb1 0xe6 0x1e 0xa5
+ipCommon1 = 0x45 0x00
+ipCommon2 = 0x00 0x00 0x80 0x01
+icmpIdent = 0x00 0x01
+icmpSeqNumber = 0x00 0x19
+icmpDataLen = 32
+ipTotalLen = $protoIpBaseHeaderLen + $protoIcmpDataOffset + $icmpDataLen
+ipTotalLenBuf = hex(($ipTotalLen >> 8) & 0xFF) + ' ' + hex($ipTotalLen & 0xFF)
+icmpDataStartMark = 0x61
+icmpDataEndMark = 0x77
+icmpData = ' '
+icmpDataValue = $icmpDataStartMark
+for i = 0; $i < $icmpDataLen; i += 1:
+    icmpData = '$icmpData' + ' ' + hex($icmpDataValue)
+    icmpDataValue = $icmpDataValue + 1
+    if $icmpDataValue > $icmpDataEndMark:
+        icmpDataValue = $icmpDataStartMark
+protoIcmpFullLen = $protoEthHeaderLen + $ipTotalLen
+ipAddrReq = 0xac 0x1b 0x1b 0x25
+ipAddrResp = 0xa9 0xfe 0x01 0x01
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback System Packet   #Depp loopback for testing Rx filters
+    mac.init
+    writereg 0x430 0x1#Fix reading previous value
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    #mac.isr.disable
+
+exec $(PWD)/helpers/enableRPF2.txt    
+exec $(PWD)/helpers/enableTPO2.txt
+exec $(PWD)/helpers/versionSpecificInit.txt
+
+writereg 0x5a04 0x0202
+writereg 0x7b04 0x0202
+mac.rxring[$rxRingNo].get -n rxRingSize size
+#Configure filters
+
+exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 256
+mac.llh -C rpfL2BroadcastFilterActionSet $filterActionManagement
+mac.llh -C rpfL2BroadcastCountResetSet 0
+#??? SwapEnable - what is this?
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llh -C rpfL2BroadcastEnableSet 0
+
+mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+numOfPackets = 50
+
+filterUnicastEnable = 1
+filterUnicastAction = $filterActionHostManagement
+filterUnicastIndex = 1
+filterUnicastMngQueue = $queue
+filterUnicastMacAddr = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xBB]
+macAddrDstStr =  ' '.join([hex(elem) for elem in $filterUnicastMacAddr])
+
+exec $(PWD)/helpers/filtersConfigurators/rxUnicastFilter.txt
+
+# Send one packet for each filter, and extract it right after sending
+
+for count = 0; $count < $numOfPackets; count += 1:
+    # Get Rx head before packet insertion
+    mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+    # Insert packet and get buffer address
+    mac.txring[$txRingNo].insert -b $protoIcmpFullLen -p $protoIcmpFullLen
+    #mac.txring[$txRingNo].status
+    #mac.rxring[$rxRingNo].status
+    mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+
+    # Generate packet
+
+    fields = [($protoEthDaOffset, '$macAddrDstStr'), ($protoEthSaOffset, '$macAddrSrcStr'), ($protoEthTypeLenOffset, '$ethTypeLenIp')]
+    ipId = '0x00' + ' ' + hex($count)
+    fields = $fields + [($protoEthHeaderLen + $protoIpCommon1Offset, '$ipCommon1')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpTotalLenOffset, '$ipTotalLenBuf')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpIdOffset, '$ipId')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpCommon2Offset, '$ipCommon2')]
+    # don't update ip checksum
+    # fields = $fields + [($protoEthHeaderLen + $protoIpChecksumOffset, '$ipChecksum')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpSaOffset, '$ipAddrReq')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpDaOffset, '$ipAddrResp')]
+    
+    fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpTypeOffset, '$icmpEchoReq')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpCodeOffset, '$icmpEchoCode')]
+    # don't calc icmp checksum, sw doesn't check it
+    # fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpChecksumOffset, '$icmpChecksum')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpIdentOffset, '$icmpIdent')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpSeqNumberOffset, '$icmpSeqNumber')]
+    fields = $fields + [($protoEthHeaderLen + $protoIpBaseHeaderLen + $protoIcmpDataOffset, '$icmpData')]
+    
+    fldCount = len($fields)
+    for fldNo = 0; $fldNo < $fldCount; fldNo += 1:
+        addr = $pAddr + $fields[$fldNo][0]
+        value = $fields[$fldNo][1]
+        mem.put $value -s 1 -p $addr
+    
+    mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx --size 80
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.rxring[$rxRingNo].clean
+    
+    mac.txring[$txRingNo].status $logTag
+    mac.rxring[$rxRingNo].status $logTag
+    if $count < 15:
+        expectedPacketCount = $count+1
+    else:
+        expectedPacketCount = 15
+
+    # Check extractor right now
+    stringId = '(2)'
+    mac.llhcache on
+    exec $(PWD)/helpers/extractorCheckers/checkPacketCount.txt
+
+    #Check packet in rx ring
+    mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+
+    if $rxHeadBefore == ($rxRingSize-1):
+        $rxHeadBefore = -1
+    rxCount = $rxHeadGood + 0 - $rxHeadBefore
+    if $rxCount != 1:
+        finalReport += ['(3)Wrong packet number($rxCount) routed to host']
+    
+    mac.rxring[$rxRingNo].clean
+    mac.rxring[$rxRingNo].status
+    
+    mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n rxAddr $logTag
+    mac.rxring[$rxRingNo].getdescval -H 1 -f size -n rxPacketSize   $logTag
+    if $protoIcmpFullLen != $rxPacketSize:
+        finalReport += ['(4)Wrong packet size on Rx']
+
+    mem.cmp -p $pAddr -p2 $rxAddr -s $rxPacketSize -l nul -n cmpRes
+    if $cmpRes == False:
+        finalReport += ['(5)txPacket and rxPacket differs']
+    mac.rxring[$rxRingNo].fill 1
+    mac.rxring[$rxRingNo].commit 1
+
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

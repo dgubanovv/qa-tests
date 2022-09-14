@@ -1,0 +1,34 @@
+# DRV_MSG_PING
+drvMsgPing = 1
+# DRV_MSG_ARP
+devMsgArp = 2
+# DRV_MSG_INJECT
+drvMsgInject = 3
+# DRV_MSG_WOL_ADD
+drvMsgWolAdd = 4
+# DRV_MSG_WOL_REMOVE
+drvMsgWolRemove = 5
+# DRV_MSG_ENABLE_WAKEUP
+drvMsgEnableWakeup = 6
+# DRV_MSG_MSM
+drvMsgMsm = 7
+# DRV_MSG_PROVISIONING
+drvMsgProvisioning = 8
+# DRV_MSG_OFFLOAD_ADD
+drvMsgOffloadAdd = 9
+# DRV_MSG_OFFLOAD_REMOVE
+drvMsgOffloadRemove = 10
+
+ndisPMWoLPacketBitmapPattern = 0x1
+ndisPMWoLPacketMagicPacket = 0x2
+ndisPMWoLPacketIPv4TcpSyn = 0x3
+ndisPMWoLPacketIPv6TcpSyn = 0x04
+
+ndisPMProtocolOffloadIdIPv4ARP = 0x01
+ndisPMProtocolOffloadIdIPv6NS = 0x02
+
+aqPMWoLPacketArp = 0x10001
+aqPMWoLReasonIpv4PingPacket = 0x10002
+aqPMWoLReasonIpv6PingPacket = 0x10004
+aqPMWoLReasonLinkUp = 0x10005
+aqPMWoLReasonLinkDown = 0x10006

@@ -1,0 +1,20 @@
+ifndef hw_options:
+    #Contains testbench version. Current implementation may contain following values:
+    #A0, B0RRO, B0RPO
+    hw_options = '0'
+
+expected_values = ('0', 'A0', 'B0RRO', 'B0RPO')
+    
+if !($hw_options in $expected_values):
+    finalReport += ["Unexpected Bench Version value: $hw_options. Expected one of: $expected_values. Exiting."]
+    exit
+
+readreg -n bit5030 0x5030
+
+if '$hw_options' == 'B0RPO':
+    bit5030 = $bit5030 | 1
+    writereg 0x5030 $bit5030
+elif '$hw_options' == 'B0RRO':
+    # The most simplie way to set 0 bit to 0
+    bit5030 = ($bit5030 >> 1) << 1
+    writereg 0x5030 $bit5030

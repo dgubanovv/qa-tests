@@ -1,0 +1,34 @@
+mvm = True #Interrupt mode MvM or SM
+wait_count = 5
+wait_timeout = 100
+
+#Set interrupt mode
+intmode = 'Multi-Vector' if ($mvm) else 'Single'
+mac.isr.set Mode $intmode
+
+#Get sources list
+mac.isr.srclist -l nul -n src_lst
+#echo $src_lst
+
+#Add interrupt handlers
+i = 0
+for src in $src_lst:
+	#i += 1
+	#if $i > 10:
+	#	break
+	#echo $src
+    mac.isr.regHandler -s $src -t 10000000 -n $src
+    $src = 0
+
+#Call direct HW interrupt    
+mac.isr.enable
+
+readreg pci 0x2100:0x213C 0x2180:0x218c
+
+#Stop all handlers
+mac.isr.disable
+
+#Remove all handlers
+i = 0
+for src in $src_lst:
+    mac.isr.unregHandler -s $src

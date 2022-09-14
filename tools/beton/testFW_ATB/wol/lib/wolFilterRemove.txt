@@ -1,0 +1,26 @@
+#####################################################
+# Input args:
+#
+# patternId
+#
+# Returns
+# result
+#
+#####################################################
+
+exec testFW/lib/constants.txt
+exec testFW/drvIface/getBaseAddress.txt
+
+#####################################################
+### write drvMsgWoLRemove header
+#####################################################
+
+exec testFW/wol/lib/drvMsgWolRemove.txt
+
+#####################################################
+### execute DRV_MSG_WOL_REMOVE transaction
+#####################################################
+
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+result = $transactionResult

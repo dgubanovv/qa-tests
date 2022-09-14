@@ -1,0 +1,133 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Packet/rssCheck.txt $
+# $Revision: #10 $
+# $DateTime: 2016/04/11 08:54:11 $
+# $Author: stalanin $
+#
+#min rss checking test, sents 32 packets for 32 rx rings
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    maxtc = 8
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef maxtc:
+        maxtc = 8
+    ifndef logTag:
+        logTag = -l cli
+
+rxRingCount = 32
+tpbsize = 128               # FPGA limitation
+rpbsize = 336               # FPGA limitation
+
+tpbPerTcSize = ($tpbsize/$maxtc)
+rpbPerTcSize = ($rpbsize/$maxtc)
+mac.txpb[0:$maxtc].set -l nul size $tpbPerTcSize
+mac.rxpb[0:$maxtc].set -l nul size $rpbPerTcSize
+mac.set rxDcbTcCount $maxtc $logTag
+
+if $maxtc == 4:
+    mapUP2TC = (0,0,1,1,2,2,3,3)
+else:
+    mapUP2TC = (0,1,2,3,4,5,6,7)
+
+mac.rfc.rss.set mapUp2tc $mapUP2TC
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    #mac.set loopback System DMA            # No loopback
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag
+    
+    mac.rfc.rss.enable $logTag
+    
+    mac.rxinit
+    mac.rxring[0:$rxRingCount].enable    # Prepare Rx ring
+    mac.rxring[0:$rxRingCount].fill
+    mac.rxring[0:$rxRingCount].commit
+    
+    mac.isr.disable
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+
+sPorts=[0x119a, 0x119b, 0x11A9, 0x11A8, 0x119c, 0x119d, 0x11AD, 0x11AC]
+packetsCount = 8
+for count = 0; $count < $packetsCount; count +=1:
+    pkt.new -n pkt$count -p 20
+    sport = $sPorts[$count]
+    pkt.layer -i $(pkt$count) -L 60 -t TCP dport=0x5599 sport=$sport
+    pkt.layer -i $(pkt$count) -L 50 -t IP dst=[161,142,100,85] src="66.9.149.187"
+    pkt.layer -i $(pkt$count) -L 30 -t Dot1Q prio=$count id=3 vlan=0x123
+    pkt.layer -i $(pkt$count) -L 25 -t Ether src=[0x01,0x02,0x03,0x04,0x05,0x06] dst="11:22:33:44:55:66"
+    #pkt.dump -i $(pkt$count)# -f HEX
+
+expectedRssType = 0x4#(Hash IPv4/TCP)
+
+testGroupTag = 0
+scmp.clean
+scmp.autofill -r
+scmp.newGroup -g $testGroupTag
+
+if $txRingNo < 10:
+    scmp.add -g $testGroupTag -l TX0$txRingNo
+else:
+    scmp.add -g $testGroupTag -l TX$txRingNo
+
+for count = 0; $count < $rxRingCount; count +=1:
+    if $count <10:
+        scmp.add -g $testGroupTag -r RX0$count
+    else:
+        scmp.add -g $testGroupTag -r RX$count
+
+packetLength = 78
+packetsToSend = $rxRingCount
+for count = 0; $count < $packetsToSend; count +=1:
+    packetNum = $count&7
+    if $maxtc == 4:
+        expectedRxRingNum = $count&0x18 + $packetNum
+    else:
+        expectedRxRingNum = ($count&0x1c) + ($packetNum&0x3)
+    priority = ($count&0x1c) >> 2
+    pkt.layer -i $(pkt$packetNum) -L 30 prio=$priority
+    pkt.rss -i $(pkt$packetNum) -n hashKey -l nul
+    
+    mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $expectedRxRingNum
+    mac.txring[$txRingNo].insert -i $(pkt$packetNum) -b $packetLength
+    mac.txring[$txRingNo].dumpbuf -T 1 $logTag
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.rxring[$expectedRxRingNum].clean
+    mac.rxring[$expectedRxRingNum].status $logTag
+    mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet $expectedRxRingNum
+    if $rxHeadAfter != $rxHeadBefore +1:
+        finalReport += ['Wrong packet count routed to ring[$expectedRxRingNum]']
+    else:
+        mac.rxring[$expectedRxRingNum].getdescval -H 1 -f RSS_HASH -n rssHash $logTag
+        mac.rxring[$expectedRxRingNum].getdescval -H 1 -f RSS_TYPE -n rssType $logTag
+        if $hashKey != $rssHash:
+            finalReport += ['Incorrect rss hash($rssHash), expected($hashKey)']
+        if $expectedRssType != $rssType:
+            finalReport += ['Incorrect rss type($rssType), expected($expectedRssType)']
+scmp.isEmpty -g $testGroupTag $logTag -n scmperror
+scmp.status -g $testGroupTag -l scmp
+readreg 0x000054C4
+if $scmperror > 0:
+    finalReport += ['Received stream is not the same as prepared']
+
+exec $(PWD)/helpers/showTestResult.txt
+mac.rfc.rss.disable $logTag
+mac.uninit

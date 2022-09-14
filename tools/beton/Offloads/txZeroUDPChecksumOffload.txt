@@ -1,0 +1,91 @@
+#
+# Calculated UDP checksum 0x0000 for transmitted packet should be replaced by TPO with 0xffff
+# Rx descriptor writeback should not indicate error for this packet  
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    logTag = -l cli
+    TPO2 = False
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef TPO2:
+    TPO2 = False 
+    
+noVlanIPUDPChecksumOffset = 40
+
+mac.set loopback System Packet 
+mac.init
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+
+mac.txinit
+mac.txring[0].enable    # Prepare Tx ring
+mac.txring[0].set PacketMark None $logTag
+
+mac.rxinit
+mac.rxring[0].enable    # Prepare Rx ring
+mac.rxring[0].fill    
+mac.rxring[0].commit
+mac.isr.disable   
+
+if $TPO2:
+        exec $(PWD)/helpers/enableTPO2.txt 
+
+
+mac.llh tpoIpv4HeaderChecksumOffloadEnableSet 1
+mac.llh tpoTcpUdpChecksumOffloadEnableSet 1
+
+udpPacket = 0x00 0x00 0x00 0x00 0x00 0x01 0x00 0x00 0x00 0x00 0x00 0x02 0x08 0x00 0x45 0x00 0x00 0x2e 0x00 0x00 0x40 0x00 0x40 0x11 0xb9 0x6b 0xc0 0xa8 0x00 0x01 0xc0 0xa8 0x00 0x02 0x00 0x01 0x00 0x01 0x00 0x1a 0xff 0xff 0x7e 0x64 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+packetLength = 60
+
+mac.txring[0].insert -b 60 -p 60 -f indexed_uniq_ramp -u 1 -s 1
+mac.txring[0].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+mem.put $udpPacket -s 1 -p $pAddr
+
+pMem = $pAddr + $noVlanIPUDPChecksumOffset 
+mem.put -p $pMem -s 2 0      # set UDP checksum to 0x0000
+mac.txring[0].dumpbuf -T 1 --size 80   # packet to be offloaded
+
+mac.txring[0].commit
+mac.rxring[0].clean
+mac.rxring[0].dumpbuf -H 1 --size 80
+
+pause 1 s
+
+mac.rxring[0].getdescval -H 1 -f RX_STAT -n Stat
+mac.rxring[0].getdescval -H 1 -f bufferAddress -n pAddr $logTag
+mem.cmp -p $pAddr -s $packetLength -V $udpPacket -n compareResult $logTag
+
+if $compareResult != True: 
+    finalReport += ['(1) Memory compare failed']
+
+tcpUdpChecksumValidMask = 0x1000    # TCP/UDP Checksum Valid bitmask. Refer to Rx_Protocols_Offload document, section 5.4.3 RPO_STAT for more details
+Stat = $Stat & $tcpUdpChecksumValidMask
+
+if $Stat != 0:
+    finalReport += ['(2) RX_STAT != 0']
+
+readreg 0x7040    
+exec $(PWD)/helpers/showTestResult.txt
+  
+mac.rxring[0].disable
+mac.txring[0].clean
+mac.txring[0].disable
+mac.uninit

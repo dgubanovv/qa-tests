@@ -1,0 +1,96 @@
+# !1.5. Test MSM settings
+# !Read (Iface address) from 0x334
+# !Read transactionID from 0x33c
+# !Write command code (11) to (iface address)
+# !Write MSM settings structure to (iface address + 4):
+# !struct drvMsmSettings
+# !{
+# ! uint32_t msmReg054;
+# ! uint32_t msmReg058;
+# ! uint32_t msmReg05c;
+# ! uint32_t msmReg060;
+# ! uint32_t msmReg064;
+# ! uint32_t msmReg068;
+# ! uint32_t msmReg06c;
+# ! uint32_t msmReg070;
+# ! uint32_t flags; // Set this value to 0x101 - this will result in MSM register 0x8 bit 0x13 set to 1; 0x1 or 0x0 - 0x8.0x13 set to 0
+# !} FW_PACK_STRUCT;
+# !Write (transaction Id + 1) to 0x338 to ask firmware for processing MSM structure
+# !Check that 0x33c was incremented to 1 by FW
+# !Disable and re-enable link
+# !Check that MSM registers 54-70 are as requested by MSM struct
+# !MSM register 0x8 bit 0x13 set to 1
+# !Incorrect MSM settings may impact datapath, so board should be powercycled after this test
+
+# WW stuf {
+finalReport = []
+
+test_num_ndef = True
+ifdef test_num:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    logTag = -l cli
+else:
+    ifndef logTag:
+        logTag = -l cli
+# WW stuf }
+
+readreg 0x334 -n ifaceAddr $logTag
+
+# Write MSG ID
+val = 11
+mac.mcp.writemem $ifaceAddr $val
+
+msmSettingsAddr = $ifaceAddr + 4
+
+#drvMsmSettings.msmReg054-msmReg070
+valuesToSend = 9 
+for value = 1; $value < $valuesToSend; value += 1:
+    mac.mcp.writemem $msmSettingsAddr $value
+    msmSettingsAddr = $msmSettingsAddr + 4
+
+#drvMsmSettings.flags	
+value = 0x101
+mac.mcp.writemem $msmSettingsAddr $value
+
+# run transaction
+readreg 0x33c -n id
+id = $id + 1
+writereg 0x338 $id
+pause 3
+readreg 0x33c -n id2
+
+if $id != $id2:
+    finalReport = $finalReport + ['(0)Wrong transaction ID after run transaction']
+    
+# Disable/Enable link
+mac.link Down  
+pause 3
+mac.get link -n link $logTag
+if '$link' != 'None':
+    finalReport = $finalReport + ['(1)Wrong link state'] 
+
+mac.set link 1G 
+mac.apply link
+mac.link Up $logTag
+mac.get link -n link $logTag
+if '$link' == 'None':
+    finalReport = $finalReport + ['(2)Wrong link state'] 
+
+value = 1    
+for msmSettingsAddr = 0x54; $msmSettingsAddr < 0x74; msmSettingsAddr += 4:
+    readreg msm $msmSettingsAddr -n valueMSM
+    if ($value) != ($valueMSM):
+        finalReport = $finalReport + ['(3)Incorrect value read form MSM'] 
+    value += 1
+
+readreg msm 0x8 -n val
+#MSM register 0x8 bit 0x13 set to 1
+if (($val >> 0x13) & 1) != 1:
+    finalReport += ['(4)MSM register 0x8 bit 0x13 is not set to 1']
+
+# TODO: fix hostPowerCycle.py with correct path to pwrtest.exe
+# pyexec $(PWD)/helpers/hostPowerCycle.py
+exec $(PWD)/helpers/showTestResult.txt

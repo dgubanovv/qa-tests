@@ -1,0 +1,45 @@
+result = 0x00
+
+for IPv6Syn_TestNo = 0; $IPv6Syn_TestNo < 16; IPv6Syn_TestNo += 1:
+
+    flags = 0
+
+    if $IPv6Syn_TestNo & 0x00000001:
+        IPv6SourceAddress0 = 0x11223344
+        IPv6SourceAddress1 = 0x55667788
+        IPv6SourceAddress2 = 0x99AABBCC
+        IPv6SourceAddress3 = 0xDDEEFF00
+    else:
+        IPv6SourceAddress0 = 0
+        IPv6SourceAddress1 = 0
+        IPv6SourceAddress2 = 0
+        IPv6SourceAddress3 = 0
+
+    if $IPv6Syn_TestNo & 0x00000002:
+        IPv6DestAddress0 = 0x01020304
+        IPv6DestAddress1 = 0x05060708
+        IPv6DestAddress2 = 0x090A0B0C
+        IPv6DestAddress3 = 0x0D0E0F00
+    else:
+        IPv6DestAddress0 = 0
+        IPv6DestAddress1 = 0
+        IPv6DestAddress2 = 0
+        IPv6DestAddress3 = 0
+
+    if $IPv6Syn_TestNo & 0x00000004:
+        TCPSourcePortNumber = 0xEEFF
+    else:
+        TCPSourcePortNumber = 0x0000
+
+    if $IPv6Syn_TestNo & 0x00000008:
+        TCPDestPortNumber = 0x8899
+    else:
+        TCPDestPortNumber = 0x0000
+
+    echo Test "wolFilterIPv6Syn", option $IPv6Syn_TestNo
+
+    exec testFW/wol/lib/wolCentralState.txt
+    exec testFW/wol/lib/wolFilterTestIPv6Syn.txt
+
+    if $result != 0:
+        echo _____________FAILED

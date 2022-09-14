@@ -1,0 +1,85 @@
+# !Bug 4537
+# !RPF:Vlan_tag in the header context going wrong when a long packet is followed by multiple min sized packets(60 bytes)
+# !
+
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    #mac.set loopback System DMA            # No loopback
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+exec $(PWD)/helpers/enableTPO2.txt
+exec $(PWD)/helpers/enableRPF2.txt
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+maxPacketLength = 1400
+minPacketLength = 56
+packetLengths = [$minPacketLength, $minPacketLength, $minPacketLength, $maxPacketLength, $minPacketLength, $minPacketLength, $minPacketLength]
+
+packetNum = 0
+for packetLen in $packetLengths:
+    pkt.new -n pkt$packetNum -p $packetLen
+    pkt.layer -i $(pkt$packetNum) -L 40 -t Dot1Q prio=6 type=0x800 vlan=0x5a4
+    packetLength = $packetLen + 4
+
+    # Get Rx head before packet insertion
+    mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+    # Insert packet and get buffer address
+    mac.txring[$txRingNo].insert -i $(pkt$packetNum) -b $packetLength -u 1 -s 1
+    mac.txring[$txRingNo].status $logTag
+    mac.rxring[$rxRingNo].status $logTag
+    mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+
+    # Generate packet that match this filter and only this filter
+    mac.txring[$txRingNo].dumpbuf -T 1 $logTag
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.rxring[$rxRingNo].clean
+
+    mac.txring[$txRingNo].status $logTag
+    mac.rxring[$rxRingNo].status $logTag
+
+
+    mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n rxAddr $logTag
+    mac.rxring[$rxRingNo].getdescval -H 1 -f size -n rxPacketSize $logTag
+    mem.cmp -p $pAddr -p2 $rxAddr -s $rxPacketSize -l nul -n cmpRes
+    if $cmpRes == False:
+        finalReport += ['(1)txPacket and rxPacket differs']    
+    packetNum += 1
+
+
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

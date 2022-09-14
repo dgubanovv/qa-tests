@@ -1,0 +1,250 @@
+# Script rx Unicast filter test
+# check for rx descriptor RX_ESTAT field bit 1 
+# A. Kazachkov 2016/21/03
+
+finalReport = []
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    isESTAT = 1  #check RX_ESTAT bit 1, for B0 only!
+    filterUnicastCount = 38 #Filter Counter. Must corresponds with the mask below
+    tests = [[0x0, 0xFFFFFFFFF, 0, 0]]
+    logTag = -l cli
+    RPF2 = False
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef isESTAT:
+        isESTAT = 1
+    ifndef filterUnicastCount:
+        filterUnicastCount = 38
+    ifndef tests:
+        tests = [[0x0, 0xFFFFFFFFF, 0, 0]]
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef RPF2:
+    RPF2 = False
+        
+# Format of tests:
+#(unicast_discard_mask, unicast_host_mask, unicast_man_mask, unicast_hostman_mask)
+# each number is a bit mask to set corresponding action for filter wich num corresponds with mask
+# mask 0x3 means that filters num 0, 1 correspond action
+tests = [[0x0, 0xFFFFFFFFF, 0, 0]]
+tests += [[0xFFFFFFFFF, 0, 0, 0]]
+tests += [[0, 0, 0xFFFFFFFFF, 0]]
+tests += [[0, 0, 0, 0xFFFFFFFFF]]
+
+filterActionDiscard = 0
+filterActionHost = 1
+filterActionManagement = 2
+filterActionHostManagement = 3
+filterActionWoL = 4
+filterActionReserved = 5
+
+macAddrSrcStr ='[0x10,0xdd,0xb1,0xe6,0x1e,0xa5]'
+
+protoIcmpFullLen = 74
+
+mac.set glb_reg_reset_dis False
+mac.set tx_reg_rst_dis False
+mac.set rx_reg_rst_dis False
+
+
+# Packet send prepare
+
+mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+mac.init
+
+mac.txinit
+mac.txring[$txRingNo].enable    # Prepare Tx ring
+mac.txring[$txRingNo].set PacketMark uniq $logTag
+
+mac.rxinit
+mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+mac.isr.disable
+
+
+if $RPF2:
+    exec $(PWD)/helpers/enableRPF2.txt
+
+    
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $PWD/helpers/workaroundBug3991.txt
+
+mac.rxring[$rxRingNo].get -n rxRingSize size
+
+#Configure filters
+
+exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 256
+mac.llh -C rpfL2BroadcastFilterActionSet $filterActionManagement
+mac.llh -C rpfL2BroadcastCountResetSet 0
+#??? SwapEnable - what is this?
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llh -C rpfL2BroadcastEnableSet 0
+
+mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+undefList = -n undefList
+testNumber = 0
+
+for filterUnicastIndex = 0; $filterUnicastIndex < $filterUnicastCount; filterUnicastIndex += 1:
+    macAddressUnicastStr = "[0x08,$filterUnicastIndex,0xCC,0xDD,0xEE,$filterUnicastIndex]"
+    pkt.new -n pkt$filterUnicastIndex -p 32
+    pkt.layer -i $(pkt$filterUnicastIndex) -L 60 -t ICMP
+    pkt.layer -i $(pkt$filterUnicastIndex) -L 50 -t IP #dst=[172,27,27,1] src="172.27.27.3"
+    pkt.layer -i $(pkt$filterUnicastIndex) -L 25 -t Ether src=$macAddrSrcStr type=0x800 dst=$macAddressUnicastStr
+
+for test in $tests:
+    tmp = 0
+    for elem in $test:
+        if $elem:
+            if $tmp:
+                finalReport += ['(1)Defined too much actions']
+                break
+            tmp = 1
+    if len($finalReport) > 0:
+        break;
+
+    unicastToHost = 0
+    unicastToMng = 0
+    filterUnicastMngQueue = $queue
+    # Set filter action accordingly to the test defenition
+    for filterUnicastIndex = 0; $filterUnicastIndex < $filterUnicastCount; filterUnicastIndex += 1:
+        filterUnicastEnable = 0
+        filterUnicastAction = $filterActionDiscard
+        if ($test[0] & (1 << $filterUnicastIndex)) != 0:
+            filterUnicastEnable = 1
+            filterUnicastAction = $filterActionDiscard
+        if ($test[1] & (1 << $filterUnicastIndex)) != 0:
+            filterUnicastEnable = 1
+            filterUnicastAction = $filterActionHost
+            unicastToHost += 1
+        if ($test[2] & (1 << $filterUnicastIndex)) != 0:
+            filterUnicastEnable = 1
+            filterUnicastAction = $filterActionManagement
+            unicastToMng += 1
+        if ($test[3] & (1 << $filterUnicastIndex)) != 0:
+            filterUnicastEnable = 1
+            filterUnicastAction = $filterActionHostManagement
+            unicastToHost += 1
+            unicastToMng += 1
+        filterUnicastMacAddr = [0x08, $filterUnicastIndex, 0xCC, 0xDD, 0xEE, $filterUnicastIndex]
+        exec $(PWD)/helpers/filtersConfigurators/rxUnicastFilter.txt
+    
+    # Send one packet for each filter, and extract it right after sending
+    for filterUnicastIndex = 0; $filterUnicastIndex < $filterUnicastCount; filterUnicastIndex += 1:
+        # Get Rx head before packet insertion
+        mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+        # Insert packet and get buffer address
+        #echo Packet num $filterUnicastIndex
+        mac.txring[$txRingNo].insert -i $(pkt$filterUnicastIndex) -b 74
+        mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+
+        # Generate packet that match this filter and only this filter
+        mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size 80
+        mac.txring[$txRingNo].commit
+        mac.txring[$txRingNo].clean
+        mac.rxring[$rxRingNo].clean
+
+        #(unicast_discard_mask, unicast_host_mask, unicast_man_mask, unicast_hostman_mask)
+        if (($test[2] & (1 << $filterUnicastIndex)) != 0) or (($test[3] & (1 << $filterUnicastIndex)) != 0):
+            expectedPacketCount = 1
+        else:
+            expectedPacketCount = 0
+        
+        # Check extractor right now
+        stringId = '(2)'
+        mac.llhcache on
+        exec $(PWD)/helpers/extractorCheckers/checkPacketCount.txt
+        if $packetCount == 1:
+            exec $(PWD)/helpers/extractAndCompare.txt
+        
+        #Check packet in rx ring
+        mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+        #echo if (($test[1] & (1 << $filterUnicastIndex)) != 0) or (($test[3] & (1 << $filterUnicastIndex)) != 0):
+        if (($test[1] & (1 << $filterUnicastIndex)) != 0) or (($test[3] & (1 << $filterUnicastIndex)) != 0):
+            if $rxHeadBefore == ($rxRingSize-1):
+                $rxHeadBefore = -1
+            rxCount = $rxHeadGood + 0 - $rxHeadBefore
+            if $rxCount != 1:
+                finalReport += ['(3)Wrong packet number($rxCount) routed to host']
+                break
+            
+            #check for RX_ESTAT bit
+            if $isESTAT:
+                mac.rxring[$rxRingNo].dumpbuf -H 1 $logTag --size 80
+                mac.rxring[$rxRingNo].getdescval -H 1 -f RX_ESTAT -n rxESTAT $logTag
+                if ($rxESTAT & 0x02) != 2:
+                    finalReport += ['Wrong RX_ESTAT value for desc $(pkt$filterUnicastIndex)']
+            
+            mac.rxring[$rxRingNo].clean
+            mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n rxAddr $logTag
+            mac.rxring[$rxRingNo].getdescval -H 1 -f size -n rxPacketSize $logTag
+            if $protoIcmpFullLen != $rxPacketSize:
+                finalReport += ['(4)Wrong packet size on Rx']
+                break
+            mem.cmp -p $pAddr -p2 $rxAddr -s $rxPacketSize -l nul -n cmpRes
+            if $cmpRes == False:
+                finalReport += ['(5)txPacket and rxPacket differs']
+            mac.rxring[$rxRingNo].fill 1
+            mac.rxring[$rxRingNo].commit 1
+        else:
+            if $rxHeadGood != $rxHeadBefore:
+                finalReport += ['(6)Unexpected packet in Rx ring']
+                break
+    
+    testNumber += 1
+
+
+# Promiscous packet - should bypass all filters.
+ if $isESTAT:
+    #echo
+    #echo Now Packet should be not filtered
+    #echo
+    mac.llhcache on
+    mac.llh -C rpfL2PromiscuousModeEnableSet 1
+    mac.llhcache off
+# send packet to be not filtered
+    pkt.new -n pktPromisc -p 32
+    pkt.layer -i $pktPromisc -L 60 -t ICMP
+    pkt.layer -i $pktPromisc -L 50 -t IP #dst=[172,27,27,1] src="172.27.27.3"
+    pkt.layer -i $pktPromisc -L 25 -t Ether src=$macAddrSrcStr type=0x800 dst=$macAddrSrcStr
+    pkt.len -i $pktPromisc -n packetLen $logTag
+    mac.txring[$txRingNo].insert -i $pktPromisc -b 74
+    mac.txring[$txRingNo].dumpbuf -T 1  $logTag --size $packetLen
+    mac.txring[$txRingNo].commit
+    mac.rxring[$rxRingNo].clean
+    mac.txring[$rxRingNo].clean
+    mac.rxring[$txRingNo].status $logTag
+    mac.rxring[$rxRingNo].dumpbuf -H 1 $logTag --size $packetLen
+    mac.rxring[$rxRingNo].getdescval -H 1 -f RX_ESTAT -n rxESTAT $logTag
+    if ($rxESTAT & 0x02) != 0:
+        finalReport += ['Wrong RX_ESTAT for promiscous packet']
+
+
+readreg 0x5040 $logTag
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

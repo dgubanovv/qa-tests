@@ -1,0 +1,38 @@
+#use for print test result
+#use global variables: finalReport, testExecuted
+
+testExecuted = True
+
+isJenkinsRun = 0
+ifdef test_num:
+    if (-1 != $test_num):
+        isJenkinsRun = 1;
+    
+ifndef hideResult:
+    hideResult = False
+    
+if not $hideResult:
+    if not $isJenkinsRun:
+        # manual run
+        if len($finalReport) > 0:
+            echo FinalReport:
+            for str in $finalReport:
+                echo $str
+            echo
+            echo [FAILED]
+        else:
+            echo
+            echo [PASSED]
+        echo
+    else:
+        # jenkins run
+        if len($finalReport) > 0:
+            shell echo FinalReport: >> $runResults
+            for str in $finalReport:
+                shell echo $str >> $runResults
+            shell echo "" >> $runResults
+            shell echo [FAILED] >> $runResults
+        else:
+            shell echo "" >> $runResults
+            shell echo [PASSED] >> $runResults
+        echo

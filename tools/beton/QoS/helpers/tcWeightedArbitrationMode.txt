@@ -1,0 +1,11 @@
+#Enable tc arbitration mode
+#INPUT: arbitrationMode - mode (RR, WRR, WSP),weightes - array of weightes, tcArr - array of TC
+
+mac.tps.set descriptorArbitrationMode $arbitrationMode
+i=0
+for tcNo in $tcArr:
+    curWeight = $weightes[$i]
+    maxCredit = $maxCredits[$i]
+    mac.tps.tcdesc $tcNo set tcWeight $curWeight $logTag
+    mac.tps.tcdesc $tcNo set tcMaxCredit $maxCredit $logTag
+    i+=1

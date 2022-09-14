@@ -1,0 +1,35 @@
+txExtCtrlReg = 0x7860
+txExtMACFilter0LSWReg = 0x7870
+txExtMACFilter0MSWReg = 0x7874
+txExtMACFilter1LSWReg = 0x7878
+txExtMACFilter1MSWReg = 0x787C
+txExtIPFilter0Reg1 = 0x7880
+txExtIPFilter0Reg2 = 0x7884
+txExtIPFilter0Reg3 = 0x7888
+txExtIPFilter0Reg4 = 0x788c
+txExtStatus1Reg = 0x78B0
+txExtStatus2Reg = 0x78B4
+txExtStatus3Reg = 0x78B8
+txExtDataReg = 0x78BC
+
+
+txExtResetMask =       0x40000000
+txExtLimitMask =       0x04000000
+txExtReplicateMask =   0x01000000
+txExtMACFilterMask =   0x00400000
+txExtIPFilterMask =    0x00100000
+txExtARPFilterMask =   0x00040000
+txExtSelectQueueMask = 0x00000002
+txExtReadMask =        0x00000001
+
+txExtRdyMask =   0x40000000
+txExtTruncMask = 0x00000010
+txExtOfMask =    0x00000004
+txExtPerrMask =  0x00000001
+
+txExtDataValidMask = 0x000F0000
+txExtDataValidShift = 16
+txExtChksumErrMask = 0x00000800
+txExtChksumErrShift = 11
+txExtEopMask = 0x00000200
+txExtCntMask = 0x0000000F

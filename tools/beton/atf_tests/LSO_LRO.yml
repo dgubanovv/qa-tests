@@ -1,0 +1,93 @@
+test: LSO/LRO
+subtests:
+- name: Base LRO
+  script: Offloads/rxLroShort.txt
+  parameters:
+    givenTxPacketCount: 6
+    givenTxHeaderLen: 54
+    givenTxPayloadLen: 240
+    givenTxPacketLen: 294
+    test_num: '-1'
+- name: LRO Eviction
+  script: Offloads/rxLroEviction.txt
+  parameters:
+    test_num: '-1'
+- name: LRO Header Modifier
+  script: Offloads/rxLroHeaderModifier.txt
+  parameters:
+    test_num: '-1'
+- name: LRO Long Packet
+  script: Offloads/rxLroLong.txt
+  parameters:
+    test_num: '-1'
+- name: LSO Registers
+  script: Offloads/txSegmentationOffload.txt
+  parameters:
+    minMSS: 4
+    maxMSS: 1994
+    lsoMaxSize: 65535
+    minPortNum: 1
+    maxPortNum: 65535
+    test_num: '-1'
+- name: Simple LSO
+  script: Offloads/txLargeSegmentOffload.txt
+  parameters:
+    packetLengthVariationsCount: 20
+    test_num: '-1'
+- name: Simple LRO (long)
+  script: Offloads/rxLargeSegmentOffload.txt
+  timeout: 6600
+  parameters:
+    itr: 5
+    test_num: '-1'
+- name: Rx TCP Syn
+  script: Packet/rxTCPsyn.txt
+  parameters:
+    test_num: '-1'
+- name: LRO Payload Compare (10 packets per flow)
+  script: Offloads/rxLroPayloadCompare.txt
+  timeout: 1000
+  parameters:
+    useIPv6: False
+    seed: 1
+    flowCount: 8
+    useUsualPackets: False
+    maxPacketCountPerFlow: 10
+    test_num: '-1'
+- name: LRO Payload Compare IPv6 (10 packets per flow)
+  script: Offloads/rxLroPayloadCompare.txt
+  timeout: 1000
+  parameters:
+    useIPv6: True
+    seed: 333
+    flowCount: 8
+    useUsualPackets: False
+    maxPacketCountPerFlow: 2
+    test_num: '-1'
+- name: LRO Payload Compare (usual packets, 2 packets per flow)
+  script: Offloads/rxLroPayloadCompare.txt
+  timeout: 1000
+  parameters:
+    useIPv6: False
+    seed: 555
+    flowCount: 8
+    useUsualPackets: True
+    maxPacketCountPerFlow: 2
+    test_num: '-1'
+- name: LRO Payload Compare IPv6 (usual packets, 2 packets per flow)
+  script: Offloads/rxLroPayloadCompare.txt
+  timeout: 1000
+  parameters:
+    useIPv6: True
+    seed: 555
+    flowCount: 8
+    useUsualPackets: True
+    maxPacketCountPerFlow: 2
+    test_num: '-1'
+#- name: Tx LSO Big Header
+#  script: Offloads/txLsoBigHeader.txt
+#  parameters:
+#    TPO2: True
+#    RPF2: True
+#    flowCount: 8
+#    test_num: '-1'

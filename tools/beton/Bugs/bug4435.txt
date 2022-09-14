@@ -1,0 +1,130 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4435.txt $
+# $Revision: #6 $
+# $DateTime: 2015/11/11 00:34:02 $
+# $Author: oxy $
+#
+#Disabled interrupts must not fire
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+ifndef logTag:
+    logTag = -l cli
+
+mac.set loopback None               $logTag
+
+numOfRings = 1
+ring_lst = [i for i in range($numOfRings)]
+serialMapping = True
+
+#int_count = 31 #Interrupt count [1..32]
+wait_count = 5
+wait_timeout = 100
+
+#Set interrupt mode
+mvm = False #Interrupt mode MvM or SM
+intmode = 'Multi-Vector' if ($mvm) else 'Single'
+mac.isr.set Mode $intmode            $logTag
+
+for ring in $ring_lst:
+    if $ring < 10:
+        tx_src$ring = tx0$ring
+    else:
+        tx_src$ring = tx$ring
+
+    if $serialMapping:
+        tx_vect$ring = $ring
+    else:
+        tx_vect$ring = random.randint(0,($numOfRings-1))
+    tx_cause$ring = $ring
+
+    mac.txring[$ring].set map2cause $(tx_cause$ring) $logTag
+    mac.txring[$ring].set map2vector $(tx_vect$ring) $logTag
+    mac.isr.regHandler -s $(tx_src$ring) -c $(tx_cause$ring) -v $(tx_vect$ring) -t 10000000 -n tx_interrupt$ring
+    tx_interrupt$ring = 0
+
+mac.init
+mac.txinit
+
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for ring in $ring_lst:
+        if $(tx_interrupt$ring) != 0:
+            finalReport = $finalReport + ['(0)$(tx_interrupt$ring) != 0']
+            break
+    pause $wait_timeout ms
+
+echo count rx 0 interupts to ITR 
+writereg  0x2a00 0xC0000000
+echo count tx 0 interupts to ITR 
+writereg  0x2a04 0xC1000000
+echo count ITR  to PHI interrupt 0
+writereg  0x2a08 0xCD000000
+echo count MASK0 toggles
+writereg  0x2a0C 0xD1000000
+
+intMask =  0xFFFFFFFF
+for ring in $ring_lst:
+    mac.txring[$ring].set wbThreshold 0 $logTag
+    mac.llh itrInterruptStatusClearLSW_Set $intMask 
+    mac.txring[$ring].enable
+    causebit = (1<<$(tx_cause$ring))
+    mac.llh itrInterruptMaskClearLSW_Set $causebit
+    readreg 0x2000
+    readreg 0x2010
+    mac.txring[$ring].insert -w 1
+    echo counters before commit
+    readreg 0x2A00:0x2a0C
+    mac.txring[$ring].commit
+    echo counters after commit
+    readreg 0x2A00:0x2a0C
+    readreg 0x2000 -n causeTest1
+
+echo 
+readreg 0x2010
+readreg 0x2300
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for ring in $ring_lst:
+        if $(tx_interrupt$ring) != 0:
+            finalReport = $finalReport + ['(1)$(tx_interrupt$ring) != 0']
+            break
+    pause $wait_timeout ms
+
+for ring in $ring_lst:
+    mac.txring[$ring].insert -w 1
+    mac.txring[$ring].insert -w 1
+    mac.txring[$ring].commit
+    mac.txring[$ring].insert -w 1
+    mac.txring[$ring].commit
+    #mac.txring[$ring].disable
+readreg 0x2010
+
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for ring in $ring_lst:
+        if $(tx_interrupt$ring) != 0:
+            finalReport = $finalReport + ['(2)$(tx_interrupt$ring) != 0']
+            break
+    pause $wait_timeout ms
+
+
+readreg 0x2010 -n intMask 
+readreg 0x2a00    
+readreg 0x2a04
+readreg 0x2a08 -n intHwCount0
+readreg 0x2a0c -n intHwCount1
+
+if $intMask != 0:
+    finalReport = $finalReport + ['(3)intMask != 0']
+intHwCount = 0xFFFF & $intHwCount0
+#intHwCount = $intHwCount + (0xFFFF & $intHwCount1)
+if $intHwCount != 0:
+    finalReport = $finalReport + ['(4)intHwCount != 0']
+    
+exec $(PWD)/helpers/showTestResult.txt #to show results [] in manual run mode
+
+mac.isr.disable
+mac.txuninit
+mac.uninit
+
+for ring in $ring_lst:
+    mac.isr.unregHandler -s $(tx_src$ring) -c $(tx_cause$ring) -v $(tx_vect$ring)

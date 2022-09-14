@@ -1,0 +1,30 @@
+features:
+  gpio_sync_1588_set_time:
+    requirement_list:
+      - id: DRV_LINUX_GPIO_1588_SET_TIME_1
+        description: It should be possible to configure time to be set after arriving pulse on sync1588 pin.
+        severity: 3
+      - id: DRV_LINUX_GPIO_1588_SET_TIME_2
+        description: Driver should apply configured value after the first pulse arrives.
+        severity: 3
+    marks:
+      - ready: yes
+    products: [linux_driver]
+  gpio_sync_1588_sync_time:
+    requirement_list:
+      - id: DRV_LINUX_GPIO_1588_SYNC_TIME_1
+        description: Driver should read timestamps of incoming pulses and apply frequency adjustments to the NIC.
+        severity: 3
+      - id: DRV_LINUX_GPIO_1588_SYNC_TIME_2
+        description: Sync mechanism should be restored in case of temporary external clock absence.
+        severity: 3
+      - id: DRV_LINUX_GPIO_1588_SYNC_TIME_3
+        description: Sync mechanism should be restored in case link renegotiation.
+        severity: 3
+      - id: DRV_LINUX_GPIO_1588_SYNC_TIME_4
+        description: Sync mechanism should work with external pulse periods between 50ms and 1s.
+        severity: 3
+    marks:
+      - ready: yes
+    severity: 1
+    products: [linux_driver]

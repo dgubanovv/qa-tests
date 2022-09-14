@@ -1,0 +1,147 @@
+features:
+  phy_macsec:
+    requirement_list:
+      - id: PHY_MACSEC_BYPASS_1
+        description: SEC Egress bypass can be enabled; when it's enabled all egress logic SEC logic shall be skipped.
+      - id: PHY_MACSEC_BYPASS_2
+        description: SEC Ingress bypass can be enabled; when it's enabled all ingress logic SEC logic shall be skipped.
+      - id: PHY_MACSEC_BYPASS_3
+        description: MSS Egress bypass can be enabled; when it's enabled MSS egress encryption logic shall be skipped.
+      - id: PHY_MACSEC_BYPASS_4
+        description: MSS Ingress bypass can be enabled; when it's enabled MSS ingress encryption logic shall be skipped.
+
+      - id: PHY_MACSEC_TAILDROP_1
+        description: It should be possible enable egress FC FIFO taildrop; when it's enabled in case of FIFO overflow MACSEC should drop packets.
+      - id: PHY_MACSEC_TAILDROP_2
+        description: When egress taildrop is disabled and FIFO is full MACSEC should truncate packets.
+      - id: PHY_MACSEC_TAILDROP_3
+        description: It should be possible enable ingress FC FIFO taildrop; when it's enabled in case of FIFO overflow MACSEC should drop packets.
+      - id: PHY_MACSEC_TAILDROP_4
+        description: When ingress taildrop is disabled and FIFO is full MACSEC should truncate packets.
+      - id: PHY_MACSEC_TAILDROP_5
+        description: When egress taildrop occured an interrupt shall be generated.
+      - id: PHY_MACSEC_TAILDROP_6
+        description: When ingress taildrop occured an interrupt shall be generated.
+
+      - id: PHY_MACSEC_FLOWCONTROL_FIFO_MODE_1
+        description: It should be possible configure ingress store and forward mode for FC FIFO.
+      - id: PHY_MACSEC_FLOWCONTROL_FIFO_MODE_2
+        description: It should be possible configure egress store and forward mode for FC FIFO.
+      - id: PHY_MACSEC_FLOWCONTROL_FIFO_MODE_3
+        description: It should be possible configure egress cut through mode for FC FIFO.
+      - id: PHY_MACSEC_FLOWCONTROL_FIFO_MODE_4
+        description: It should be possible configure ingress cut through mode for FC FIFO.
+      - id: PHY_MACSEC_FLOWCONTROL_FIFO_MODE_5
+        description: It should be possible configure any combination of egress/ingress FC FIFO modes.
+
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_1
+        description: It should be possible enable egress (sif -> line) pause frame processing.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_2
+        description: When egress pause processing enabled PHY should consume pause frame so it should not go to line side.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_3
+        description: When egress pause processing disabled PHY should not consume pause frame so it should go to line side.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_4
+        description: When egress pause processing enabled and PHY receives pause frame egress datapath should be stopped for time quanta value extracted from the packet.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_5
+        description: After stopping egress datapath the count-down timer should start, the datapath can be resumed only when count-down timer is zero.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_6
+        description: When egress count-down timer is ticking and if PHY receives one more pause frame count-down time should be set to new quanta value extracted from the packet.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_7
+        description: In egress direction if PHY receives pause frame with 0 quanta value it should immediatelly resume egress datapath.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_8
+        description: MACSEC shall never react on PFC pause frames coming in sif -> line direction until PFC processing is enabled.
+
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_PROCESSING_1
+        description: It should be possible enable ingress (line -> sif) pause frame processing.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_PROCESSING_2
+        description: When ingress pause processing enabled PHY should consume pause frame so it should not go to line side.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_PROCESSING_3
+        description: When ingress pause processing disabled PHY should not consume pause frame so it should go to line side.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_PROCESSING_4
+        description: When ingress pause processing enabled and PHY receives pause frame ingress datapath should be stopped for time quanta value extracted from the packet.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_PROCESSING_5
+        description: After stopping ingress datapath the count-down timer should start, the datapath can be resumed only when count-down timer is zero.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_PROCESSING_6
+        description: When ingress count-down timer is ticking and if PHY receives one more pause frame count-down time should be set to new quanta value extracted from the packet.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_PROCESSING_7
+        description: In ingress direction if PHY receives pause frame with 0 quanta value it should immediatelly resume ingress datapath.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_PROCESSING_8
+        description: MACSEC shall never react on PFC pause frames coming in line -> sif direction until PFC processing is enabled.
+
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_GENERATION_1
+        description: It should be possible enable ingress (sif -> line) pause frame generation.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_GENERATION_2
+        description: It should be possible configure ingress FIFO XOFF threshold, when ingress FIFO depth exceeds XOFF value MACSEC shall generate pause frames in opposite direction.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_GENERATION_3
+        description: MACSEC shall repeatedly generate pause frames in sif -> line direction, it should be possible configure repeat period.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_GENERATION_4
+        description: It should be possible configure ingress FIFO XON threshold, when ingress FIFO depth drops below XON value MACSEC shall generate pause frame with 0 quanta value then stop generate pause frames.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_GENERATION_5
+        description: It should be possible configure quanta value for pause frames generated in sif -> line direction.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_GENERATION_6
+        description: It should be possible configure source and destination MAC addresses for pause frames generated in sif -> line direction.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_GENERATION_7
+        description: When ingress FC FIFO depth has gone below XOFF threshold, an interrupt shall be generated.
+      - id: PHY_MACSEC_FLOCONTROL_EGRESS_PAUSE_GENERATION_8
+        description: When ingress FC FIFO depth has gone above XON threshold, an interrupt shall be generated.
+
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_GENERATION_1
+        description: It should be possible enable egress (line -> sif) pause frame generation.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_GENERATION_2
+        description: It should be possible configure egress FIFO XOFF threshold, when egress FIFO depth exceeds XOFF value MACSEC shall generate pause frames in opposite direction.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_GENERATION_3
+        description: MACSEC shall repeatedly generate pause frames in line -> sif direction, it should be possible configure repeat period.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_GENERATION_4
+        description: It should be possible configure egress FIFO XON threshold, when egress FIFO depth drops below XON value MACSEC shall generate pause frame with 0 quanta value then stop generate pause frames.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_GENERATION_5
+        description: It should be possible configure quanta value for pause frames generated in line -> sif direction.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_GENERATION_6
+        description: It should be possible configure source and destination MAC addresses for pause frames generated in line -> sif direction.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_GENERATION_7
+        description: When egress FC FIFO depth has gone below XOFF threshold, an interrupt shall be generated.
+      - id: PHY_MACSEC_FLOCONTROL_INGRESS_PAUSE_GENERATION_8
+        description: When egress FC FIFO depth has gone above XON threshold, an interrupt shall be generated.
+
+      - id: PHY_MACSEC_EEE_1
+        description: It should be possible configure 3 different EEE modes - external, internal and MDIO.
+      - id: PHY_MACSEC_EEE_2
+        description: In internal mode EEE state machine should enter Request Power Down state after programmable timeout.
+      - id: PHY_MACSEC_EEE_3
+        description: It should be possible configure timeout for entering Request Power Down state for internal EEE mode.
+      - id: PHY_MACSEC_EEE_4
+        description: In external mode EEE state machine should enter Request Power Down state after receive of LPI in sif -> line direction.
+      - id: PHY_MACSEC_EEE_5
+        description: In Request Power Down state and after programmable timeout passed MACSEC shall send LPIs in sif -> line direction.
+      - id: PHY_MACSEC_EEE_6
+        description: It should be possible configure length of time to wait before starting to generate the LPI sequence after the Request Power Down state is granted.
+      - id: PHY_MACSEC_EEE_7
+        description: MACSEC shall check emptyness of egress FIFO periodically; it should be possible configure this period.
+      - id: PHY_MACSEC_EEE_8
+        description: If egress FIFO is not empty EEE state machine shall enter into Wake Up state, after state MACSEC shall stop sending LPIs in sif -> line direction and start sending IDLE sequences.
+      - id: PHY_MACSEC_EEE_9
+        description: While staying in Wake Up state egress FIFO shall not be read and no traffic shall be sent in sif -> line direction.
+      - id: PHY_MACSEC_EEE_10
+        description: It should be possible configure length of time to wait before exiting the Wake Up state back into the IDLE state.
+      - id: PHY_MACSEC_EEE_11
+        description: Nornal datapath shall be enabled after entering to IDLE state.
+
+      - id: PHY_MACSEC_LOOPBACK_1
+        description: It should be possible enable line-side-facing shallow loopback.
+      - id: PHY_MACSEC_LOOPBACK_2
+        description: It should be possible enable sif-side-facing shallow loopback.
+      - id: PHY_MACSEC_LOOPBACK_3
+        description: It should be possible enable line-side-facing non-destructive loopback.
+      - id: PHY_MACSEC_LOOPBACK_4
+        description: It should be possible enable sif-side-facing non-destructive loopback.
+      - id: PHY_MACSEC_LOOPBACK_5
+        description: It should be possible enable system interface system loopback without MACSEC.
+
+      - id: PHY_MACSEC_COUNTERS_FLOWCONTROL_1
+        description: MACSEC shall count number of received pause frames in sif -> line direction.
+      - id: PHY_MACSEC_COUNTERS_FLOWCONTROL_2
+        description: MACSEC shall count number of received pause frames in line -> sif direction.
+      - id: PHY_MACSEC_COUNTERS_FLOWCONTROL_3
+        description: MACSEC shall count number of generated pause frames in sif -> line direction.
+      - id: PHY_MACSEC_COUNTERS_FLOWCONTROL_4
+        description: MACSEC shall count number of generated pause frames in line -> sif direction.
+    products: [PROD_RHEA]

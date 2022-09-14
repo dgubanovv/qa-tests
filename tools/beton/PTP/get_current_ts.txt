@@ -1,0 +1,8 @@
+readreg 0x37c -n ts0_msw -l nul
+readreg 0x378 -n ts0_lsw -l nul
+pause 1 ms
+readreg 0x37c -n ts1_msw -l nul
+readreg 0x378 -n ts1_lsw -l nul
+ts0_msw = $ts1_msw if ($ts0_lsw < $ts1_lsw) else $ts0_msw
+ts_tmp = $ts0_lsw + ($ts0_msw << 32)
+ts_list += [$ts_tmp]

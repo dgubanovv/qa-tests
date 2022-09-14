@@ -1,0 +1,40 @@
+# Script for one packet extraction with ARP filter
+
+hostAlreadyInitiated = False
+
+txRingNo = 0
+extReplicate = 0   # replicate after Extraction
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq
+
+# Tx Extractor prepare
+
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+
+# Set corresponding filter enable and clear others
+
+readreg $txExtCtrlReg -n txExtCtrl
+txExtCtrl = $txExtCtrl & ~$txExtMACFilterMask
+txExtCtrl = $txExtCtrl & ~$txExtIPFilterMask
+txExtCtrl = $txExtCtrl | $txExtARPFilterMask
+ctrlMask = $txExtReplicateMask
+if $extReplicate == 1:
+    txExtCtrl = $txExtCtrl | $ctrlMask
+else:
+    txExtCtrl = $txExtCtrl & ~$ctrlMask
+writereg $txExtCtrlReg $txExtCtrl
+
+filter1 = 0x12903478
+writereg $txExtIPFilter0Reg1 $filter1
+
+readreg $txExtStatus1Reg
+readreg $txExtStatus2Reg
+readreg $txExtStatus3Reg
+cmd

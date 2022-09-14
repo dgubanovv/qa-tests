@@ -1,0 +1,47 @@
+# Script for one packet extraction with different MAC filters
+
+for nQueue = 0; $nQueue < 2; nQueue += 1:
+
+    # Read from nQueue
+
+    buf = []
+
+    if $nQueue == 0:
+        nPacketsMask = $txExtCntMask
+    else:
+        nPacketsMask = ($txExtCntMask << 4)
+    readreg $txExtStatus2Reg -n nPackets
+    nPackets = $nPackets & $nPacketsMask
+
+    if $nPackets <> 0:
+        # Select Queue
+        if $nQueue == 0:
+            txExtCtrl = $txExtCtrl & ~$txExtSelectQueueMask
+        else:
+            txExtCtrl = $txExtCtrl | $txExtSelectQueueMask
+        writereg $txExtCtrlReg $txExtCtrl
+    
+        txExtCtrl0 = $txExtCtrl & ~$txExtReadMask
+        txExtCtrl1 = $txExtCtrl | $txExtReadMask
+        for loopCnt = 0; $loopCnt < 512; loopCnt += 1:
+            # generate rising edge
+            writereg $txExtCtrlReg $txExtCtrl0
+            writereg $txExtCtrlReg $txExtCtrl1
+            readreg $txExtDataReg -n dataExtracted
+            buf = $buf + [$dataExtracted]
+
+            readreg $txExtStatus2Reg -n eop
+            eop = $eop & $txExtEopMask
+            if $eop <> 0:
+                break
+        writereg $txExtCtrlReg $txExtCtrl0
+    else:
+        echo No packets to extract $nQueue
+
+    readreg $txExtStatus1Reg
+    readreg $txExtStatus2Reg
+    readreg $txExtStatus3Reg
+    echo $buf
+
+echo Script done
+cmd

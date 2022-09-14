@@ -1,0 +1,46 @@
+test: MCP
+subtests:
+- name: Interrupts and Exceptions
+  script: Mips/mcpInterruptException.txt
+  parameters:
+    test_num: '-1'
+- name: Memory
+  script: Mips/mipsMemory.txt
+  parameters:
+    test_num: '-1'
+- name: FW Simple Addr Swap - Queue 0
+  script: Mips/mipsFirmware.txt
+  parameters:
+    loopbackType: 0
+    queue: 0
+    extType: 'tx'
+    injType: 'rx'
+    test_num: '-1'
+- name: FW Simple Addr Swap - Queue 1
+  script: Mips/mipsFirmware.txt
+  parameters:
+    loopbackType: 0
+    queue: 1
+    extType: 'tx'
+    injType: 'rx'
+    test_num: '-1'
+- name: FW Simple Responder - Queue 0
+  script: Mips/mipsFirmware.txt
+  parameters:
+    loopbackType: 0
+    queue: 0
+    extType: 'rx'
+    injType: 'tx'
+    test_num: '-1'
+- name: FW Simple Responder - Queue 1
+  script: Mips/mipsFirmware.txt
+  parameters:
+    loopbackType: 0
+    queue: 1
+    extType: 'rx'
+    injType: 'tx'
+    test_num: '-1'
+- name: Test IRAM/DRAM 64k memory shutdown 
+  script: Mips/ramSizeTest.txt
+  parameters:
+    test_num: '-1'

@@ -1,0 +1,78 @@
+# ! Erase flash,write random data,read data
+log.hw Disable #disabled to speed up test
+
+flash.init
+flash.get jedecid -n FLASH_CONST_JEDECID -l nul
+flash.get flashSize -n FLASH_CONST_FLASH_SIZE -l nul
+flash.get dataChunkSize -n FLASH_CONST_DATA_CHUNK_SIZE -l nul
+flash.get pageSize -n FLASH_CONST_PAGE_SIZE -l nul
+flash.get pagesPerSmallestGroup -n FLASH_CONST_PAGES_PER_GROUP -l nul
+
+finalReport = []                          
+flashSizeBytes = $FLASH_CONST_FLASH_SIZE
+ok = 1
+
+if flashSizeBytes < ($FLASH_CONST_PAGE_SIZE * $FLASH_CONST_DATA_CHUNK_SIZE):
+    finalReport = $finalReport + ['(0) Incorrect test condition']
+    ok = 0
+
+flash.getPower2Status -n flashPageSizeIsPowerOf2
+if not $flashPageSizeIsPowerOf2:
+    echo Flash page size is not a power of 2! Setting to power of 2 now...
+    flash.setPower2 -n setPower2Successful
+    if not $setPower2Successful:
+        echo Setting flash page size to power of 2 was not successful. Aborting script...
+        finalReport = $finalReport + ['(1) Flash page size was not power of 2 and attempt to force it to power of 2 failed.']
+        ok = 0
+
+if $ok == 1:
+    #flash.init
+    flash.jedecid -n id
+
+if $id != $FLASH_CONST_JEDECID and $ok == 1:
+    hex_var = hex($FLASH_CONST_JEDECID)
+    finalReport = $finalReport + ['(2) JEDECID not equal to $hex_var']
+    ok = 0
+
+# Erase flash
+if $ok == 1:
+    flash.erase -s 0
+
+    
+# Generate random values
+maxAddr = 2000000 #bytes
+intervalLength = $FLASH_CONST_PAGE_SIZE*2
+randomStartAddr = (random.randint(0, $maxAddr-$intervalLength) / $intervalLength) * $intervalLength
+randomEndAddr = $randomStartAddr + $intervalLength
+
+
+unitSize = 1
+units = ($FLASH_CONST_PAGE_SIZE // $unitSize)
+for addr = $randomStartAddr; $addr < $randomEndAddr and $ok == 1; addr+= ($FLASH_CONST_PAGE_SIZE * $FLASH_CONST_DATA_CHUNK_SIZE): 
+    # Write data
+    for unit=0; $unit < $units and $ok == 1; unit+=2:
+        currentAddr= $addr + ($unit * $unitSize * $FLASH_CONST_DATA_CHUNK_SIZE)
+        currentData = $currentAddr ^ 0xAAAAAAAA
+        flash.program -a $currentAddr -c $unitSize $currentData
+        ifndef hideResult:
+            echo write odd: $currentAddr
+    
+    
+    # Read data
+    for unit=0; $unit < $units and $ok == 1; unit+=2:
+        currentAddr = $addr + ($unit * $unitSize * $FLASH_CONST_DATA_CHUNK_SIZE)
+        currentData = $currentAddr ^ 0xAAAAAAAA
+        flash.read -a $currentAddr -s $unitSize -n data
+        if $data != $currentData:
+            finalReport = $finalReport + ['(0) Fail on write/read test in units of $unitSize DWORDs on address $currentAddr']
+            ok = 0
+            break
+        ifndef hideResult:
+            echo check write/read even: $currentAddr   
+
+
+
+exec $PWD/helpers/showTestResult.txt
+log.hw Enable
+
+

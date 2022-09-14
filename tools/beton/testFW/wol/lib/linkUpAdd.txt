@@ -1,0 +1,38 @@
+#####################################################
+# Input args:
+#
+# timeout
+#
+# Returns
+# result
+#
+#####################################################
+
+exec testFW/wol/lib/wolConstants.txt
+exec testFW/drvIface/getBaseAddress.txt
+
+#####################################################
+### write drvMsgWoLAdd header
+#####################################################
+
+priority             = 0
+packetType           = $aqPMWoLReasonLinkUp
+patternId            = 6
+nextWolPatternOffset = 0
+
+exec testFW/drvIface/drvMsgWolAdd.txt
+
+#####################################################
+### write drvMsgWoLAdd.wolPattern.wolMagicPacket
+#####################################################
+
+mac.mcp.writemem $addr $timeout -l nul
+addr = $addr + 4
+
+#####################################################
+### execute DRV_MSG_WOL_ADD transaction
+#####################################################
+
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+result = $transactionResult

@@ -1,0 +1,110 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4435_1.txt $
+# $Revision: #2 $
+# $DateTime: 2015/11/09 10:48:36 $
+# $Author: epomozov $
+#
+#Disabled interrupts must not fire
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+ifndef logTag:
+    logTag = -l cli
+
+mac.set loopback None
+
+numOfRings = 1
+ring_lst = [i for i in range($numOfRings)]
+serialMapping = True
+
+#int_count = 31 #Interrupt count [1..32]
+wait_count = 5
+wait_timeout = 100
+
+#Set interrupt mode
+mvm = False #Interrupt mode MvM or SM
+intmode = 'Multi-Vector' if ($mvm) else 'Single'
+mac.isr.set Mode $intmode            $logTag
+
+for ring in $ring_lst:
+    if $ring < 10:
+        tx_src$ring = tx0$ring
+    else:
+        tx_src$ring = tx$ring
+
+    if $serialMapping:
+        tx_vect$ring = $ring
+    else:
+        tx_vect$ring = random.randint(0,($numOfRings-1))
+    tx_cause$ring = $ring
+
+    mac.txring[$ring].set map2cause $(tx_cause$ring)
+    mac.txring[$ring].set map2vector $(tx_vect$ring)
+    mac.isr.regHandler -s $(tx_src$ring) -c $(tx_cause$ring) -v $(tx_vect$ring) -t 10000000 -n tx_interrupt$ring
+    tx_interrupt$ring = 0
+
+mac.init
+mac.txinit
+
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for ring in $ring_lst:
+        if $(tx_interrupt$ring) != 0:
+            echo ['(0)$(tx_interrupt$ring) != 0']
+            break
+    pause $wait_timeout ms
+
+intMask =  0xFFFFFFFF
+for ring in $ring_lst:
+    mac.txring[$ring].set wbThreshold 0 $logTag
+    mac.txring[$ring].enable
+    causebit = (1<<$(tx_cause$ring))
+    mac.llh itrInterruptMaskClearLSW_Set $causebit
+    readreg 0x2000
+    readreg 0x2010
+    mac.txring[$ring].insert -w 1
+    mac.txring[$ring].commit
+    readreg 0x2000 -n causeTest1
+
+readreg 0x2010
+readreg 0x2300
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for ring in $ring_lst:
+        if $(tx_interrupt$ring) != 0:
+            echo ['(1)$(tx_interrupt$ring) != 0']
+            break
+    pause $wait_timeout ms
+
+for ring in $ring_lst:
+    mac.txring[$ring].insert -w 1
+    mac.txring[$ring].commit
+    #mac.txring[$ring].disable
+readreg 0x2010
+
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for ring in $ring_lst:
+        if $(tx_interrupt$ring) != 0:
+            echo ['(2)$(tx_interrupt$ring) != 0']
+            break
+    pause $wait_timeout ms
+
+#exec $(PWD)/helpers/showTestResult.txt #to show results [] in manual run mode
+
+mac.isr.disable
+mac.txuninit
+mac.uninit
+
+for ring in $ring_lst:
+    mac.isr.unregHandler -s $(tx_src$ring) -c $(tx_cause$ring) -v $(tx_vect$ring)
+
+for ring in $ring_lst:
+    if $(tx_interrupt$ring) != 0 or $causeTest1 != 0:
+        tx_res = failed
+    else:
+        tx_res = passed
+    echo Tx$ring Interrupt is $tx_res (var0 = $(tx_interrupt$ring), var1 = $causeTest1)
+
+if $error > 0:
+    echo FAILED
+else:
+    echo OK

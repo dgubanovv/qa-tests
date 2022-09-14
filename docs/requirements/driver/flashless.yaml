@@ -1,0 +1,46 @@
+features:
+  flashless:
+    requirement_list:
+      - id: DRV_FLASHLESS_01
+        description: Flashless boot should work only on secure chips.
+      - id: DRV_FLASHLESS_02
+        description: Flashless boot should work on secure Jamaica chip.
+      - id: DRV_FLASHLESS_03
+        description: Flashless boot should work on secure Bermuda chip.
+      - id: DRV_FLASHLESS_04
+        description: Flashless boot should work on secure Atlantic1 chip.
+      - id: DRV_FLASHLESS_05
+        description: Flashless boot should work on secure cards with zero RBL hash.
+      - id: DRV_FLASHLESS_06
+        description: On any type of non-secure chip flashless should never start even if FLB load is failed.
+      - id: DRV_FLASHLESS_07
+        description: If firmware can be successfully loaded from flash (aka flash is present) flashless boot should not start (if there are no any force flashless commands).
+      - id: DRV_FLASHLESS_08
+        description: If firmware is present in the flash and while loading it RBL is failed for any reason flashless boot should not start (if there are no any force flashless commands).
+        note: This test should be checked for both known and unknown DIDs.
+
+      - id: DRV_FLASHLESS_09
+        description: In flashless mode the driver should select firmware using device id.
+      - id: DRV_FLASHLESS_10
+        description: If the driver cannot find flashless firmware using device id, it should fail.
+      - id: DRV_FLASHLESS_11
+        description: Flashless firmware should contain MAC/PHY BDPs, the driver should select needed BDP using SVID (subvendor id) and SSID (subsystem id).
+      - id: DRV_FLASHLESS_12
+        description: If the driver cannot find BDP it should skip BDP loading.
+      - id: DRV_FLASHLESS_13
+        description: BDP can have zero size which is correct case, the driver should skip BDP loading in that case.
+
+      - id: DRV_FLASHLESS_14
+        description: In flashless mode if the driver failed to read flashless firmware it should fail.
+        note: There are several reasons to fail while reading firmware - corrupted data (a lot of possible overlapping cases), insufficient file access attributes, invalid CRC, invalid signature.
+      - id: DRV_FLASHLESS_15
+        description: If the driver performs MAC kickstart after successfull flashless boot, it should perform flashless boot again, however PHY should not be reloaded.
+      - id: DRV_FLASHLESS_16
+        description: Flashless load of hot plugged thunderbolt dongle should be supported.
+      - id: DRV_FLASHLESS_17
+        description: Do we support BDP load from flash????????
+        marks:
+          ready: no
+      - id: DRV_FLASHLESS_18
+        description: If the driver is unloaded at the flashless boot process and then loaded back, the driver should start flashless boot from the scratch for all devices in the system.
+    products: [linux_driver]

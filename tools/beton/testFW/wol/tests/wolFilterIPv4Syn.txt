@@ -1,0 +1,33 @@
+result = 0x00
+
+for IPv4Syn_TestNo = 0; $IPv4Syn_TestNo < 16; IPv4Syn_TestNo += 1:
+
+    flags = 0
+
+    if $IPv4Syn_TestNo & 0x00000001:
+        IPv4SourceAddress = 0x11223344
+    else:
+        IPv4SourceAddress = 0x00000000
+
+    if $IPv4Syn_TestNo & 0x00000002:
+        IPv4DestAddress = 0xAABBCCDD
+    else:
+        IPv4DestAddress = 0x00000000
+
+    if $IPv4Syn_TestNo & 0x00000004:
+        TCPSourcePortNumber = 0xEEFF
+    else:
+        TCPSourcePortNumber = 0x0000
+
+    if $IPv4Syn_TestNo & 0x00000008:
+        TCPDestPortNumber = 0x8899
+    else:
+        TCPDestPortNumber = 0x0000
+
+    echo Test "wolFilterIPv4Syn", option $IPv4Syn_TestNo
+
+    exec testFW/wol/lib/wolCentralState.txt
+    exec testFW/wol/lib/wolFilterTestIPv4Syn.txt
+
+    if $result != 0:
+        echo _____________FAILED

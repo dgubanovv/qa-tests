@@ -1,0 +1,405 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Regression/test0140_sanity_mq.txt $
+# $Revision: #6 $
+# $DateTime: 2016/04/08 08:55:16 $
+# $Author: dgubanov $
+#
+# Test puts on FPGA load very similar to NDIS does
+# Note: If there is an rx or tx error, the packet count at the end is an estimation
+testName=sanity_mq
+echo [==========] Running 1 tests from 1 test case.
+echo [----------] Global test environment set-up. 
+#Device parameters
+tpbsize = 128				# FPGA limitation
+rpbsize = 128				# FPGA limitation
+maxtc = 8				# TC count 4 or 8
+shallowLoopback = True
+disableInterrupts = True
+
+#create ring list that holds different number of rings (depends on ringPerTc and maxtc)
+ringPerTc = 4 #can range from 1..8 if maxtc == 4, else if maxtc == 8 can range from 1..4
+
+#Test parameters
+itr = 2     				# Send iteration count
+minSize = 60				# Min packet size
+maxSize = 1518				# Max packet size
+minSegSize = 6				# Min segment size
+maxSegSize = $maxSize			# Max segment size
+minSegCount = 1				# Min segment count
+maxSegCount = 4				# Max segment count
+minOffset = 0				# Min offset
+maxOffset = 0				# Max offset(negative value: preallocated buffer size + $maxOffset)
+minBatchCount = 25			# Min packet count in iteration
+maxBatchCount = 25			# Max packet count in iteration
+useBackPreassure = 0			#
+onlyBackPreassure = 0			# Always use back preassure
+loopbackPause = 50			#
+maxWaitCount = 30			#
+
+echo Send iteration count           : $itr
+echo Packet min/max size            : $minSize/$maxSize
+echo Segment count min/max          : $minSegCount/$maxSegCount
+echo Iteration packet count min/max : $minBatchCount/$maxBatchCount
+echo Offset in buffer               : $minOffset/$maxOffset
+echo Use/Only use back preassure    : $useBackPreassure/$onlyBackPreassure
+
+echo Shallow loopback               : $shallowLoopback
+
+if $shallowLoopback:
+	mac.set loopback System DMA
+else:
+	mac.set loopback System Packet
+
+mac.set txDcbTcCount $maxtc
+mac.set rxDcbTcCount $maxtc
+tpbPerTcSize = ($tpbsize/$maxtc)
+rpbPerTcSize = ($rpbsize/$maxtc)
+mac.txpb[0:$maxtc].set size $tpbPerTcSize
+mac.rxpb[0:$maxtc].set size $rpbPerTcSize
+echo TC number $maxtc. TPB/RPB per TC    : $tpbPerTcSize/$rpbPerTcSize
+
+if $maxtc == 4:
+	q_ct = 8
+else:
+	q_ct = 4
+if $ringPerTc < 0:
+	echo INCORRECT VALUE, ringPerTc = $ringPerTc...Setting ringPerTc = 1
+	ringPerTc = 1
+elif $ringPerTc > $q_ct:
+	echo INCORRECT VALUE, ringPerTc = $ringPerTc...Setting ringPerTc = $q_ct (q_ct)
+	ringPerTc = $q_ct
+ring_lst = [(i * $q_ct) + j for i in range($maxtc) for j in range($ringPerTc)]
+echo Test rings                     : $ring_lst
+scmp.loopbackAutofill
+
+mac.mcp.stall
+mac.init
+if $disableInterrupts:
+    interruptState = Disabled
+    mac.isr.disable
+else:
+    interruptState = Enabled
+echo Interrupts                     : $interruptState
+mac.txinit
+mac.rxinit
+exec $(PWD)/helpers/workaroundBug3991.txt
+
+totalPacketCount = 0
+for ring in $ring_lst:
+	mac.txring[$ring].set size 256
+	mac.rxring[$ring].set size 128
+	mac.txring[$ring].enable
+	mac.rxring[$ring].enable
+
+	#mac.llh -v rxRing8_$ring rdmRxDescriptorLengthGet $ring
+	#mac.llh -v txRing8_$ring tdmTxDescriptorLengthGet $ring
+	#txRingSize$ring = $(txRing8_$ring) * 8
+	#rxRingSize$ring = $(rxRing8_$ring) * 8
+
+	mac.txring[$ring].get -l nul -n txRingSize$ring size
+	mac.rxring[$ring].get -l nul -n rxRingSize$ring size
+	rxRingSizeM1$ring = ($(rxRingSize$ring) - 1)
+	mac.llh -v txExpectHead$ring tdmTxDescriptorHeadPointerGet $ring
+	mac.llh -v rxExpectHead$ring rdmRxDescriptorHeadPointerGet $ring
+
+	txHead$ring = $(txExpectHead$ring)
+	rxHead$ring = $(rxExpectHead$ring)
+
+	mac.txring[$ring].get -l nul -n txBufSize$ring bufSize # Get value from dev config
+	maxOffset$ring = ($maxOffset if $maxOffset >= 0 else $(txBufSize$ring) + $maxOffset)
+	mac.rxring[$ring].set -l nul batchFill 0 #Disable autofill after interrupt
+	
+	#for packet and desc counting
+	curr_tx_headptr$ring = 0
+	prev_tx_headptr$ring = 0
+	curr_rx_headptr$ring = 0
+	prev_rx_headptr$ring = 0
+	successfulPacketCount$ring = 0
+	successfulTxCount$ring = 0
+	successfulRxCount$ring = 0
+	lastBatchCount$ring = 0
+txError = False
+
+echo [ RUN      ] $testName 
+
+for i = 0; $i < $itr; i += 1:
+	if ($i % ($itr/10)) == 0:
+		progress = $i * 100 / $itr
+		echo Progress: $progress%
+		echo Exact Packet Count So Far --> $totalPacketCount
+
+	allRingPktCount = 0
+	for ring in $ring_lst:
+		count = random.randint($minBatchCount, $maxBatchCount)
+		txcount$ring = 0
+		rxcount$ring = 0
+
+		for j = 0; $j < $count and $(rxcount$ring) < $(rxRingSize$ring) - 1; j += 1:
+			segcount = random.randint($minSegCount, $maxSegCount)
+			packetSize = random.randint($minSize, $maxSize)
+			restSize = $packetSize
+			minSegSize = 6
+			maxSegSize = $maxSize
+			for k = 0; $k < $segcount and $restSize > 0 and $(txcount$ring) < $(txRingSize$ring) - 1; k += 1:
+				params = -p $packetSize
+				segSize = random.randint($minSegSize, $maxSegSize)
+
+				if $restSize < $segSize or $k >= $segcount - 1:
+					segSize = ($restSize)
+
+				offset = random.randint($minOffset, max($minOffset, $(maxOffset$ring)-$segSize))
+				if $offset + $segSize > $(txBufSize$ring):
+					echo Warning! Wrong offset $offset and segsize $segSize
+					if $k < $segcount - 1:
+						segSize = ($(txBufSize$ring) - $offset)
+					else:
+						offset = ($(txBufSize$ring) - $segSize)
+
+				restSize -= $segSize
+				minSegSize = 1
+				maxSegSize = $restSize
+
+				params = -p $packetSize -o $offset
+
+				if $restSize > 0 and $k < $segcount - 1:
+					params = $params -e 0
+				else:
+					rxcount$ring += 1
+
+				params = $params -b $segSize
+
+				#echo mac.txring[$ring].insert $params
+				mac.txring[$ring].insert $params
+				txcount$ring += 1
+
+				params = -T 1 -l dumptx
+				mac.txring[$ring].dumpdesc $params
+
+				#if $k == 0:
+				#	params = $params -t $mark
+				#mac.txring[$ring].dumpbuf $params
+				
+		lastBatchCount$ring = $(rxcount$ring)  #for packet and desc counting
+		#echo tx $(txcount$ring) rx $(rxcount$ring)
+
+		mac.rxring[$ring].fill $(rxcount$ring)
+
+		rxExpectHead$ring = ($(rxExpectHead$ring) + $(rxcount$ring)) % $(rxRingSize$ring)
+
+		allRingPktCount = $allRingPktCount + $(rxcount$ring)
+		#Preparation of one ring is complete
+		txExpectHead$ring = ($(txExpectHead$ring) + $(txcount$ring)) % $(txRingSize$ring)
+
+	bp = 0
+	if $useBackPreassure > 0:
+		bp = random.randint($onlyBackPreassure, $useBackPreassure)
+
+	#Send/receive data
+	if $bp == 0:
+		for ring in $ring_lst:
+			mac.rxring[$ring].commit
+
+	for ring in $ring_lst:
+		mac.txring[$ring].commit  #CHANGE
+	
+	echo Exact Packet Count So Far --> $totalPacketCount
+	
+	#for packet and desc counting
+	for ring in $ring_lst:
+		prev_tx_headptr$ring = $(curr_tx_headptr$ring)
+	
+	for j = 0; $j < $maxWaitCount; j += 1:
+		error = 0
+		for ring in $ring_lst:
+			mac.llh -v txHead$ring tdmTxDescriptorHeadPointerGet $ring
+			if $(txHead$ring) != $(txExpectHead$ring):
+				error = 1
+		if $error == 0:
+			break
+		pause $loopbackPause ms
+	
+	#for packet and desc counting
+	for ring in $ring_lst:
+		curr_tx_headptr$ring = $(txHead$ring)
+
+	if $error > 0:
+		echo FAILED tx head was not updated
+		txError = True
+		for ring in $ring_lst:
+			if $(txHead$ring) != $(txExpectHead$ring):
+				echo txHead$ring = $(txHead$ring) txExpectHead$ring = $(txExpectHead$ring)
+				mac.txring[$ring].status -l cli
+		break
+
+	if $bp > 0:
+		for ring in $ring_lst:
+			mac.rxring[$ring].commit
+
+	receivedPktCount = 0
+		
+	#for packet and desc counting
+	for ring in $ring_lst:
+		prev_rx_headptr$ring = $(curr_rx_headptr$ring)
+		
+	#Wait all data receiving
+	for j = 0; $j < $maxWaitCount; j+= 1:
+		error = 0
+		for ring in $ring_lst:
+
+			#prevRxHead = $(rxHead$ring)
+			mac.llh -v rxHead$ring rdmRxDescriptorHeadPointerGet $ring
+			#receivedPktCount = $receivedPktCount + ($(rxHead$ring) + $(rxRingSize$ring) - $prevRxHead) % $(rxRingSize$ring)
+
+			if $(rxHead$ring) != $(rxExpectHead$ring):
+				error = 2
+			#if $receivedPktCount == $allRingPktCount:
+			#	error = 1
+			#	break
+		if $error == 0:
+			break
+		pause $loopbackPause ms
+	
+	#for packet and desc counting
+	for ring in $ring_lst:
+		curr_rx_headptr$ring = $(rxHead$ring)
+
+	if $error > 1:
+        echo FAILED rx head was not updated
+        for ring in $ring_lst:
+            if $(rxHead$ring) != $(rxExpectHead$ring):
+                echo rxHead$ring = $(rxHead$ring) rxExpectHead$ring = $(rxExpectHead$ring)
+                mac.rxring[$ring].status -l cli
+        break
+	#if $error > 0:
+	#	echo ERROR packet was received on wrong queue
+	#	for ring in $ring_lst:
+	#		echo rxHead$ring = $(rxHead$ring) rxExpectHead$ring = $(rxExpectHead$ring)
+	#	rxExpectHead$ring = $(rxHead$ring)
+	#	break
+	#else:
+	#	for ring in $ring_lst:
+	#		echo rxHead$ring = $(rxHead$ring) rxExpectHead$ring = $(rxExpectHead$ring)
+
+
+	#for ring in $ring_lst:
+		#mac.rxring[$ring].dumpdesc -H $(rxcount$ring):1 -l dumprx
+		#mac.rxring[$ring].dumpbuf -H $(rxcount$ring):1 -t $mark -l dumprx
+		
+	if $disableInterrupts:
+        for ring in $ring_lst:
+            mac.txring[$ring].clean
+            mac.rxring[$ring].clean
+		
+	for j = 0; $j < $maxWaitCount; j += 1:
+		#workaround for isEmpty returning False when the ring is empty
+		if $j == 3 and not $disableInterrupts:
+			for ring in $ring_lst:
+				if not $(txempty$ring):
+					mac.txring[$ring].clean
+				if not $(rxempty$ring):
+					mac.rxring[$ring].clean
+        error = 0
+        for ring in $ring_lst:
+            mac.txring[$ring].isEmpty -l nul -n txempty$ring
+            mac.rxring[$ring].isEmpty -l nul -n rxempty$ring
+            if $(txempty$ring) == False or $(rxempty$ring) == False:
+                error = 1
+                #break
+        if $error == 0:
+            break
+        pause $loopbackPause ms
+
+    if $error > 0:
+        for ring in $ring_lst:
+            if not $(txempty$ring) and not $(rxempty$ring):
+                nonempty = Both TX and RX $ring rings are
+            elif not $(txempty$ring):
+                nonempty = TX $ring ring is
+            elif not $(rxempty$ring):
+                nonempty = RX $ring ring is
+
+            if not $(txempty$ring) or not $(rxempty$ring):
+                echo $nonempty not empty.
+                mac.txring[$ring].status -l cli
+                mac.rxring[$ring].status -l cli
+        break
+		
+	for ring in $ring_lst:
+		#for packet and desc counting
+		successfulPacketCount$ring += $(lastBatchCount$ring)
+		totalPacketCount += $(lastBatchCount$ring)
+		successfulTxCount$ring += $(txcount$ring)
+		successfulRxCount$ring += $(rxcount$ring)
+
+#if there is tx head error, then rx is never checked, giving incorrect count
+if $txError:
+	for ring in $ring_lst:
+		prev_rx_headptr$ring = $(curr_rx_headptr$ring)
+		mac.llh -v rxHead$ring rdmRxDescriptorHeadPointerGet $ring
+		curr_rx_headptr$ring = $(rxHead$ring)
+
+echo $newline
+echo Printing Packet/Desc Count (estimation)...
+#for packet and desc counting
+allTxPackets = 0
+allRxPackets = 0
+for ring in $ring_lst:
+	tx_total_pkts = $(successfulPacketCount$ring)
+	failedTxCount = 0
+	if $(txHead$ring) != $(txExpectHead$ring):
+		if $(curr_tx_headptr$ring) < $(prev_tx_headptr$ring):
+			failedTxCount = $(txRingSize$ring) - ($(txRingSize$ring) - $(curr_tx_headptr$ring))
+		else:
+			failedTxCount = ($(curr_tx_headptr$ring) - $(prev_tx_headptr$ring))
+	tx_total_pkts += $failedTxCount // ($(txcount$ring) // $(lastBatchCount$ring)) #get an inexact average of failed packets
+	tx_total_desc = ($failedTxCount + $(successfulTxCount$ring))
+	allTxPackets += $tx_total_pkts
+
+	rx_total_pkts = $(successfulPacketCount$ring)
+	failedRxCount = 0
+	if $(rxHead$ring) != $(rxExpectHead$ring):
+		if $(curr_rx_headptr$ring) < $(prev_rx_headptr$ring):
+			failedRxCount = $(rxRingSize$ring) - ($(rxRingSize$ring) - $(curr_rx_headptr$ring))
+		else:
+			failedRxCount = ($(curr_rx_headptr$ring) - $(prev_rx_headptr$ring))
+	rx_avg_desc = $(rxcount$ring) // $(lastBatchCount$ring)
+	rx_total_pkts += $failedRxCount // $rx_avg_desc if $rx_avg_desc > 0 else $failedRxCount #get an inexact average of failed packets
+	rx_total_desc = ($failedRxCount + $(successfulRxCount$ring))
+	allRxPackets += $rx_total_pkts
+	
+	echo Ring $ring --> TX Desc/Packets: $tx_total_desc/$tx_total_pkts, RX Desc/Packets : $rx_total_desc/$rx_total_pkts
+	
+echo All Rings --> TX Packets: $allTxPackets, RX Packets: $allRxPackets
+
+if $shallowLoopback:
+	groups = acRing00
+	for ring in $ring_lst:
+		if $ring < 10:
+			groups = $groups acRing0$ring
+		else:
+			groups = $groups acRing$ring
+else:
+	groups = acAllRings
+	
+if $error > 0:
+	echo [          ] $error==error 
+
+pause 100 ms
+scmp.isEmpty -g $groups -l cli -n scmperror
+scmp.status -g $groups -l scmp
+if $scmperror > 0:
+	echo [          ] $scmperror==scmperror 
+
+if $error > 0 or $scmperror > 0:
+	echo [  FAILED  ] $testName 
+else:
+	echo [       OK ] $testName 
+echo [----------] Global test environment tear-down 
+pause 1000 ms
+mac.txuninit
+mac.rxuninit
+mac.uninit
+echo [==========] 1 tests from 1 test case ran. 
+if $error > 0 or $scmperror > 0:
+	echo [  FAILED  ] $testName 
+else:
+	echo [  PASSED  ]  

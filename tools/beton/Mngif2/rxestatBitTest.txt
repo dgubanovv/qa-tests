@@ -1,0 +1,225 @@
+# Author: dgubanov
+# RPF:Add a bit in Rx descriptor. Set this bit if the packet matched a Unicast filter
+
+hostAlreadyInitiated = False
+ifndef test_num:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    RPF2 = False
+
+ifndef logTag:
+    logTag = -l cli
+
+ifndef RPF2:
+    RPF2 = False
+echo $RPF2
+
+finalReport = []
+filterUnicastCount = 38
+filterUnicastEnable = 1
+filterUnicastMngQueue = 0
+filterUnicastAction = 1   #Send to host
+macAddrSrcStr ='[0x10,0xdd,0xb1,0xe6,0x1e,0xa5]'
+
+vLans = ['NoVlan', 'Vlan']
+mac.set glb_reg_reset_dis False
+mac.set tx_reg_rst_dis False
+mac.set rx_reg_rst_dis False
+
+
+if $hostAlreadyInitiated == False:
+    mac.set loopback System Packet $logTag  #Deep loopback for testing Rx filters
+    mac.init  
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+
+if $RPF2:
+    exec $(PWD)/helpers/enableRPF2.txt
+    
+    
+mac.llhcache on
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llhcache off
+
+for vlan in $vLans:
+    #Generate packets
+    for filterUnicastIndex = 0; $filterUnicastIndex < $filterUnicastCount; filterUnicastIndex += 1:
+        macAddressUnicastStr = "[$filterUnicastIndex,0xBB,0xCC,0xDD,0xEE,$filterUnicastIndex]"
+        pkt.new -n pkt$vlan$filterUnicastIndex -p 64    
+        pkt.layer -i $(pkt$vlan$filterUnicastIndex) -L 60 -t ICMP
+        pkt.layer -i $(pkt$vlan$filterUnicastIndex) -L 50 -t IP    
+        #put vlan header
+        if '$vlan' == 'Vlan':
+            pkt.layer -i $(pkt$vlan$filterUnicastIndex) -L 40 -t Dot1Q
+        pkt.layer -i $(pkt$vlan$filterUnicastIndex) -L 25 -t Ether src=$macAddrSrcStr type=0x800 dst=$macAddressUnicastStr
+
+    #Setup filters
+    for filterUnicastIndex = 0; $filterUnicastIndex < $filterUnicastCount; filterUnicastIndex += 1:
+        filterUnicastMacAddr = [$filterUnicastIndex, 0xBB, 0xCC, 0xDD, 0xEE, $filterUnicastIndex]
+        exec $(PWD)/helpers/filtersConfigurators/rxUnicastFilter.txt
+
+    #Do insert
+    for filterUnicastIndex = 0; $filterUnicastIndex < $filterUnicastCount; filterUnicastIndex += 1:
+        mac.txring[$txRingNo].insert -i $(pkt$vlan$filterUnicastIndex) -b 64 -p 64
+        
+    mac.txring[$txRingNo].commit
+    mac.rxring[$rxRingNo].clean  
+
+    #Check rxESTAT
+    mask = 0x02 #Mask for second bit
+    for filterUnicastIndex = 1; $filterUnicastIndex <= $filterUnicastCount; filterUnicastIndex += 1:
+        mac.rxring[$rxRingNo].getdescval -H $filterUnicastIndex -f RX_ESTAT -n rxESTAT $logTag
+        if ($rxESTAT & $mask) != 2:
+            finalReport += ['Wrong RX_ESTAT value for desc $(pkt$vlan$filterUnicastIndex)']
+
+# DA+SA+[VLAN1 + [VLAN2]]+TYPE+ARP
+echo Check Unicast ARP packet
+
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+
+for vlan in $vLans:
+    #Generate packets
+    pkt.new -n pktARPUnicast -p 64
+    pkt.layer -i $pktARPUnicast -L 50 -t ARP
+    #put vlan header
+    if '$vlan' == 'Vlan':
+        pkt.layer -i $pktARPUnicast -L 40 -t Dot1Q
+    pkt.layer -i $pktARPUnicast -L 25 -t Ether src=$macAddrSrcStr dst="0x00:0xBB:0xCC:0xDD:0xEE:0x00"
+    filterUnicastMacAddr = [0x00, 0xBB, 0xCC, 0xDD, 0xEE, 0x00]
+    exec $(PWD)/helpers/filtersConfigurators/rxUnicastFilter.txt
+
+    mac.txring[$txRingNo].insert -i $pktARPUnicast -b 64 -p 64
+    mac.txring[$txRingNo].commit
+
+    mac.rxring[$rxRingNo].clean  
+    mac.rxring[$rxRingNo].getdescval -H 1 -f RX_ESTAT -n rxESTAT $logTag
+    #mac.rxring[$rxRingNo].dumpbuf -H 1
+    
+    if ($rxESTAT & $mask) != 2:
+        finalReport += ['Wrong RX_ESTAT value for desc $pktARPUnicast']
+
+            
+# Check if packet does not match any filter,it should have RX_ESTAT = 0
+echo Check if packet does not match any filter,it should have RX_ESTAT = 0
+
+mac.llhcache on
+mac.llh -C rpfL2PromiscuousModeEnableSet 1
+mac.llhcache off
+
+pkt.new -n pkt111 -p 64 
+pkt.layer -i $pkt111 -L 60 -t ICMP
+pkt.layer -i $pkt111 -L 50 -t IP
+pkt.layer -i $pkt111 -L 25 -t Ether src=$macAddrSrcStr type=0x800 dst="0x00:0xBB:0xCC:0xDD:0xEE:0xFF"
+
+mac.txring[$txRingNo].insert -i $pkt111 -b 64 -p 64
+mac.txring[$txRingNo].commit
+mac.rxring[$rxRingNo].clean  
+mac.rxring[$rxRingNo].getdescval -H 1 -f RX_ESTAT -n rxESTAT $logTag
+
+if ($rxESTAT & $mask) != 0:
+    finalReport += ['Wrong RX_ESTAT value for mismatched packet']
+
+
+# Check RX_ESTAT for Multicast
+echo Check RX_ESTAT for Multicast
+
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+
+#Generate multicast packet
+multicastWord0 = 0xAD
+multicastWord1 = 0x1B #multicastWord1 = 1B
+macAddressMulticastStr = '[$multicastWord0,$multicastWord1,0xCC,0xDD,0xEE,0xFF]' #macAddressMulticastStr = [0xAD,0x1B,0xCC,0xDD,0xEE,0xFF]
+pkt.new -n mtcst_pkt -p 64
+pkt.layer -i $mtcst_pkt -L 60 -t ICMP
+pkt.layer -i $mtcst_pkt -L 50 -t IP
+macAddrDstStr = '$macAddressMulticastStr'
+pkt.layer -i $mtcst_pkt -L 25 -t Ether src=$macAddrDstStr type=0x800 dst=$macAddrDstStr
+
+#Generate filter for macAddressMulticastStr = [0xAD,0x1B,0xCC,0xDD,0xEE,0xFF]
+filterMulticastIndex = 1
+filterMulticastEnable = 1
+filterMulticastAction = 1 #To Host
+filterMulticastMacAddr = 0xAD1 
+exec $(PWD)/helpers/filtersConfigurators/rxMulticastFilter.txt
+
+mac.txring[0].insert -i $mtcst_pkt -b 64 -p 64
+mac.txring[0].commit
+
+mac.rxring[0].clean
+mac.rxring[$rxRingNo].getdescval -H 1 -f RX_ESTAT -n rxESTAT $logTag
+
+if ($rxESTAT & $mask) != 0:
+    finalReport += ['Wrong RX_ESTAT value for multicast packet']
+        
+
+# Check RX_ESTAT for Broadcast Filters 
+echo Check RX_ESTAT for Broadcast Filters 
+
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+
+#Generate broadcast packet
+macAddressBroadcastStr = '[0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]' 
+pkt.new -n brdcst_pkt -p 64
+pkt.layer -i $brdcst_pkt -L 60 -t ICMP
+pkt.layer -i $brdcst_pkt -L 50 -t IP
+macAddrDstStr = '$macAddressBroadcastStr'
+pkt.layer -i $brdcst_pkt -L 25 -t Ether src=$macAddrDstStr type=0x800 dst=$macAddrDstStr
+
+#Generate filter for macAddressMulticastStr = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]
+filterMulticastIndex = 1
+filterMulticastEnable = 1
+filterMulticastAction = 1 #To Host
+filterMulticastMacAddr = 0xFFFFFFFFFFFF
+exec $(PWD)/helpers/filtersConfigurators/rxMulticastFilter.txt
+
+mac.txring[0].insert -i $brdcst_pkt -b 64 -p 64
+mac.txring[0].commit
+
+mac.rxring[0].clean
+mac.rxring[$rxRingNo].getdescval -H 1 -f RX_ESTAT -n rxESTAT $logTag
+echo $rxESTAT
+
+if ($rxESTAT & $mask) != 0:
+    finalReport += ['Wrong RX_ESTAT value for broadcast packet']
+    
+# DA_BROADCAST+SA+[VLAN1 + [VLAN2]]+TYPE+ARP
+echo Check Broadcast ARP packet
+
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+
+for vlan in $vLans:
+    #Generate packets
+    pkt.new -n pktARPBroadcast -p 64 
+    pkt.layer -i $pktARPBroadcast -L 50 -t ARP
+    #put vlan header
+    if '$vlan' == 'Vlan':
+        pkt.layer -i $pktARPBroadcast -L 40 -t Dot1Q
+    pkt.layer -i $pktARPBroadcast -L 25 -t Ether src=$macAddrSrcStr  dst="ff:ff:ff:ff:ff:ff"
+    filterMulticastIndex = 1
+    filterMulticastEnable = 1
+    filterMulticastAction = 1 #To Host
+    filterMulticastMacAddr = 0xFFFFFFFFFFFF
+    exec $(PWD)/helpers/filtersConfigurators/rxMulticastFilter.txt
+
+    mac.txring[$txRingNo].insert -i $pktARPBroadcast -b 64 -p 64
+    mac.txring[$txRingNo].commit
+
+    mac.rxring[$rxRingNo].clean  
+    mac.rxring[$rxRingNo].getdescval -H 1 -f RX_ESTAT -n rxESTAT $logTag
+    #mac.rxring[$rxRingNo].dumpbuf -H 1
+
+    if ($rxESTAT & $mask) != 0:
+        finalReport += ['Wrong RX_ESTAT value for desc $pktARPBroadcast']
+        
+readreg 0x5040 $logTag        
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit  

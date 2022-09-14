@@ -1,0 +1,19 @@
+#simple script to test TestRail functionality
+
+echo test_num = $test_num
+
+echo scriptDir = $scriptDir
+echo script = $script
+echo folder = $folder
+echo ringSize = $ringSize
+echo ringsPerTc = $ringsPerTc
+echo maxtc = $maxtc
+echo tbp_rpb_tuple = $tbp_rpb_tuple
+echo frag = $frag
+echo ss_tuple = $ss_tuple
+echo numOfDesc = $numOfDesc
+echo sp = $sp
+echo numOfRings = $numOfRings
+
+error = random.randint(0,2)
+echo error = $error

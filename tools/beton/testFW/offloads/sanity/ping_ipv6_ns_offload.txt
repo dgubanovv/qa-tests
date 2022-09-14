@@ -1,0 +1,631 @@
+
+#####################################################
+### testFW/offloads/tests/nsOffloadEnable.txt >
+#####################################################
+
+#####################################################
+### Config
+#####################################################
+
+flags = 0
+
+# Remote IPv6 addr
+# ANY
+remoteIPv6Address0 = 0x00000000
+remoteIPv6Address1 = 0x00000000
+remoteIPv6Address2 = 0x00000000
+remoteIPv6Address3 = 0x00000000
+
+# Solicited node multicast
+# ff02::0001:ff34:1185
+solNodeAddr0 = 0x000002FF
+solNodeAddr1 = 0x00000000
+solNodeAddr2 = 0x01000000
+solNodeAddr3 = 0x851134FF
+
+# IPv6 addr 1
+# 4000::1234:1234:1185
+hostIPv6Address1_0 = 0x00000040
+hostIPv6Address1_1 = 0x00000000
+hostIPv6Address1_2 = 0x34120000
+hostIPv6Address1_3 = 0x85113412
+
+# IPv6 addr 2
+# 4000::1234:1234:0146
+hostIPv6Address2_0 = 0x00000040
+hostIPv6Address2_1 = 0x00000000
+hostIPv6Address2_2 = 0x34120000
+hostIPv6Address2_3 = 0x46013412
+
+# 00:17:B6:00:00:8D
+Mac0 = 0x1700
+Mac1 = 0x00B6
+Mac2 = 0x8D00
+
+test_result = 0
+
+echo Test "nsOffload"
+
+#####################################################
+### Central state
+#####################################################
+
+#####################################################
+### testFW/offloads/lib/offloadCentralState.txt >
+#####################################################
+
+patternMaskWindows = 0
+patternMaskAquantia = 0
+patternMaskOther = 0
+offloadsMaskWindows = 0
+offloadsMaskAquantia = 0
+
+#####################################################
+### testFW/drvIface/getBaseAddress.txt >
+#####################################################
+
+BASEADDR = 0;
+
+readreg 0x334 -n BASEADDR -l cli
+
+addr = $BASEADDR
+
+#####################################################
+### < testFW/drvIface/getBaseAddress.txt
+#####################################################
+
+
+#####################################################
+### testFW/wol/lib/wolConstants.txt >
+#####################################################
+
+# DRV_MSG_PING
+drvMsgPing = 1
+# DRV_MSG_ARP
+devMsgArp = 2
+# DRV_MSG_INJECT
+drvMsgInject = 3
+# DRV_MSG_WOL_ADD
+drvMsgWolAdd = 4
+# DRV_MSG_WOL_REMOVE
+drvMsgWolRemove = 5
+# DRV_MSG_ENABLE_WAKEUP
+drvMsgEnableWakeup = 6
+# DRV_MSG_MSM
+drvMsgMsm = 7
+# DRV_MSG_PROVISIONING
+drvMsgProvisioning = 8
+# DRV_MSG_OFFLOAD_ADD
+drvMsgOffloadAdd = 9
+# DRV_MSG_OFFLOAD_REMOVE
+drvMsgOffloadRemove = 10
+
+ndisPMWoLPacketBitmapPattern = 0x1
+ndisPMWoLPacketMagicPacket = 0x2
+ndisPMWoLPacketIPv4TcpSyn = 0x3
+ndisPMWoLPacketIPv6TcpSyn = 0x04
+
+ndisPMProtocolOffloadIdIPv4ARP = 0x01
+ndisPMProtocolOffloadIdIPv6NS = 0x02
+
+aqPMWoLPacketArp = 0x10001
+aqPMWoLReasonIpv4PingPacket = 0x10002
+aqPMWoLReasonIpv6PingPacket = 0x10004
+aqPMWoLReasonLinkUp = 0x10005
+aqPMWoLReasonLinkDown = 0x10006
+
+#####################################################
+### < testFW/wol/lib/wolConstants.txt
+#####################################################
+
+
+#####################################################
+### testFW/drvIface/drvMsgEnableWakeup.txt >
+#####################################################
+
+#drvMsgEnableWakeup
+
+addr = $BASEADDR
+
+writereg 0x328 $drvMsgEnableWakeup
+writereg 0x32c 0x80000000
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskWindows
+writereg 0x32c 0x80000004
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskAquantia
+writereg 0x32c 0x80000008
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskOther
+writereg 0x32c 0x8000000c
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskWindows
+writereg 0x32c 0x80000010
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskAquantia
+writereg 0x32c 0x80000014
+writereg 0x404 0x2
+
+#####################################################
+### < testFW/drvIface/drvMsgEnableWakeup.txt
+#####################################################
+
+
+expectedResponseDwordCount = 1
+
+#####################################################
+### testFW/drvIface/helperSendDrvMsg.txt >
+#####################################################
+
+transactionResult = 0
+
+addr = $BASEADDR
+
+readreg 0x33c -n id -l cli
+id = ($id &0xFFFF) + 1
+writereg 0x338 $id -l cli
+
+expectedResponseLen = $expectedResponseDwordCount * 4
+for loopNo=0; $loopNo < 100; loopNo += 1:
+    readreg 0x33c -n result -l cli
+    $result_transaction = ($result & 0xFFFF)
+    if $result_transaction == $id:
+        break
+
+if $loopNo == 100:
+    echo No response from FW
+    transactionResult = -1
+else:
+    if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+        echo Unexpected response length
+        transactionResult = -1
+    else:
+        for i = 0; $i < $expectedResponseDwordCount; i += 1:
+            mac.mcp.readmem $addr -n errcode -l cli
+            if $errcode != 0:
+                echo Response $i is not ok: $errcode $result
+                transactionResult = -1
+            addr = $addr + 4
+
+#####################################################
+### < testFW/drvIface/helperSendDrvMsg.txt
+#####################################################
+
+
+for patternId = 1; $patternId < 3; patternId += 1:
+
+    #####################################################
+    ### testFW/drvIface/drvMsgOffloadRemove.txt >
+    #####################################################
+
+    #drvMsgOffloadRemove
+
+    addr = $BASEADDR
+
+    writereg 0x328 $drvMsgOffloadRemove
+    writereg 0x32c 0x80000000
+    writereg 0x404 0x2
+
+    writereg 0x328 $patternId
+    writereg 0x32c 0x80000004
+    writereg 0x404 0x2
+
+    #####################################################
+    ### < testFW/drvIface/drvMsgOffloadRemove.txt
+    #####################################################
+
+    expectedResponseDwordCount = 1
+
+    #####################################################
+    ### testFW/drvIface/helperSendDrvMsgSilent.txt >
+    #####################################################
+
+    transactionResult = 0
+
+    addr = $BASEADDR
+
+    readreg 0x33c -n id -l cli
+    id = ($id &0xFFFF) + 1
+    writereg 0x338 $id -l cli
+
+    expectedResponseLen = $expectedResponseDwordCount * 4
+    for loopNo=0; $loopNo < 100; loopNo += 1:
+        readreg 0x33c -n result -l cli
+        $result_transaction = ($result & 0xFFFF)
+        if $result_transaction == $id:
+            break
+
+    if $loopNo == 100:
+        echo No response from FW
+        transactionResult = -1
+    else:
+        if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+            echo Unexpected response length
+            transactionResult = -1
+        else:
+            for i = 0; $i < $expectedResponseDwordCount; i += 1:
+                mac.mcp.readmem $addr -n errcode -l cli
+                if $errcode != 0:
+                    transactionResult = -1
+                addr = $addr + 4
+
+    #####################################################
+    ### < testFW/drvIface/helperSendDrvMsgSilent.txt
+    #####################################################
+
+
+#####################################################
+### < testFW/offloads/lib/offloadCentralState.txt
+#####################################################
+
+
+#####################################################
+### DRV_MSG_OFFLOAD_ADD
+#####################################################
+
+#####################################################
+### testFW/offloads/lib/nsOffloadAdd.txt >
+#####################################################
+
+#####################################################
+# Input args:
+#
+# flags
+# remoteIPv6Address[0..3]
+# solNodeAddr[0..3]
+# hostIPv6Address1[0..3]
+# hostIPv6Address2[0..3]
+# Mac0
+# Mac1
+# Mac2
+#
+# Returns
+# result
+#
+#####################################################
+
+#####################################################
+### testFW/wol/lib/wolConstants.txt >
+#####################################################
+
+# DRV_MSG_PING
+drvMsgPing = 1
+# DRV_MSG_ARP
+devMsgArp = 2
+# DRV_MSG_INJECT
+drvMsgInject = 3
+# DRV_MSG_WOL_ADD
+drvMsgWolAdd = 4
+# DRV_MSG_WOL_REMOVE
+drvMsgWolRemove = 5
+# DRV_MSG_ENABLE_WAKEUP
+drvMsgEnableWakeup = 6
+# DRV_MSG_MSM
+drvMsgMsm = 7
+# DRV_MSG_PROVISIONING
+drvMsgProvisioning = 8
+# DRV_MSG_OFFLOAD_ADD
+drvMsgOffloadAdd = 9
+# DRV_MSG_OFFLOAD_REMOVE
+drvMsgOffloadRemove = 10
+
+ndisPMWoLPacketBitmapPattern = 0x1
+ndisPMWoLPacketMagicPacket = 0x2
+ndisPMWoLPacketIPv4TcpSyn = 0x3
+ndisPMWoLPacketIPv6TcpSyn = 0x04
+
+ndisPMProtocolOffloadIdIPv4ARP = 0x01
+ndisPMProtocolOffloadIdIPv6NS = 0x02
+
+aqPMWoLPacketArp = 0x10001
+aqPMWoLReasonIpv4PingPacket = 0x10002
+aqPMWoLReasonIpv6PingPacket = 0x10004
+aqPMWoLReasonLinkUp = 0x10005
+aqPMWoLReasonLinkDown = 0x10006
+
+#####################################################
+### < testFW/wol/lib/wolConstants.txt
+#####################################################
+
+
+#####################################################
+### testFW/drvIface/getBaseAddress.txt >
+#####################################################
+
+BASEADDR = 0;
+
+readreg 0x334 -n BASEADDR -l cli
+
+addr = $BASEADDR
+
+#####################################################
+### < testFW/drvIface/getBaseAddress.txt
+#####################################################
+
+
+#####################################################
+### write drvMsgOffloadAdd header
+#####################################################
+
+priority                  = 0x10000000
+offloadType               = $ndisPMProtocolOffloadIdIPv6NS
+offloadId                 = 2
+nextProtocolOffloadOffset = 0
+
+#####################################################
+### testFW/drvIface/drvMsgOffloadAdd.txt >
+#####################################################
+
+#drvMsgOffloatAdd
+
+addr = $BASEADDR
+
+writereg 0x328 $drvMsgOffloadAdd
+writereg 0x32c 0x80000000
+writereg 0x404 0x2
+
+writereg 0x328 $priority
+writereg 0x32c 0x80000004
+writereg 0x404 0x2
+
+writereg 0x328 $offloadType
+writereg 0x32c 0x80000008
+writereg 0x404 0x2
+
+writereg 0x328 $offloadId
+writereg 0x32c 0x8000000c
+writereg 0x404 0x2
+
+writereg 0x328 $nextProtocolOffloadOffset
+writereg 0x32c 0x80000010
+writereg 0x404 0x2
+
+#####################################################
+### < testFW/drvIface/drvMsgOffloadAdd.txt
+#####################################################
+
+
+#####################################################
+### write drvMsgOffloadAdd.wolOffload.ipv6Arp
+#####################################################
+
+writereg 0x328 $flags
+writereg 0x32c 0x80000014
+writereg 0x404 0x2
+
+writereg 0x328 $remoteIPv6Address0
+writereg 0x32c 0x80000018
+writereg 0x404 0x2
+writereg 0x328 $remoteIPv6Address1
+writereg 0x32c 0x8000001c
+writereg 0x404 0x2
+writereg 0x328 $remoteIPv6Address2
+writereg 0x32c 0x80000020
+writereg 0x404 0x2
+writereg 0x328 $remoteIPv6Address3
+writereg 0x32c 0x80000024
+writereg 0x404 0x2
+
+writereg 0x328 $solNodeAddr0
+writereg 0x32c 0x80000028
+writereg 0x404 0x2
+writereg 0x328 $solNodeAddr1
+writereg 0x32c 0x8000002c
+writereg 0x404 0x2
+writereg 0x328 $solNodeAddr2
+writereg 0x32c 0x80000030
+writereg 0x404 0x2
+writereg 0x328 $solNodeAddr3
+writereg 0x32c 0x80000034
+writereg 0x404 0x2
+
+writereg 0x328 $hostIPv6Address1_0
+writereg 0x32c 0x80000038
+writereg 0x404 0x2
+
+writereg 0x328 $hostIPv6Address1_1
+writereg 0x32c 0x8000003c
+writereg 0x404 0x2
+
+writereg 0x328 $hostIPv6Address1_2
+writereg 0x32c 0x80000040
+writereg 0x404 0x2
+
+writereg 0x328 $hostIPv6Address1_3
+writereg 0x32c 0x80000044
+writereg 0x404 0x2
+
+writereg 0x328 $hostIPv6Address2_0
+writereg 0x32c 0x80000048
+writereg 0x404 0x2
+
+writereg 0x328 $hostIPv6Address2_1
+writereg 0x32c 0x8000004c
+writereg 0x404 0x2
+
+writereg 0x328 $hostIPv6Address2_2
+writereg 0x32c 0x80000050
+writereg 0x404 0x2
+
+writereg 0x328 $hostIPv6Address2_3
+writereg 0x32c 0x80000054
+writereg 0x404 0x2
+
+$Mac = $Mac0 | ($Mac1 << 16)
+writereg 0x328 $Mac
+writereg 0x32c 0x80000058
+writereg 0x404 0x2
+
+data = ($Mac2 & 0xFFFF)
+writereg 0x328 $data
+writereg 0x32c 0x8000005c
+writereg 0x404 0x2
+
+#####################################################
+### execute DRV_MSG_OFFLOAD_ADD transaction
+#####################################################
+
+expectedResponseDwordCount = 1
+
+#####################################################
+### testFW/drvIface/helperSendDrvMsg.txt >
+#####################################################
+
+transactionResult = 0
+
+addr = $BASEADDR
+
+readreg 0x33c -n id -l cli
+id = ($id &0xFFFF) + 1
+writereg 0x338 $id -l cli
+
+expectedResponseLen = $expectedResponseDwordCount * 4
+for loopNo=0; $loopNo < 100; loopNo += 1:
+    readreg 0x33c -n result -l cli
+    $result_transaction = ($result & 0xFFFF)
+    if $result_transaction == $id:
+        break
+
+if $loopNo == 100:
+    echo No response from FW
+    transactionResult = -1
+else:
+    if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+        echo Unexpected response length
+        transactionResult = -1
+    else:
+        for i = 0; $i < $expectedResponseDwordCount; i += 1:
+            mac.mcp.readmem $addr -n errcode -l cli
+            if $errcode != 0:
+                echo Response $i is not ok: $errcode $result
+                transactionResult = -1
+            addr = $addr + 4
+
+#####################################################
+### < testFW/drvIface/helperSendDrvMsg.txt
+#####################################################
+
+result = $transactionResult
+
+#####################################################
+### < testFW/offloads/lib/nsOffloadAdd.txt
+#####################################################
+
+if $result != 0:
+    echo arpOffload: Add offload failed
+    test_result = -1
+
+#####################################################
+### DRV_MSG_ENABLE_WAKEUP
+#####################################################
+
+#####################################################
+### testFW/offloads/lib/offloadEnableAll.txt >
+#####################################################
+
+# drvMsgEnableWakeup header
+patternMaskWindows = 0
+patternMaskAquantia = 0
+patternMaskOther = 0
+offloadsMaskWindows = (  (1 << (($ndisPMProtocolOffloadIdIPv4ARP & 0xFFFFF) - 0x1)) | (1 << (($ndisPMProtocolOffloadIdIPv6NS  & 0xFFFFF) - 0x1)) )
+offloadsMaskAquantia = 0
+
+#####################################################
+### testFW/drvIface/drvMsgEnableWakeup.txt >
+#####################################################
+
+#drvMsgEnableWakeup
+
+addr = $BASEADDR
+
+writereg 0x328 $drvMsgEnableWakeup
+writereg 0x32c 0x80000000
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskWindows
+writereg 0x32c 0x80000004
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskAquantia
+writereg 0x32c 0x80000008
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskOther
+writereg 0x32c 0x8000000c
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskWindows
+writereg 0x32c 0x80000010
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskAquantia
+writereg 0x32c 0x80000014
+writereg 0x404 0x2
+
+#####################################################
+### < testFW/drvIface/drvMsgEnableWakeup.txt
+#####################################################
+
+
+#### Run transaction
+expectedResponseDwordCount = 1
+
+#####################################################
+### testFW/drvIface/helperSendDrvMsg.txt >
+#####################################################
+
+transactionResult = 0
+
+addr = $BASEADDR
+
+readreg 0x33c -n id -l cli
+id = ($id &0xFFFF) + 1
+writereg 0x338 $id -l cli
+
+expectedResponseLen = $expectedResponseDwordCount * 4
+for loopNo=0; $loopNo < 100; loopNo += 1:
+    readreg 0x33c -n result -l cli
+    $result_transaction = ($result & 0xFFFF)
+    if $result_transaction == $id:
+        break
+
+if $loopNo == 100:
+    echo No response from FW
+    transactionResult = -1
+else:
+    if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+        echo Unexpected response length
+        transactionResult = -1
+    else:
+        for i = 0; $i < $expectedResponseDwordCount; i += 1:
+            mac.mcp.readmem $addr -n errcode -l cli
+            if $errcode != 0:
+                echo Response $i is not ok: $errcode $result
+                transactionResult = -1
+            addr = $addr + 4
+
+#####################################################
+### < testFW/drvIface/helperSendDrvMsg.txt
+#####################################################
+
+$result = $transactionResult
+
+#####################################################
+### < testFW/offloads/lib/offloadEnableAll.txt
+#####################################################
+
+if $result != 0:
+    echo arpOffload: Enable offload failed
+    test_result = -1
+
+if $test_result != 0:
+    echo _____________FAILED
+
+#####################################################
+### < testFW/offloads/tests/nsOffloadEnable.txt
+#####################################################

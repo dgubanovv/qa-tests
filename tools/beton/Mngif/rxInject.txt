@@ -1,0 +1,90 @@
+# Script for one packet injection
+
+injMngQueue = 0
+packetLength = 128
+mark = 3
+injLargePackets = False
+expStrobe = False
+
+# Rx Injector prepare
+
+exec $(SCRIPT_PATH)/rxInjRegDefs.txt
+
+pktType = 0
+
+# Inject
+
+# Select injection queue
+readreg $rxInjCtrlReg -n rxInjCtrl
+if $injMngQueue == 0:
+    rxInjCtrl = $rxInjCtrl & ~$rxInjSelectQueueMask
+    injPacketSizeMask = $rxInjSizeMask
+else:
+    rxInjCtrl = $rxInjCtrl | $rxInjSelectQueueMask
+    injPacketSizeMask = $rxInjSizeMask << 1
+if injLargePackets == True:
+    rxInjCtrlReg = $rxInjCtrlReg | $injPacketSizeMask
+else:
+    rxInjCtrlReg = $rxInjCtrlReg & ~$injPacketSizeMask
+writereg $rxInjCtrlReg $rxInjCtrl
+
+# SOP = 1
+readreg $rxInjData1Reg -n injDataSt
+injDataSt = $injDataSt | $rxInjSopMask
+writereg $rxInjData1Reg $injDataSt
+
+# Packet Len Header Word
+headerWord = ($packetLength << 16)
+
+writereg $rxInjData2Reg $headerWord
+
+if $expStrobe == True:
+    rxInjCtrlWrite1 = $rxInjCtrl | $rxInjWriteMask
+    writereg $rxInjCtrlReg $rxInjCtrlWrite1
+    rxInjCtrlWrite0 = $rxInjCtrl & ~$rxInjWriteMask
+    writereg $rxInjCtrlReg $rxInjCtrlWrite0
+
+# SOP = 0
+injDataSt = $injDataSt & ~$rxInjSopMask
+writereg $rxInjData1Reg $injDataSt
+
+# Header Rest
+for i = 0; $i < 3; i += 1:
+    if $i == 1:
+        headerWord = ($rxRingNo << $rpbHdrQueueNumShift) | ($pktType << $rpbHdrPktTypeShift)
+    else:
+        headerWord = 0
+    writereg $rxInjData2Reg $headerWord
+    if $expStrobe == True:
+        writereg $rxInjCtrlReg $rxInjCtrlWrite1
+        writereg $rxInjCtrlReg $rxInjCtrlWrite0
+
+for byteCount = 0; $byteCount < $packetLength; byteCount += 4:
+    if $byteCount + 4 >= $packetLength:
+        # EOP = 1
+        readreg $rxInjData1Reg -n injDataSt
+        injDataSt = $injDataSt | $rxInjEopMask
+        writereg $rxInjData1Reg $injDataSt
+        byte3 = $mark
+    else:
+        byte3 = ($byteCount + 3) & 0x0000000FF
+    
+    byte0 = ($byteCount << 24) & 0xFF000000
+    byte1 = (($byteCount + 1) << 16) & 0x00FF0000
+    byte2 = (($byteCount + 2) << 8) & 0x00000FF00
+    packetWord = $byte0 | $byte1 | $byte2 | $byte3
+    writereg $rxInjData2Reg $packetWord
+    if $expStrobe == True:
+        writereg $rxInjCtrlReg $rxInjCtrlWrite1
+        writereg $rxInjCtrlReg $rxInjCtrlWrite0
+
+# EOP = 0
+injDataSt = $injDataSt & ~$rxInjEopMask
+writereg $rxInjData1Reg $injDataSt
+
+readreg $rxInjStatus1Reg
+readreg $rxInjStatus2Reg
+#readreg 0x5718
+#readreg 0x5b14
+
+cmd

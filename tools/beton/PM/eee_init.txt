@@ -1,0 +1,27 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/PM/eee_init.txt $
+# $Revision: #1 $
+# $DateTime: 2017/02/17 06:49:21 $
+# $Author: nikolayp $
+#
+# sample auto-test script sample, ready to copy&paste
+#
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+
+writereg 0x300 1
+
+# allow the RKL/TKL to process LPIs (EEE enable)
+regAddr = 0x4000
+readreg -n readedReg $regAddr
+newReg   = ($readedReg) | (1 << 9)
+writereg $regAddr $newReg 
+
+# set to allow the MAC to generate LPI
+regAddr = 0x08
+readreg -n readedReg msm $regAddr
+newReg   = ($readedReg) | (1 << 0x17)
+writereg msm $regAddr $newReg
+
+
+#$newReg = ($readedReg) & (~(1 << 1))
+#readreg -n readedReg msm $regAddr

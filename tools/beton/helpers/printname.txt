@@ -1,0 +1,26 @@
+# This helper adds test name and hw_options to dvlog
+# Author A. Kazachkov 15/07/2016
+
+log.rollover dvfile
+
+# Checking for parent script name
+# echo $PARENT_SCRIPT_NAME
+ifdef PARENT_SCRIPT_NAME:  
+    log.print -l glog $PARENT_SCRIPT_NAME
+else:
+    log.print -l glog PARENT_SCRIPT_NAME not defined!
+    
+ifdef hw_options:  
+    log.print -l glog hw_options = $hw_options
+else:
+    log.print -l glog hw_options not defined!
+
+ifdef RPF2:  
+    log.print -l glog RPF2 enabled
+else:
+    log.print -l glog RPF2 disabled
+    
+ifdef TPO2:  
+    log.print -l glog TPO2 enabled
+else:
+    log.print -l glog TPO2 disabled

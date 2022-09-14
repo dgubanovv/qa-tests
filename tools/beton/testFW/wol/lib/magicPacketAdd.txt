@@ -1,0 +1,44 @@
+#####################################################
+# Input args:
+#
+# Mac0
+# Mac1
+# Mac2
+#
+# Returns
+# result
+#
+#####################################################
+
+exec testFW/wol/lib/wolConstants.txt
+exec testFW/drvIface/getBaseAddress.txt
+
+#####################################################
+### write drvMsgWoLAdd header
+#####################################################
+
+priority             = 0
+packetType           = $ndisPMWoLPacketMagicPacket
+patternId            = 1
+nextWolPatternOffset = 0
+
+exec testFW/drvIface/drvMsgWolAdd.txt
+
+#####################################################
+### write drvMsgWoLAdd.wolPattern.wolMagicPacket
+#####################################################
+
+$Mac = $Mac0 | ($Mac1 << 16)
+mac.mcp.writemem $addr $Mac -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $Mac2 -l nul
+addr = $addr + 2
+
+#####################################################
+### execute DRV_MSG_WOL_ADD transaction
+#####################################################
+
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+result = $transactionResult

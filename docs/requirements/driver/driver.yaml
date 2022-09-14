@@ -1,0 +1,111 @@
+features:
+  datapath:
+    requirement_list:
+      - id: DRV_DATAPATH_1
+        description: Until there is no traffic, tail pointer should be equal ring size.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_WINDOWS_DRIVER]
+      - id: DRV_DATAPATH_2
+        description: After traffic with IP csum error, tail pointer should be equal current head pointer - 1.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_WINDOWS_DRIVER]
+      - id: DRV_DATAPATH_3
+        description: After traffic with TCP csum error, tail pointer should be equal current head pointer - 1.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_WINDOWS_DRIVER]
+      - id: DRV_DATAPATH_4
+        description: After traffic with FCS error, tail pointer should be equal current head pointer - 1.
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_WINDOWS_DRIVER]
+  loopback:
+    requirement_list:
+      - id: DRV_LOOPBACK_1
+        description: When paket loopback system is on, packet sent from dut received on dut
+      - id: DRV_LOOPBACK_2
+        description: When dma loopback system is on, packet sent from dut received on dut
+      - id: DRV_LOOPBACK_3
+        description: When dma loopback network is on, packet sent from lkp to dut received on lkp
+  link:
+    requirement_list:
+      - id: DRV_LINK_1
+        description: When link is down, PHY should switched to low power
+  multicast:
+    requirement_list:
+      - id: DRV_MULTICAST_1
+        description: Macvlan shall be disabled when MULTICAST flag is removed from interface
+        severity: 3
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER]
+      - id: DRV_MULTICAST_2
+        description: Multicast filters shall be disabled when MULTICAST flag is removed from interface
+        severity: 3
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER]
+  offload_lro:
+    requirement_list:
+      - id: DRV_OFFLOAD_LRO_1
+        description: It should be possible to enable LRO offload
+        severity: 3
+      - id: DRV_OFFLOAD_LRO_2
+        description: It should be possible to disable LRO offload
+        severity: 3
+      - id: DRV_OFFLOAD_LRO_3
+        description: When offloading LRO is enabled, the driver must combine incoming packets for which the seq number differs by the payload length.
+        severity: 3
+      - id: DRV_OFFLOAD_LRO_4
+        description: It should be dropped all LRO session, if the are packages with corrupted check sum in LRO session.
+        severity: 3
+  offload_arp:
+    requirement_list:
+      - id: DRV_OFFLOAD_ARP_1
+        description: It should be possible to enable ARP offload
+        severity: 3
+      - id: DRV_OFFLOAD_ARP_2
+        description: It should be possible to disable ARP offload
+        severity: 3
+      - id: DRV_OFFLOAD_ARP_3
+        description: When ARP offload is enabled driver should instruct DUT to answer incoming ARP requests in sleep mode
+        severity: 3
+      - id: DRV_OFFLOAD_ARP_4
+        description: Maximum number of offloaded IP addresses is 16
+        note: Not clear how much IP addresses can be offloaded
+        marks:
+          - ready: no
+        severity: 1
+    marks:
+      ready: no
+    note: Not all requirements are implemented
+  offload_rsc:
+    requirement_list:
+      - id: DRV_OFFLOAD_RSC_1
+        description: It should be possible to enable RSC offload
+        severity: 3
+      - id: DRV_OFFLOAD_RSC_2
+        description: It should be possible to disable RSC offload
+        severity: 3
+      - id: DRV_OFFLOAD_RSC_3
+        description: When offloading RSC ip4 and RSC ipv6 is enabled, register 0x5590 must be 0xffffffff
+        severity: 3
+      - id: DRV_OFFLOAD_RSC_4
+        description: When offloading RSC ip4 or RSC ipv6 is disabled, register 0x5590 must be 0x0
+        severity: 3
+  downshift:
+    requirement_list:
+      - id: DRV_OFFLOAD_DOWNSHIFT_1
+        description: It should be possible to enable downshift
+        severity: 1
+    marks:
+      ready: no
+    note: Not all requirements are implemented
+  cable_diagnostics:
+    requirement_list:
+      - id: DRV_CABLE_DIAGNOSTICS_1
+        description: The driver shall provide DSP-based and TDR-based cable diagnostics implementations.
+        products: [PROD_LINUX_DRIVER]
+      - id: DRV_CABLE_DIAGNOSTICS_2
+        description: DSP implementation shall provide cable length, PHY temperature and SNR margins.
+        products: [PROD_LINUX_DRIVER]
+      - id: DRV_CABLE_DIAGNOSTICS_3
+        description: TDR implementation shall provide status of all active pairs, distance for each pair and farthest distance for each pair.
+        products: [PROD_LINUX_DRIVER]
+      - id: DRV_CABLE_DIAGNOSTICS_4
+        description: Cable diagnostics shall be achieved via ethtool -t IOCTL interface.
+        products: [PROD_LINUX_DRIVER]
+      - id: DRV_CABLE_DIAGNOSTICS_5
+        description: Cable length and PHY temperature shall be available also via sensors interface.
+        products: [PROD_LINUX_DRIVER]
+    products: [PROD_LINUX_DRIVER]

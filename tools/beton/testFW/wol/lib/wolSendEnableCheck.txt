@@ -1,0 +1,68 @@
+#####################################################
+### Sends DRV_MSG_WOL_ADD
+### Sends DRV_MSG_ENABLE_WAKEUP
+### Checks calculated CRC and Mask
+#####################################################
+
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+
+result = $transactionResult
+
+if $result == 0:
+
+    expectedResponseDwordCount = 1
+    exec testFW/wol/lib/wolEnableAllWakeups.txt
+
+    result = $transactionResult
+
+    if $result == 0:
+
+        readphyreg 0x1D.0xC306 -n reg1 -l nul
+        readphyreg 0x1D.0xC307 -n reg2 -l nul
+
+        dut_mask = (($reg1) | (($reg2) << 16))
+
+        if $mask0 != $dut_mask:
+            echo Mask 0 mismatch. Local: $mask0, DUT: $dut_mask
+            result = -1
+
+        readphyreg 0x1D.0xC308 -n reg1 -l nul
+        readphyreg 0x1D.0xC309 -n reg2 -l nul
+
+        dut_mask = (($reg1) | (($reg2) << 16))
+
+        if $mask1 != $dut_mask:
+            echo Mask 1 mismatch. Local: $mask1, DUT: $dut_mask
+            result = -1
+
+        readphyreg 0x1D.0xC30A -n reg1 -l nul
+        readphyreg 0x1D.0xC30B -n reg2 -l nul
+
+        dut_mask = (($reg1) | (($reg2) << 16))
+
+        if $mask2 != $dut_mask:
+            echo Mask 2 mismatch. Local: $mask2, DUT: $dut_mask
+            result = -1
+
+        readphyreg 0x1D.0xC30C -n reg1 -l nul
+        readphyreg 0x1D.0xC30D -n reg2 -l nul
+
+        dut_mask = (($reg1) | (($reg2) << 16))
+
+        if $mask3 != $dut_mask:
+            echo Mask 3 mismatch. Local: $mask3, DUT: $dut_mask
+            result = -1
+
+        readphyreg 0x1D.0xC30E -n reg1 -l nul
+        readphyreg 0x1D.0xC30F -n reg2 -l nul
+
+        dut_crc = (($reg1) | (($reg2) << 16))
+
+        if $crc32 != $dut_crc:
+            echo CRC mismatch. Local: $crc32, DUT: $dut_crc
+            result = -1
+    else:
+        echo wolEnableAllWakeups failed
+else:
+    echo helperSendDrvMsg failed

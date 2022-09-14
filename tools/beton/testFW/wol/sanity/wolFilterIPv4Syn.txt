@@ -1,0 +1,1419 @@
+
+#####################################################
+### testFW/wol/tests/wolFilterIPv4Syn.txt >
+#####################################################
+
+
+#####################################################
+### Config
+#####################################################
+
+flags = 0
+IPv4SourceAddress = 0x00000000
+IPv4DestAddress = 0x0101FEA9
+TCPSourcePortNumber = 0x0000
+TCPDestPortNumber = 0x343A  # 13370
+
+result = 0
+
+#####################################################
+### Remove all WoL patterns
+#####################################################
+
+#####################################################
+### testFW/wol/lib/wolCentralState.txt >
+#####################################################
+
+patternMaskWindows = 0
+patternMaskAquantia = 0
+patternMaskOther = 0
+offloadsMaskWindows = 0
+offloadsMaskAquantia = 0
+
+#####################################################
+### testFW/drvIface/getBaseAddress.txt >
+#####################################################
+
+BASEADDR = 0;
+
+readreg 0x334 -n BASEADDR -l cli
+
+addr = $BASEADDR
+
+#####################################################
+### < testFW/drvIface/getBaseAddress.txt
+#####################################################
+
+
+#####################################################
+### testFW/wol/lib/wolConstants.txt >
+#####################################################
+
+# DRV_MSG_PING
+drvMsgPing = 1
+# DRV_MSG_ARP
+devMsgArp = 2
+# DRV_MSG_INJECT
+drvMsgInject = 3
+# DRV_MSG_WOL_ADD
+drvMsgWolAdd = 4
+# DRV_MSG_WOL_REMOVE
+drvMsgWolRemove = 5
+# DRV_MSG_ENABLE_WAKEUP
+drvMsgEnableWakeup = 6
+# DRV_MSG_MSM
+drvMsgMsm = 7
+# DRV_MSG_PROVISIONING
+drvMsgProvisioning = 8
+# DRV_MSG_OFFLOAD_ADD
+drvMsgOffloadAdd = 9
+# DRV_MSG_OFFLOAD_REMOVE
+drvMsgOffloadRemove = 10
+
+ndisPMWoLPacketBitmapPattern = 0x1
+ndisPMWoLPacketMagicPacket = 0x2
+ndisPMWoLPacketIPv4TcpSyn = 0x3
+ndisPMWoLPacketIPv6TcpSyn = 0x04
+
+ndisPMProtocolOffloadIdIPv4ARP = 0x01
+ndisPMProtocolOffloadIdIPv6NS = 0x02
+
+aqPMWoLPacketArp = 0x10001
+aqPMWoLReasonIpv4PingPacket = 0x10002
+aqPMWoLReasonIpv6PingPacket = 0x10004
+aqPMWoLReasonLinkUp = 0x10005
+aqPMWoLReasonLinkDown = 0x10006
+
+#####################################################
+### < testFW/wol/lib/wolConstants.txt
+#####################################################
+
+
+#####################################################
+### testFW/drvIface/drvMsgEnableWakeup.txt >
+#####################################################
+
+#drvMsgEnableWakeup
+
+addr = $BASEADDR
+
+writereg 0x328 $drvMsgEnableWakeup
+writereg 0x32c 0x80000000
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskWindows
+writereg 0x32c 0x80000004
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskAquantia
+writereg 0x32c 0x80000008
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskOther
+writereg 0x32c 0x8000000c
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskWindows
+writereg 0x32c 0x80000010
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskAquantia
+writereg 0x32c 0x80000014
+writereg 0x404 0x2
+
+#####################################################
+### < testFW/drvIface/drvMsgEnableWakeup.txt
+#####################################################
+
+
+expectedResponseDwordCount = 1
+
+#####################################################
+### testFW/drvIface/helperSendDrvMsg.txt >
+#####################################################
+
+transactionResult = 0
+
+addr = $BASEADDR
+
+readreg 0x33c -n id -l cli
+id = ($id &0xFFFF) + 1
+writereg 0x338 $id -l cli
+
+expectedResponseLen = $expectedResponseDwordCount * 4
+for loopNo=0; $loopNo < 100; loopNo += 1:
+    readreg 0x33c -n result -l cli
+    $result_transaction = ($result & 0xFFFF)
+    if $result_transaction == $id:
+        break
+
+if $loopNo == 100:
+    echo No response from FW
+    transactionResult = -1
+else:
+    if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+        echo Unexpected response length
+        transactionResult = -1
+    else:
+        for i = 0; $i < $expectedResponseDwordCount; i += 1:
+            mac.mcp.readmem $addr -n errcode -l cli
+            if $errcode != 0:
+                echo Response $i is not ok: $errcode $result
+                transactionResult = -1
+            addr = $addr + 4
+
+#####################################################
+### < testFW/drvIface/helperSendDrvMsg.txt
+#####################################################
+
+
+for patternId = 0; $patternId < 20; patternId += 1:
+    
+    #####################################################
+    ### testFW/drvIface/drvMsgWoLRemove.txt >
+    #####################################################
+
+    #drvMsgWoLRemove
+    
+    addr = $BASEADDR
+    
+    writereg 0x328 $drvMsgWolRemove
+    writereg 0x32c 0x80000000
+    writereg 0x404 0x2
+    
+    writereg 0x328 $patternId
+    writereg 0x32c 0x80000004
+    writereg 0x404 0x2
+    
+    #####################################################
+    ### < testFW/drvIface/drvMsgWoLRemove.txt
+    #####################################################
+
+    expectedResponseDwordCount = 1
+    
+    #####################################################
+    ### testFW/drvIface/helperSendDrvMsgSilent.txt >
+    #####################################################
+
+    transactionResult = 0
+    
+    addr = $BASEADDR
+    
+    readreg 0x33c -n id -l cli
+    id = ($id &0xFFFF) + 1
+    writereg 0x338 $id -l cli
+    
+    expectedResponseLen = $expectedResponseDwordCount * 4
+    for loopNo=0; $loopNo < 100; loopNo += 1:
+        readreg 0x33c -n result -l cli
+        $result_transaction = ($result & 0xFFFF)
+        if $result_transaction == $id:
+            break
+    
+    if $loopNo == 100:
+        echo No response from FW
+        transactionResult = -1
+    else:
+        if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+            echo Unexpected response length
+            transactionResult = -1
+        else:
+            for i = 0; $i < $expectedResponseDwordCount; i += 1:
+                mac.mcp.readmem $addr -n errcode -l cli
+                if $errcode != 0:
+                    transactionResult = -1
+                addr = $addr + 4
+    
+    #####################################################
+    ### < testFW/drvIface/helperSendDrvMsgSilent.txt
+    #####################################################
+
+
+#####################################################
+### < testFW/wol/lib/wolCentralState.txt
+#####################################################
+
+
+#####################################################
+### Add IPv4Syn pattern
+#####################################################
+
+#####################################################
+### testFW/wol/lib/wolFilterTestIPv4Syn.txt >
+#####################################################
+
+#####################################################
+# Input args:
+#
+# flags
+# IPv4SourceAddress
+# IPv4DestAddress
+# TCPSourcePortNumber
+# TCPDestPortNumber
+#
+# Returns
+# result
+#
+#####################################################
+
+#####################################################
+### Init
+#####################################################
+
+reg1 = 0
+reg2 = 0
+
+#####################################################
+### testFW/drvIface/getBaseAddress.txt >
+#####################################################
+
+BASEADDR = 0;
+
+readreg 0x334 -n BASEADDR -l cli
+
+addr = $BASEADDR
+
+#####################################################
+### < testFW/drvIface/getBaseAddress.txt
+#####################################################
+
+
+priority             = 0
+packetType           = $ndisPMWoLPacketIPv4TcpSyn
+patternId            = 2
+nextWolPatternOffset = 0
+
+#####################################################
+### CRC Calculation
+#####################################################
+
+#####################################################
+### testFW/wol/lib/crc32/init.txt >
+#####################################################
+
+crc32 = 0xFFFFFFFF
+
+#####################################################
+### < testFW/wol/lib/crc32/init.txt
+#####################################################
+
+
+byte = 0x08
+
+#####################################################
+### testFW/wol/lib/crc32/addByte.txt >
+#####################################################
+
+byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+
+for j = 0; $j <= 7; j += 1:
+
+    if $crc32 & 0x80000000:
+        crc32_high_bit = 1
+    else:
+        crc32_high_bit = 0
+
+    if $byte & 0x80000000:
+        byte_high_bit = 1
+    else:
+        byte_high_bit = 0
+
+    crc32 = ($crc32 << 1) & 0xFFFFFFFF
+
+    if ($crc32_high_bit ^ $byte_high_bit):
+        crc32 = $crc32 ^ 0x04C11DB7
+        
+    byte = ($byte << 1)
+
+#####################################################
+### < testFW/wol/lib/crc32/addByte.txt
+#####################################################
+
+
+byte = 0x00
+
+#####################################################
+### testFW/wol/lib/crc32/addByte.txt >
+#####################################################
+
+byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+
+for j = 0; $j <= 7; j += 1:
+
+    if $crc32 & 0x80000000:
+        crc32_high_bit = 1
+    else:
+        crc32_high_bit = 0
+
+    if $byte & 0x80000000:
+        byte_high_bit = 1
+    else:
+        byte_high_bit = 0
+
+    crc32 = ($crc32 << 1) & 0xFFFFFFFF
+
+    if ($crc32_high_bit ^ $byte_high_bit):
+        crc32 = $crc32 ^ 0x04C11DB7
+        
+    byte = ($byte << 1)
+
+#####################################################
+### < testFW/wol/lib/crc32/addByte.txt
+#####################################################
+
+
+byte = 0x45
+
+#####################################################
+### testFW/wol/lib/crc32/addByte.txt >
+#####################################################
+
+byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+
+for j = 0; $j <= 7; j += 1:
+
+    if $crc32 & 0x80000000:
+        crc32_high_bit = 1
+    else:
+        crc32_high_bit = 0
+
+    if $byte & 0x80000000:
+        byte_high_bit = 1
+    else:
+        byte_high_bit = 0
+
+    crc32 = ($crc32 << 1) & 0xFFFFFFFF
+
+    if ($crc32_high_bit ^ $byte_high_bit):
+        crc32 = $crc32 ^ 0x04C11DB7
+        
+    byte = ($byte << 1)
+
+#####################################################
+### < testFW/wol/lib/crc32/addByte.txt
+#####################################################
+
+
+byte = 0x06
+
+#####################################################
+### testFW/wol/lib/crc32/addByte.txt >
+#####################################################
+
+byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+
+for j = 0; $j <= 7; j += 1:
+
+    if $crc32 & 0x80000000:
+        crc32_high_bit = 1
+    else:
+        crc32_high_bit = 0
+
+    if $byte & 0x80000000:
+        byte_high_bit = 1
+    else:
+        byte_high_bit = 0
+
+    crc32 = ($crc32 << 1) & 0xFFFFFFFF
+
+    if ($crc32_high_bit ^ $byte_high_bit):
+        crc32 = $crc32 ^ 0x04C11DB7
+        
+    byte = ($byte << 1)
+
+#####################################################
+### < testFW/wol/lib/crc32/addByte.txt
+#####################################################
+
+
+if $IPv4SourceAddress != 0:
+    IPv4Address = $IPv4SourceAddress
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addIPv4.txt >
+    #####################################################
+
+    byte = ($IPv4Address >> 0) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    byte = ($IPv4Address >> 8) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    byte = ($IPv4Address >> 16) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    byte = ($IPv4Address >> 24) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addIPv4.txt
+    #####################################################
+
+
+if $IPv4DestAddress != 0:
+    IPv4Address = $IPv4DestAddress
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addIPv4.txt >
+    #####################################################
+
+    byte = ($IPv4Address >> 0) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    byte = ($IPv4Address >> 8) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    byte = ($IPv4Address >> 16) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    byte = ($IPv4Address >> 24) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addIPv4.txt
+    #####################################################
+
+
+if $TCPSourcePortNumber != 0:
+    TCPPort = $TCPSourcePortNumber
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addPort.txt >
+    #####################################################
+
+    byte = ($TCPPort >> 8) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    byte = ($TCPPort >> 0) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addPort.txt
+    #####################################################
+
+
+if $TCPDestPortNumber != 0:
+    TCPPort = $TCPDestPortNumber 
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addPort.txt >
+    #####################################################
+
+    byte = ($TCPPort >> 8) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    byte = ($TCPPort >> 0) & 0xFF
+    
+    #####################################################
+    ### testFW/wol/lib/crc32/addByte.txt >
+    #####################################################
+
+    byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+    byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+    byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+    byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+    
+    for j = 0; $j <= 7; j += 1:
+    
+        if $crc32 & 0x80000000:
+            crc32_high_bit = 1
+        else:
+            crc32_high_bit = 0
+    
+        if $byte & 0x80000000:
+            byte_high_bit = 1
+        else:
+            byte_high_bit = 0
+    
+        crc32 = ($crc32 << 1) & 0xFFFFFFFF
+    
+        if ($crc32_high_bit ^ $byte_high_bit):
+            crc32 = $crc32 ^ 0x04C11DB7
+            
+        byte = ($byte << 1)
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addByte.txt
+    #####################################################
+
+    
+    #####################################################
+    ### < testFW/wol/lib/crc32/addPort.txt
+    #####################################################
+
+
+byte = 0x02
+
+#####################################################
+### testFW/wol/lib/crc32/addByte.txt >
+#####################################################
+
+byte = (($byte & 0x55555555) << 1) | (($byte >> 1) & 0x55555555)
+byte = (($byte & 0x33333333) << 2) | (($byte >> 2) & 0x33333333)
+byte = (($byte & 0x0F0F0F0F) << 4) | (($byte >> 4) & 0x0F0F0F0F)
+byte = ($byte << 24) | (($byte & 0xFF00) << 8) | (($byte >> 8) & 0xFF00) | ($byte >> 24)
+
+for j = 0; $j <= 7; j += 1:
+
+    if $crc32 & 0x80000000:
+        crc32_high_bit = 1
+    else:
+        crc32_high_bit = 0
+
+    if $byte & 0x80000000:
+        byte_high_bit = 1
+    else:
+        byte_high_bit = 0
+
+    crc32 = ($crc32 << 1) & 0xFFFFFFFF
+
+    if ($crc32_high_bit ^ $byte_high_bit):
+        crc32 = $crc32 ^ 0x04C11DB7
+        
+    byte = ($byte << 1)
+
+#####################################################
+### < testFW/wol/lib/crc32/addByte.txt
+#####################################################
+
+
+#####################################################
+### Mask Calculation
+#####################################################
+
+#####################################################
+### testFW/wol/lib/mask/init.txt >
+#####################################################
+
+mask0 = 0x00000000
+mask1 = 0x00000000
+mask2 = 0x00000000
+mask3 = 0x00000000
+
+#####################################################
+### < testFW/wol/lib/mask/init.txt
+#####################################################
+
+
+bitNumber = 12
+
+#####################################################
+### testFW/wol/lib/mask/setBit.txt >
+#####################################################
+
+#accepts bitNumber
+
+byteNumber = ($bitNumber >> 5)
+mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+
+#####################################################
+### < testFW/wol/lib/mask/setBit.txt
+#####################################################
+
+
+bitNumber = 13
+
+#####################################################
+### testFW/wol/lib/mask/setBit.txt >
+#####################################################
+
+#accepts bitNumber
+
+byteNumber = ($bitNumber >> 5)
+mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+
+#####################################################
+### < testFW/wol/lib/mask/setBit.txt
+#####################################################
+
+
+bitNumber = 14
+
+#####################################################
+### testFW/wol/lib/mask/setBit.txt >
+#####################################################
+
+#accepts bitNumber
+
+byteNumber = ($bitNumber >> 5)
+mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+
+#####################################################
+### < testFW/wol/lib/mask/setBit.txt
+#####################################################
+
+
+bitNumber = 23
+
+#####################################################
+### testFW/wol/lib/mask/setBit.txt >
+#####################################################
+
+#accepts bitNumber
+
+byteNumber = ($bitNumber >> 5)
+mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+
+#####################################################
+### < testFW/wol/lib/mask/setBit.txt
+#####################################################
+
+
+if $IPv4SourceAddress != 0:
+    for bitNumber = 26; $bitNumber <= 29; bitNumber += 1:
+    
+    #####################################################
+    ### testFW/wol/lib/mask/setBit.txt >
+    #####################################################
+
+    #accepts bitNumber
+    
+    byteNumber = ($bitNumber >> 5)
+    mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+    
+    #####################################################
+    ### < testFW/wol/lib/mask/setBit.txt
+    #####################################################
+
+
+if $IPv4DestAddress != 0:
+    for bitNumber = 30; $bitNumber <= 33; bitNumber += 1:
+    
+    #####################################################
+    ### testFW/wol/lib/mask/setBit.txt >
+    #####################################################
+
+    #accepts bitNumber
+    
+    byteNumber = ($bitNumber >> 5)
+    mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+    
+    #####################################################
+    ### < testFW/wol/lib/mask/setBit.txt
+    #####################################################
+
+
+if $TCPSourcePortNumber != 0:
+    bitNumber = 34
+    
+    #####################################################
+    ### testFW/wol/lib/mask/setBit.txt >
+    #####################################################
+
+    #accepts bitNumber
+    
+    byteNumber = ($bitNumber >> 5)
+    mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+    
+    #####################################################
+    ### < testFW/wol/lib/mask/setBit.txt
+    #####################################################
+
+    bitNumber = 35
+    
+    #####################################################
+    ### testFW/wol/lib/mask/setBit.txt >
+    #####################################################
+
+    #accepts bitNumber
+    
+    byteNumber = ($bitNumber >> 5)
+    mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+    
+    #####################################################
+    ### < testFW/wol/lib/mask/setBit.txt
+    #####################################################
+
+
+if $TCPDestPortNumber != 0:
+    bitNumber = 36
+    
+    #####################################################
+    ### testFW/wol/lib/mask/setBit.txt >
+    #####################################################
+
+    #accepts bitNumber
+    
+    byteNumber = ($bitNumber >> 5)
+    mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+    
+    #####################################################
+    ### < testFW/wol/lib/mask/setBit.txt
+    #####################################################
+
+    bitNumber = 37
+    
+    #####################################################
+    ### testFW/wol/lib/mask/setBit.txt >
+    #####################################################
+
+    #accepts bitNumber
+    
+    byteNumber = ($bitNumber >> 5)
+    mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+    
+    #####################################################
+    ### < testFW/wol/lib/mask/setBit.txt
+    #####################################################
+
+
+bitNumber = 47
+
+#####################################################
+### testFW/wol/lib/mask/setBit.txt >
+#####################################################
+
+#accepts bitNumber
+
+byteNumber = ($bitNumber >> 5)
+mask$byteNumber = ($(mask$byteNumber) | (1 << ($bitNumber & 0x1F)))
+
+#####################################################
+### < testFW/wol/lib/mask/setBit.txt
+#####################################################
+
+
+#####################################################
+### Write header, drvMsgWoLAdd
+#####################################################
+
+#####################################################
+### testFW/drvIface/drvMsgWolAdd.txt >
+#####################################################
+
+#drvMsgWoLAdd
+
+addr = $BASEADDR
+
+writereg 0x328 $drvMsgWolAdd
+writereg 0x32c 0x80000000
+writereg 0x404 0x2
+
+writereg 0x328 $priority
+writereg 0x32c 0x80000004
+writereg 0x404 0x2
+
+writereg 0x328 $packetType
+writereg 0x32c 0x80000008
+writereg 0x404 0x2
+
+writereg 0x328 $patternId
+writereg 0x32c 0x8000000c
+writereg 0x404 0x2
+
+writereg 0x328 $nextWolPatternOffset
+writereg 0x32c 0x80000010
+writereg 0x404 0x2
+
+#####################################################
+### < testFW/drvIface/drvMsgWolAdd.txt
+#####################################################
+
+
+#####################################################
+### Write wolPattern.wolIpv4TcpSyn
+#####################################################
+
+writereg 0x328 $flags
+writereg 0x32c 0x80000014
+writereg 0x404 0x2
+
+writereg 0x328 $IPv4SourceAddress
+writereg 0x32c 0x80000018
+writereg 0x404 0x2
+
+writereg 0x328 $IPv4DestAddress
+writereg 0x32c 0x8000001c
+writereg 0x404 0x2
+
+ports = $TCPSourcePortNumber | ($TCPDestPortNumber << 16)
+
+writereg 0x328 $ports
+writereg 0x32c 0x80000020
+writereg 0x404 0x2
+
+#####################################################
+### Exec and validate
+#####################################################
+
+#####################################################
+### testFW/wol/lib/wolSendEnableCheck.txt >
+#####################################################
+
+#####################################################
+### Sends DRV_MSG_WOL_ADD
+### Sends DRV_MSG_ENABLE_WAKEUP
+### Checks calculated CRC and Mask
+#####################################################
+
+expectedResponseDwordCount = 1
+
+#####################################################
+### testFW/drvIface/helperSendDrvMsg.txt >
+#####################################################
+
+transactionResult = 0
+
+addr = $BASEADDR
+
+readreg 0x33c -n id -l cli
+id = ($id &0xFFFF) + 1
+writereg 0x338 $id -l cli
+
+expectedResponseLen = $expectedResponseDwordCount * 4
+for loopNo=0; $loopNo < 100; loopNo += 1:
+    readreg 0x33c -n result -l cli
+    $result_transaction = ($result & 0xFFFF)
+    if $result_transaction == $id:
+        break
+
+if $loopNo == 100:
+    echo No response from FW
+    transactionResult = -1
+else:
+    if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+        echo Unexpected response length
+        transactionResult = -1
+    else:
+        for i = 0; $i < $expectedResponseDwordCount; i += 1:
+            mac.mcp.readmem $addr -n errcode -l cli
+            if $errcode != 0:
+                echo Response $i is not ok: $errcode $result
+                transactionResult = -1
+            addr = $addr + 4
+
+#####################################################
+### < testFW/drvIface/helperSendDrvMsg.txt
+#####################################################
+
+
+result = $transactionResult
+
+if $result == 0:
+
+    expectedResponseDwordCount = 1
+    
+    #####################################################
+    ### testFW/wol/lib/wolEnableAllWakeups.txt >
+    #####################################################
+
+    # drvMsgEnableWakeup header
+    patternMaskWindows = ((1 << (($ndisPMWoLPacketMagicPacket & 0xFFFF) - 1)) | (1 << (($ndisPMWoLPacketIPv4TcpSyn & 0xFFFF) - 1)) | (1 << (($ndisPMWoLPacketIPv6TcpSyn & 0xFFFF) - 1)))
+    patternMaskAquantia = (  (1 << (($aqPMWoLPacketArp & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonIpv4PingPacket & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonIpv6PingPacket & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonLinkDown & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonLinkUp & 0xFFFFF) - 0x10001)))
+    patternMaskOther = 0
+    offloadsMaskWindows = 0
+    offloadsMaskAquantia = 0
+    
+    
+    #####################################################
+    ### testFW/drvIface/drvMsgEnableWakeup.txt >
+    #####################################################
+
+    #drvMsgEnableWakeup
+    
+    addr = $BASEADDR
+    
+    writereg 0x328 $drvMsgEnableWakeup
+    writereg 0x32c 0x80000000
+    writereg 0x404 0x2
+    
+    writereg 0x328 $patternMaskWindows
+    writereg 0x32c 0x80000004
+    writereg 0x404 0x2
+    
+    writereg 0x328 $patternMaskAquantia
+    writereg 0x32c 0x80000008
+    writereg 0x404 0x2
+    
+    writereg 0x328 $patternMaskOther
+    writereg 0x32c 0x8000000c
+    writereg 0x404 0x2
+    
+    writereg 0x328 $offloadsMaskWindows
+    writereg 0x32c 0x80000010
+    writereg 0x404 0x2
+    
+    writereg 0x328 $offloadsMaskAquantia
+    writereg 0x32c 0x80000014
+    writereg 0x404 0x2
+    
+    #####################################################
+    ### < testFW/drvIface/drvMsgEnableWakeup.txt
+    #####################################################
+
+    
+    #### Run transaction
+    expectedResponseDwordCount = 1
+    
+    #####################################################
+    ### testFW/drvIface/helperSendDrvMsg.txt >
+    #####################################################
+
+    transactionResult = 0
+    
+    addr = $BASEADDR
+    
+    readreg 0x33c -n id -l cli
+    id = ($id &0xFFFF) + 1
+    writereg 0x338 $id -l cli
+    
+    expectedResponseLen = $expectedResponseDwordCount * 4
+    for loopNo=0; $loopNo < 100; loopNo += 1:
+        readreg 0x33c -n result -l cli
+        $result_transaction = ($result & 0xFFFF)
+        if $result_transaction == $id:
+            break
+    
+    if $loopNo == 100:
+        echo No response from FW
+        transactionResult = -1
+    else:
+        if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+            echo Unexpected response length
+            transactionResult = -1
+        else:
+            for i = 0; $i < $expectedResponseDwordCount; i += 1:
+                mac.mcp.readmem $addr -n errcode -l cli
+                if $errcode != 0:
+                    echo Response $i is not ok: $errcode $result
+                    transactionResult = -1
+                addr = $addr + 4
+    
+    #####################################################
+    ### < testFW/drvIface/helperSendDrvMsg.txt
+    #####################################################
+
+    $result = $transactionResult
+    
+    
+    #####################################################
+    ### < testFW/wol/lib/wolEnableAllWakeups.txt
+    #####################################################
+
+
+    result = $transactionResult
+
+    if $result == 0:
+
+        readphyreg 0x1D.0xC306 -n reg1 -l cli
+        readphyreg 0x1D.0xC307 -n reg2 -l cli
+
+        dut_mask = (($reg1) | (($reg2) << 16))
+
+        if $mask0 != $dut_mask:
+            echo Mask 0 mismatch. Local: $mask0, DUT: $dut_mask
+            result = -1
+
+        readphyreg 0x1D.0xC308 -n reg1 -l cli
+        readphyreg 0x1D.0xC309 -n reg2 -l cli
+
+        dut_mask = (($reg1) | (($reg2) << 16))
+
+        if $mask1 != $dut_mask:
+            echo Mask 1 mismatch. Local: $mask1, DUT: $dut_mask
+            result = -1
+
+        readphyreg 0x1D.0xC30A -n reg1 -l cli
+        readphyreg 0x1D.0xC30B -n reg2 -l cli
+
+        dut_mask = (($reg1) | (($reg2) << 16))
+
+        if $mask2 != $dut_mask:
+            echo Mask 2 mismatch. Local: $mask2, DUT: $dut_mask
+            result = -1
+
+        readphyreg 0x1D.0xC30C -n reg1 -l cli
+        readphyreg 0x1D.0xC30D -n reg2 -l cli
+
+        dut_mask = (($reg1) | (($reg2) << 16))
+
+        if $mask3 != $dut_mask:
+            echo Mask 3 mismatch. Local: $mask3, DUT: $dut_mask
+            result = -1
+
+        readphyreg 0x1D.0xC30E -n reg1 -l cli
+        readphyreg 0x1D.0xC30F -n reg2 -l cli
+
+        dut_crc = (($reg1) | (($reg2) << 16))
+
+        if $crc32 != $dut_crc:
+            echo CRC mismatch. Local: $crc32, DUT: $dut_crc
+            result = -1
+    else:
+        echo wolEnableAllWakeups failed
+else:
+    echo helperSendDrvMsg failed
+
+#####################################################
+### < testFW/wol/lib/wolSendEnableCheck.txt
+#####################################################
+
+
+#####################################################
+### < testFW/wol/lib/wolFilterTestIPv4Syn.txt
+#####################################################
+
+
+if $result != 0:
+    echo _____________FAILED
+
+#####################################################
+### < testFW/wol/tests/wolFilterIPv4Syn.txt
+#####################################################
+

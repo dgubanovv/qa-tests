@@ -1,0 +1,5 @@
+mac.llh -v isFull -C rpbRxInjectionQueueFullGet $queue
+if  $(isFull) != $expectedIsFull:
+    str = '$stringId Full bit for queue $queue not equal to expected (which is $expectedIsFull)'
+    echo $str
+    finalReport = $finalReport + ['$str']

@@ -1,0 +1,8 @@
+byte = ($IPv4Address >> 0) & 0xFF
+exec testFW/wol/lib/crc32/addByte.txt
+byte = ($IPv4Address >> 8) & 0xFF
+exec testFW/wol/lib/crc32/addByte.txt
+byte = ($IPv4Address >> 16) & 0xFF
+exec testFW/wol/lib/crc32/addByte.txt
+byte = ($IPv4Address >> 24) & 0xFF
+exec testFW/wol/lib/crc32/addByte.txt

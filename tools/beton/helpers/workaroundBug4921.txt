@@ -1,0 +1,6 @@
+# TX Packet Buffer Control Register 1
+readreg -n bit7900 0x7900 $logTag
+# reset bit bit3 -- TX path parity check en
+# (If this bit is reset, packets read from the buf memory and having parity error will not be flagged as Errored packets downstream.)
+bit7900 = $bit7900 & 0xFFFFFFF7
+writereg 0x7900 $bit7900 $logTag

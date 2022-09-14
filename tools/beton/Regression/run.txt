@@ -1,0 +1,22 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Regression/run.txt $
+# $Revision: #2 $
+# $DateTime: 2016/04/08 08:55:16 $
+# $Author: dgubanov $
+#
+# Runs all Regression Sanity tests from CLI
+# Outputs all results into concole /*no TestRail at all*/
+
+R = $(PWD)/Regression/
+
+exec $(R)test0140_sanity_mq.txt
+exec $(R)test0141_sanity_pktlb.txt
+exec $(R)test0142_sanity_int.txt
+exec $(R)test0143_tx_ext.txt
+exec $(R)test0144_rx_ext.txt
+exec $(R)test0145_rx_inj.txt
+exec $(R)test0146_tx_inj.txt
+exec $(R)test0147_rx_flt.txt
+exec $(R)test1884_offloads.txt
+exec $(R)test0150_mips.txt
+exec $(R)test0151_flash.txt
+exec $(R)test0152_bugs.txt

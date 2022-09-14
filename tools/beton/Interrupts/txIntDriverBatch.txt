@@ -1,0 +1,84 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Interrupts/txIntDriverBatch.txt $
+# $Revision: #1 $
+# $DateTime: 2016/05/16 09:58:04 $
+# $Author: oxy $
+#
+# Tries to imitate NDIS driver v1.27.XXX.X behaviour:
+# Sends batch of packets, cleans Tx ring under disabled interrupts
+
+mac.set loopback None
+mac.isr.set Mode Multi-Vector
+
+givenIntCount = 4
+givenIterations = 100
+givenBatchMax = 1024
+givenTxRing = 0
+givenRingSize = 4096
+finalReport = []
+
+mac.txring[$givenTxRing].set size $givenRingSize
+
+for i=0; $i < 4; i+=1:
+    mac.rxring[$i].set map2vector $i -l nul
+    mac.rxring[$i].set map2cause $i -l nul
+
+int_lst = [i for i in range($givenIntCount)]
+int_mask = 0
+for int in $int_lst:
+    source_bit = (1 << $int)
+    int_mask = $int_mask | $source_bit
+    interrupt$int = 0
+    mac.isr.regHandler -v $int -c $int -t 10000000 -n interrupt$int
+    #echo $(interrupt$int)==interrupt$int
+
+mac.init
+mac.txinit
+mac.rxinit
+
+mac.txring[$givenTxRing].enable
+mac.rxring[0:4].enable
+mac.rxring[0:4].status
+mac.rxring[0:4].fill
+mac.rxring[0:4].commit
+
+writereg 0x00007B40 1
+
+mac.isr.reset
+mac.isr.enable
+
+echo 0%
+for actualIteration = 1;$actualIteration<=$givenIterations; actualIteration+=1:
+    mask = 1#<<$givenTxRing
+    mac.llh itrInterruptMaskClearLSW_Set   $mask
+    mac.llh itrInterruptStatusClearLSW_Set $mask 
+    mac.txring[$givenTxRing].clean
+    mac.txring[$givenTxRing].insert -b 1514 -p 1514 -f indexed_uniq_ramp -c $givenBatchMax
+    mac.txring[$givenTxRing].commit
+    pause 30 ms
+    mac.txring[$givenTxRing].clean
+    batchSize = ($actualIteration%$givenRingSize)
+    mac.txring[$givenTxRing].insert -b 60 -p 60 -f indexed_uniq_ramp -c $batchSize
+    mac.txring[$givenTxRing].commit   
+    mac.llh itrInterruptMaskSetLSW_Set $mask
+    
+    if not ($actualIteration %($givenIterations/10)):
+        tmp = ($actualIteration*100//$givenIterations)
+        echo $tmp%
+    pause 30 ms
+    for int in $int_lst:
+        if $int&0x3 == $givenTxRing:
+            expectedIntCount = $actualIteration
+        else:
+            expectedIntCount = 0
+        if $(interrupt$int)!=$expectedIntCount:
+            finalReport+=['(0)($actualIteration) Incorrect interrupt count: expected = $expectedIntCount, actual = $(interrupt$int)']
+            break
+    if len($finalReport):
+        break
+
+exec $PWD/helpers/showTestResult.txt
+ 
+for int in $int_lst:
+    #echo $(interrupt$int)==interrupt$int
+    mac.isr.unregHandler -v $int -c $int 
+mac.uninit

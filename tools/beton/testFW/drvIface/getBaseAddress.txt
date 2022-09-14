@@ -1,0 +1,5 @@
+BASEADDR = 0;
+
+readreg 0x334 -n BASEADDR -l nul
+
+addr = $BASEADDR

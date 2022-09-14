@@ -1,0 +1,206 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mngif2/extLargePacketTest2048.txt $
+# $Revision: #11 $
+# $DateTime: 2016/08/11 02:22:39 $
+# $Author: dgubanov $
+#
+# Script for large packets extraction on mng queue0 using mac filter
+
+finalReport = []
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    truncatePackets = True
+    segCount = 1 #Number of segments to split packet onto
+    extType = tx
+    queueActive = [1, 0]
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef truncatePackets:
+        truncatePackets = True
+    ifndef segCount:
+        segCount = 1
+    ifndef extType:
+        extType = tx
+    ifndef queueActive:
+        queueActive = [1, 0]
+    ifndef logTag:
+        logTag = -l cli
+
+# Packet send prepare
+if '$extType' == 'rx':
+    mac.set loopback System Packet $logTag
+else:
+    mac.set loopback None $logTag
+
+mac.init
+
+if '$extType' == 'rx':
+    mac.rxinit
+    mac.rxring[$txRingNo].enable
+    mac.rxring[$txRingNo].fill
+
+mac.txinit
+mac.txring[$txRingNo].set bufSize 4096 $logTag
+mac.txring[$txRingNo].set maxDmaSize 4096 $logTag
+mac.txring[$txRingNo].enable                         # Prepare Tx ring
+mac.txring[$txRingNo].set PacketMark uniq $logTag
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+
+if '$extType' == 'rx':
+    exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+else:
+    exec $(PWD)/helpers/tpoExtractorLlhNames.txt
+
+# Tx Extractor prepare
+for queue = 0; $queue < 2; queue += 1:
+    mac.llh -v packetCount $extractionQueuePacketCountGet $queue
+    if $packetCount > 0:
+        echo Please run script on clear queue
+        exit
+
+# Set mode
+# Set corresponding filters enable and clear other
+if '$extType' == 'rx':
+    exec $(PWD)/helpers/configureRxExtFilters.txt
+else:
+    exec $(PWD)/helpers/configureTxExtFilters.txt
+
+packetLen2048 = 2048
+segmentLen = ($packetLen2048 / $segCount)
+segmentLenLast = $packetLen2048 - ($segmentLen * ($segCount - 1))
+
+pAddrAr0 = []
+pAddrAr1 = []
+
+# Packet Send
+totalSegs = 0
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] == 1:
+        for segment = 0; $segment < $segCount; segment += 1:
+            if $segment < $segCount - 1:
+                len = $segmentLen
+            else:
+                len = $segmentLenLast
+            mac.txring[$txRingNo].insert -b $len -p $packetLen2048 -f indexed_uniq_ramp
+            mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+            pAddrAr$queue += [$pAddr]
+            str = $macAddrFilters[$queue]
+            mem.put $str -s 1 -p $pAddr
+            totalSegs += 1
+
+mac.txring[$txRingNo].dumpdesc -T 1:$totalSegs -l dumptx $logTag
+mac.txring[$txRingNo].dumpbuf -T 1:$totalSegs -l dumptx  $logTag --size 80
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status $logTag
+
+# Packet Extract
+
+# Check errors
+expectedPacketCount = 1
+expectedIsReady = 1
+expectedTruncationError = 0
+expectedOverflowError = 0
+expectedLostError = 0
+expectedIsInterrupt = 1
+expectedParityError = 0
+stringId = '(1)'
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] != 0:
+        exec $(PWD)/helpers/checkExtQueueErrors.txt
+
+deltas = []
+for queue = 0; $queue < 2; queue += 1:
+    bufArray = []
+    byteCnt = 0
+    delta = 0
+    if $queueActive[$queue] != 0:
+        # Select Queue
+        mac.llh $extractionSelectSet $queue
+        
+        # for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+        for byteCnt = 0; $byteCnt < 2080; byteCnt += 4: # increase limit for test purposes
+            # generate rising edge
+            mac.llh $extractionReadSet 0
+            mac.llh $extractionReadSet 1
+            mac.llh -v dataExtracted $extractionQueuePacketDataGet
+            if '$extType' == 'rx':
+                dataExtracted = ($dataExtracted & 0xFF) << 24 | ($dataExtracted & 0xFF00) << 8 | ($dataExtracted & 0xFF0000) >> 8 | ($dataExtracted & 0xFF000000) >> 24
+            bufArray += [$dataExtracted]
+            mac.llh -v eop $extractionQueueEopGet
+            if $eop <> 0:
+                byteCnt += 4
+                break
+        mac.llh $extractionReadSet 0
+        
+        bufArr$(queue) = $bufArray
+        
+        # Process data_valid field
+        mac.llh -v valid $extractionQueueByteValidGet
+        if $valid > 0:
+            for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+                byteCnt = $byteCnt + 0 - 1
+                delta += 1
+        else:
+            byteCnt = $byteCnt + 0 - 4
+            delta += 4
+
+        mac.llh -v extOffset $extractionQueuePacketOffsetGet
+        if $extOffset != 0:
+            extOffsetStr = hex($extOffset)
+            str = 'Wrong ext_offset $extOffsetStr after extraction (4)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+
+        stringId = '(2)'
+        expectedPacketCount = 0
+        expectedIsReady = 0
+        expectedTruncationError = 0
+        expectedOverflowError = 0
+        expectedLostError = 0
+        expectedIsInterrupt = 0
+        if ('$hw_options' == 'B0RRO') and ('$extType' == 'rx'):
+            expectedIsInterrupt = 0            
+        expectedParityError = 0
+        if $queueActive[$queue] != 0:
+            exec $(PWD)/helpers/checkExtQueueErrors.txt
+
+        # Check received data
+        if $byteCnt != $packetLen2048:
+            str = 'Wrong byte count $byteCnt extracted (6)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+    deltas += [$delta]
+
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] != 0:
+        arr = $(bufArr$(queue))
+        for segment = 0; $segment < $segCount; segment += 1:
+            bufStr = ' '
+            pAddr = $(pAddrAr$(queue))[$segment]
+            if $segment < $segCount - 1:
+                len = $segmentLen
+            else:
+                len = $segmentLenLast
+            for dwordCnt = $segment * ($segmentLen / 4); $dwordCnt < $segment * ($segmentLen / 4) + (($len + $deltas[$queue]) /4); dwordCnt += 1:
+                data = $arr[$dwordCnt]
+                hexdata = hex($data)
+                bufStr = '$bufStr' + ' ' + '$hexdata'
+            mem.cmp -p $pAddr -s $len -V $bufStr -n compareResult $logTag
+            if $compareResult != True:
+                finalReport = $finalReport + ['Memory compare failed']
+readreg 0x7040
+mac.uninit
+exec $(PWD)/helpers/showTestResult.txt

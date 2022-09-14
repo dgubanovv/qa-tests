@@ -1,0 +1,97 @@
+#echo Start rss example with double VLAN
+
+finalReport = []
+
+ifndef test_num:
+    test_num_ndef = True
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    itr = 10
+    seed = 1
+    TPO2 = False
+    RPF2 = False
+
+ifndef itr:
+    finalReport += ['Variable itr is not defined!']
+ifndef seed:
+    seed = random.randint(0, 2 ** 32 - 1)
+
+temp = random.seed($seed)
+
+for _ in range($itr):
+    txRing = random.randint(0, 31)
+    vlan_tag_inner = random.randint(0x0, 0x1000)
+    vlan_tag_outer = random.randint(0x0, 0x1000)
+    vlan_tag = $vlan_tag_outer
+    maxtc = random.choice([1, 2])
+    recvTc = ((random.randint(0, 3)) * $maxtc) + (1 if (($maxtc == 2) and (random.choice([True, False]))) else 0)
+    maxtc *= 4
+    
+    mac.set rxDcbTcCount $maxtc -l cli
+    
+    macAddressSrc = '"' + ':'.join(map(str, (hex(random.randint(0, 0xff))[2:] for _ in range(6)))) + '"'
+    macAddressDst = '"' + ':'.join(map(str, (hex(random.randint(0, 0xff))[2:] for _ in range(6)))) + '"'
+    
+    ipAddressSrc = '"' + '.'.join(map(str, (random.randint(0, 255) for _ in range(4)))) + '"'
+    ipAddressDst = '"' + '.'.join(map(str, (random.randint(0, 255) for _ in range(4)))) + '"'
+    
+    
+    pkt.new -n pkt0
+    pkt.layer -i $pkt0 -L 50 -t IP dst=$ipAddressDst src=$ipAddressSrc
+    pkt.layer -i $pkt0 -L 40 -t Dot1Q type=0x800 prio=$recvTc vlan=$vlan_tag_inner
+    pkt.layer -i $pkt0 -L 30 -t Dot1Q type=0x8100 prio=$recvTc vlan=$vlan_tag_outer
+    pkt.layer -i $pkt0 -L 20 -t Ether type=0x88A8 src=$macAddressSrc dst=$macAddressDst
+    
+    pkt.rss -i $pkt0 -n hashKey
+    rssRing = $recvTc * (8 if $maxtc <= 4 else 4) + ($hashKey & (0x7 if $maxtc <= 4 else 0x3))
+    
+    
+    mac.set loopback System Packet -l nul
+    mac.rfc.rss.enable
+    
+    mac.init
+    mac.txinit
+    mac.rxinit
+    
+    rssRingReal = $rssRing
+    rssRing = 0:32
+    
+    mac.rxring[$rssRing].set -l nul batchFill 0 #Disable autofill after interrupt
+    mac.rxring[$rssRing].enable
+    mac.rxring[$rssRing].fill 1
+    mac.rxring[$rssRing].commit
+    
+    mac.llh rpfDoubleVlanEnableSet 1
+    
+    writereg 0x5284 0x88A88100
+    
+    mac.txring[$txRing].set PacketMark None -l nul
+    mac.txring[$txRing].enable
+    
+    mac.txring[$txRing].insert -i $pkt0 -C 0 #-v 1
+    
+    #mac.txring[$txRing].dumpdesc -T 1 -l cli
+    #mac.txring[$txRing].dumpbuf -T 1 -l cli
+    mac.txring[$txRing].commit
+    
+    mac.txring[$txRing].clean
+    mac.rxring[$rssRing].clean
+    #mac.txring[$txRing].status
+    #mac.rxring[$rssRing].status
+    #mac.rxring[$rssRing].dumpdesc -H 1 -l cli
+    #mac.rxring[$rssRing].dumpbuf -H 1 -l cli
+    #mac.rxring[$rssRing].status
+    
+    mac.llh -v rdmRxDescriptorHeadPointer rdmRxDescriptorHeadPointerGet $rssRingReal
+    
+    if ($rdmRxDescriptorHeadPointer != 1):
+        finalReport += ['Iteration = $_. No buffers.']
+        mac.rxring[0:32].status
+        break
+    
+    mac.uninit
+
+exec $(PWD)/helpers/showTestResult.txt

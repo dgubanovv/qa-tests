@@ -1,0 +1,115 @@
+test: Rx Filters
+subtests:
+- name: Rx Extractor Overflow
+  script: Mngif2/rxExtOverflowUnicastFilterTest.txt
+  parameters:
+    txRingNo: 0
+    rxRingNo: 0
+    queue: 0
+    filterUnicastIndex: 0
+    filterUnicastMngQueue: 0
+    test_num: '-1'
+- name: Rx ESTAT filter bit
+  script: Mngif2/rxestatBitTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    test_num: '-1'
+- name: Rx VLAN untagged filter test
+  script: Mngif2/rxVlanFilterTestUntagged.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    test_num: '-1'
+- name: VLAN Filter for Broadcast Traffic
+  script: Mngif2/rxVlanFilterTestBroadcast.txt
+  parameters:
+    test_num: '-1'
+- name: VLAN Filter for Multicast Traffic
+  script: Mngif2/rxVlanFilterTestMulticast.txt
+  parameters:
+    test_num: '-1'
+- name: Rx All Multicast Packets
+  script: Mngif2/rxFilterTestAllMulticast.txt
+  parameters:
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Rx Multicast Filter for Unicast
+  script: Mngif2/rxMulticastFilterFortUnicastTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Rx Broadcast Filter
+  script: Mngif2/rxBroadcastFilterTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    test_num: '-1'
+- name: Rx Ethertype Filter
+  script: Mngif2/rxEthertypeFilterTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    test_num: '-1'
+- name: Rx L3/L4 Filter
+  script: Mngif2/rxL3L4FilterTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    vlanMode: False
+    test_num: '-1'
+- name: Rx L3/L4 Filter for IPv6
+  script: Mngif2/rxL3L4FilterTestIpv6.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    vlanMode: True
+    test_num: '-1'
+- name: Rx Multicast Filter
+  script: Mngif2/rxMulticastFilterTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    tests: [[0x11,0, 0, 0, 0, 0xFFF], [0,0x22, 0, 0, 1, 0xAAA], [0,0, 0x44, 0, 2, 0], [0,0, 0, 0x88, 3, 0x555] ]
+    test_num: '-1'
+- name: Rx Unicast Filter
+  script: Mngif2/rxUnicastFilterTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    tests: [ [0x11111111,0,0,0 ], [0,0x22222222,0,0 ] , [0,0,0x44444444,0 ], [0,0,0,0x88888888 ]]
+    test_num: '-1'
+- name: Rx Vlan Filter
+  script: Mngif2/rxVlanFilterTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    tests: [ [0x1111,0,0,0,0,0x8300], [0,0x2222,0,0,1,0x8300], [0,0,0x4444,0,0,0x8200], [0,0,0,0x8888,0,0x8200] ]
+    vlanMode: '0'
+    test_num: '-1'
+- name: Rx L3/L4 Filter Fragmented
+  script: Mngif2/rxL3L4FilterTestfragmented.txt
+  parameters:
+    test_num: '-1'
+- name: Rx L3/L4 Filter with Options
+  script: Mngif2/rxL3L4FilterTestopts.txt
+  parameters:
+    test_num: '-1'
+- name: Rx L3/L4 Filter IPv6 Options
+  script: Mngif2/rxL3L4FilterTestIpv6opts.txt
+  parameters:
+    test_num: '-1'
+- name: Rx L3/L4 Filter IPv6 Fragmented
+  script: Mngif2/rxL3L4FilterTestIpv6fragmented.txt
+  parameters:
+    test_num: '-1'

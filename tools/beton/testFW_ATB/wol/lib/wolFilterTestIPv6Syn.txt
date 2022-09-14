@@ -1,0 +1,154 @@
+#####################################################
+# Input args:
+#
+# flags
+# IPv6SourceAddress
+# IPv6DestAddress
+# TCPSourcePortNumber
+# TCPDestPortNumber
+#
+# Returns
+# result
+#
+#####################################################
+
+#####################################################
+### Init
+#####################################################
+
+reg1 = 0
+reg2 = 0
+
+exec testFW/wol/lib/wolConstants.txt
+exec testFW/drvIface/getBaseAddress.txt
+
+priority             = 0
+packetType           = $ndisPMWoLPacketIPv6TcpSyn
+patternId            = 4
+nextWolPatternOffset = 0
+
+#####################################################
+### CRC Calculation
+#####################################################
+
+exec testFW/wol/lib/crc32/init.txt
+
+byte = 0x86
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0xdd
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x06
+exec testFW/wol/lib/crc32/addByte.txt
+
+if (($IPv6SourceAddress0 != 0) or ($IPv6SourceAddress1 != 0) or ($IPv6SourceAddress2 != 0) or ($IPv6SourceAddress3 != 0)):
+    IPv6Address0 = $IPv6SourceAddress0
+    IPv6Address1 = $IPv6SourceAddress1
+    IPv6Address2 = $IPv6SourceAddress2
+    IPv6Address3 = $IPv6SourceAddress3
+    exec testFW/wol/lib/crc32/addIPv6.txt
+
+if (($IPv6DestAddress0 != 0) or ($IPv6DestAddress1 != 0) or ($IPv6DestAddress2 != 0) or ($IPv6DestAddress3 != 0)):
+    IPv6Address0 = $IPv6DestAddress0
+    IPv6Address1 = $IPv6DestAddress1
+    IPv6Address2 = $IPv6DestAddress2
+    IPv6Address3 = $IPv6DestAddress3
+    exec testFW/wol/lib/crc32/addIPv6.txt
+
+if $TCPSourcePortNumber != 0:
+    TCPPort = $TCPSourcePortNumber
+    exec testFW/wol/lib/crc32/addPort.txt
+
+if $TCPDestPortNumber != 0:
+    TCPPort = $TCPDestPortNumber 
+    exec testFW/wol/lib/crc32/addPort.txt
+
+byte = 0x02
+exec testFW/wol/lib/crc32/addByte.txt
+
+#####################################################
+### Mask Calculation
+#####################################################
+
+exec testFW/wol/lib/mask/init.txt
+
+bitNumber = 12
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 13
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 20
+exec testFW/wol/lib/mask/setBit.txt
+
+if (($IPv6SourceAddress0 != 0) or ($IPv6SourceAddress1 != 0) or ($IPv6SourceAddress2 != 0) or ($IPv6SourceAddress3 != 0)):
+    for bitNumber = 22; $bitNumber <= 37; bitNumber += 1:
+        exec testFW/wol/lib/mask/setBit.txt
+
+if (($IPv6DestAddress0 != 0) or ($IPv6DestAddress1 != 0) or ($IPv6DestAddress2 != 0) or ($IPv6DestAddress3 != 0)):
+    for bitNumber = 38; $bitNumber <= 53; bitNumber += 1:
+        exec testFW/wol/lib/mask/setBit.txt
+
+if $TCPSourcePortNumber != 0:
+    bitNumber = 54
+    exec testFW/wol/lib/mask/setBit.txt
+    bitNumber = 55
+    exec testFW/wol/lib/mask/setBit.txt
+
+if $TCPDestPortNumber != 0:
+    bitNumber = 56
+    exec testFW/wol/lib/mask/setBit.txt
+    bitNumber = 57
+    exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 67
+exec testFW/wol/lib/mask/setBit.txt
+
+#####################################################
+### Write header, drvMsgWoLAdd
+#####################################################
+
+exec testFW/drvIface/drvMsgWolAdd.txt
+
+#####################################################
+### Write wolPattern.wolIpv6Ping
+#####################################################
+
+mac.mcp.writemem $addr $flags -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv6SourceAddress0 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv6SourceAddress1 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv6SourceAddress2 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv6SourceAddress3 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv6DestAddress0  -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv6DestAddress1 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv6DestAddress2 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv6DestAddress3 -l nul
+addr = $addr + 4
+
+ports = $TCPSourcePortNumber | ($TCPDestPortNumber << 16)
+
+mac.mcp.writemem $addr $ports -l nul
+addr = $addr + 4
+
+#####################################################
+### Exec and validate
+#####################################################
+
+exec testFW/wol/lib/wolSendEnableCheck.txt

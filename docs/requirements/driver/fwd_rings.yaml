@@ -1,0 +1,53 @@
+features:
+  fwd_rings:
+    requirement_list:
+      - id: DRV_FWD_RINGS_1
+        description: Through fwd ring traffic should be transmitted.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_2
+        description: In fwd ring traffic should be received.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_3
+        description: FWD ring shall not be enabled by default.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_4
+        description: It should be possible to enable fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_5
+        description: It should be possible to disable fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_6
+        description: It should be possible to request rx fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_7
+        description: It should be possible to request tx fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_8
+        description: It should be possible to release fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_9
+        description: Ethtool should show statistics for FWD rings.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_10
+        description: It should be possible to set size(number of descriptors) fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_11
+        description: It should be possible to set buffer size(individual buffer's size) fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_12
+        description: It should be possible to set page order(page order to use) fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_13
+        description: It should be possible to enable VLAN tag stripping for fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_14
+        description: It should be possible to enable LRO and Lso for fwd ring.
+        products: [linux_forwarding_driver]
+      - id: DRV_FWD_RINGS_15
+        description: It should be possible to set ring's interrupt moderation for fwd ring.
+        products: [linux_forwarding_driver]
+
+
+
+
+

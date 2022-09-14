@@ -1,0 +1,15 @@
+finalReport = []
+
+echo TEST : eFUSE shadowing
+############################################################################################
+#Reading address
+readreg 0x374 -n address -l nul
+#Checking version
+mac.mcp.readmem $address -n eFUSE -l nul
+if $eFUSE != 0:
+    echo PASS: eFUSE is GOOD ($eFUSE)
+else:
+    echo FAIL: eFUSE is BAD. Actual : $eFUSE
+    finalReport += ['(1) eFUSE is BAD. Actual : $eFUSE']
+############################################################################################
+#exec $(PWD)/helpers/showTestResult.txt

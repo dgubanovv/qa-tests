@@ -1,0 +1,226 @@
+# Script for injection overflow on mng queue0
+# To make test packets unique, $mark variable is used. It is incremented on every run.
+# But it should be initialized with start value before first run, e.g. mark = 0 in cli
+# or by pseudo-condition in this script
+
+hostAlreadyInitiated = False
+rxRingNo = 0
+truncatePackets = True
+packetLen = 128
+expStrobe = False
+if $mark == 0:
+    mark = 0
+
+# Packet receive prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+    
+    mac.rxuninit                    # If Rx was already initialized and commited (e.g. by another script), rxinit will not re-init it
+    mac.rxinit                      # So use explicit uninit to init without commit
+                                    # If there are issues with other scripts run after this one, use MBU greater or equal 250803,
+                                    # where getblock is fixed
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill      # Without parameters: by default 0xFFFF
+                                    # Don't commit at once
+
+# Rx Injector prepare
+
+exec $(SCRIPT_PATH)/rxInjRegDefs.txt
+
+pktType = 0
+
+readreg $rxInjStatus2Reg -n status2Reg
+nPackets = ($status2Reg & $rxInjCntMask) >> $rxInjCntShift
+if $nPackets > 0:
+    echo Please run script on clear queue
+    exit
+
+# Set mode
+
+readreg $rxInjCtrlReg -n rxInjCtrl
+if $truncatePackets == True:
+    rxInjCtrl = $rxInjCtrl | $rxInjLimitMask
+else:
+    rxInjCtrl = $rxInjCtrl & ~$rxInjLimitMask
+writereg $rxInjCtrlReg $rxInjCtrl
+headerLen = 16
+
+# Read status reg1 to self-clear errors
+readreg $rxInjStatus1Reg
+
+# Read other status regs for information
+readreg $rxInjStatus2Reg
+readreg $rxInjData1Reg -n injDataSt
+
+finalReport = [] # final report is useful when command line window has huge output
+
+# Inject
+
+# Select injection queue
+rxInjCtrl = $rxInjCtrl & ~$rxInjSelectQueueMask
+writereg $rxInjCtrlReg $rxInjCtrl
+
+for mngMaxPacketCnt = 4; $mngMaxPacketCnt <= 8; mngMaxPacketCnt += 4:
+    # Set Max Packet Count (linked with Max Packet Size)
+    if $mngMaxPacketCnt == 8:
+        rxInjCtrl = $rxInjCtrl & ~$rxInjSizeMask
+    else:
+        rxInjCtrl = $rxInjCtrl | $rxInjSizeMask
+    writereg $rxInjCtrlReg $rxInjCtrl
+    
+    for overflowCase in [True, False]:
+        mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+        if $overflowCase == True:
+            packetCnt = $mngMaxPacketCnt + 1
+                                                       # Don't allow to receive injected packets
+        else:
+            packetCnt = 1
+            mac.rxring[$rxRingNo].commit $packetCnt    # Allow to receive injected packet
+        
+        for packetNo = 0; $packetNo < $packetCnt; packetNo += 1:
+        
+            # 1. Injection
+            mark = $mark + 1
+            
+            # SOP = 1
+            injDataSt = $injDataSt | $rxInjSopMask
+            writereg $rxInjData1Reg $injDataSt
+
+            # Packet Len Header Word
+            headerWord = ($packetLen << 16)
+            writereg $rxInjData2Reg $headerWord
+            if $expStrobe == True:
+                rxInjCtrlWrite1 = $rxInjCtrl | $rxInjWriteMask
+                writereg $rxInjCtrlReg $rxInjCtrlWrite1
+                rxInjCtrlWrite0 = $rxInjCtrl & ~$rxInjWriteMask
+                writereg $rxInjCtrlReg $rxInjCtrlWrite0
+
+            # SOP = 0
+            injDataSt = $injDataSt & ~$rxInjSopMask
+            writereg $rxInjData1Reg $injDataSt
+
+            # Header Rest
+            for hdrByteCnt = 4; $hdrByteCnt < $headerLen; hdrByteCnt += 4:
+                if $hdrByteCnt == 8:
+                    headerWord = ($rxRingNo << $rpbHdrQueueNumShift) | ($pktType << $rpbHdrPktTypeShift)
+                else:
+                    headerWord = 0
+                writereg $rxInjData2Reg $headerWord
+                if $expStrobe == True:
+                    writereg $rxInjCtrlReg $rxInjCtrlWrite1
+                    writereg $rxInjCtrlReg $rxInjCtrlWrite0
+
+            bufStr = ' '
+            for byteCount = 0; $byteCount < $packetLen; byteCount += 4:
+                if $byteCount + 4 >= $packetLen:
+                    # EOP = 1
+                    readreg $rxInjData1Reg -n injDataSt
+                    injDataSt = $injDataSt | $rxInjEopMask
+                    writereg $rxInjData1Reg $injDataSt
+                    byte3 = $mark
+                else:
+                    byte3 = $byteCount + 3
+                
+                byte0 = $byteCount
+                byte1 = $byteCount + 1
+                byte2 = $byteCount + 2
+                packetWord = (($byte0 << 24) & 0xFF000000) | (($byte1 << 16) & 0x00FF0000) | (($byte2 << 8) & 0x00000FF00) | ($byte3 & 0x0000000FF)
+                writereg $rxInjData2Reg $packetWord
+                if $expStrobe == True:
+                    writereg $rxInjCtrlReg $rxInjCtrlWrite1
+                    writereg $rxInjCtrlReg $rxInjCtrlWrite0
+                packetWordToCompare = (($byte3 << 24) & 0xFF000000) | (($byte2 << 16) & 0x00FF0000) | (($byte1 << 8) & 0x00000FF00) | ($byte0 & 0x0000000FF)
+                bufStr = '$bufStr' + ' ' + hex($packetWordToCompare)
+
+            # EOP = 0
+            injDataSt = $injDataSt & ~$rxInjEopMask
+            writereg $rxInjData1Reg $injDataSt
+            
+            # 2. Check errors (dependent on $overflowCase)
+            readreg $rxInjStatus2Reg -n status2Reg
+            nPackets = ($status2Reg & $rxInjCntMask) >> $rxInjCntShift
+            if $overflowCase == True:
+                nPacketsExpected = $packetNo + 1
+                if $nPacketsExpected > $mngMaxPacketCnt:
+                    nPacketsExpected = $mngMaxPacketCnt
+            else:
+                $nPacketsExpected = 0
+            if $nPackets != $nPacketsExpected:
+                str = 'Packet count after injection nPackets = $nPackets, packetNo = $packetNo, overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (1)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+            
+            readreg $rxInjStatus1Reg -n status1Reg
+            status1RegStr = hex($status1Reg)
+            if $packetNo == $mngMaxPacketCnt:
+                if ($status1Reg & $rxInjOfMask) == 0:
+                    str = 'Overflow Error is not set $status1RegStr packetNo = $packetNo, overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (2)'
+                    echo $str
+                    finalReport = $finalReport + ['$str']
+            else:
+                if ($status1Reg & $rxInjOfMask) != 0:
+                    str = 'Overflow Error is set $status1RegStr packetNo = $packetNo, overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (3)'
+                    echo $str
+                    finalReport = $finalReport + ['$str']
+            
+            # 3. Reception (dependent on $overflowCase)
+
+            mac.llh -v rxHead rdmRxDescriptorHeadPointerGet $rxRingNo
+            if $overflowCase == True:
+                rxHeadExpected = $rxHeadBefore
+            else:
+                rxHeadExpected = $rxHeadBefore + $packetCnt
+            if $rxHead != $rxHeadExpected:
+                str = 'Packets received rxHead = $rxHead rxHeadBefore = $rxHeadBefore packetNo = $packetNo, overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (4)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+            mac.rxring[$rxRingNo].clean
+        
+        if $overflowCase == True:
+            # Release queue
+            
+            # Don't want Overflow Error set because we read it during injection
+            #readreg $rxInjStatus1Reg -n status1Reg
+            #status1RegStr = hex($status1Reg)
+            #if ($status1Reg & $rxInjOfMask) == 0:
+            #    str = 'Overflow Error is not set $status1RegStr after all packets injected, overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (5)'
+            #    echo $str
+            #    finalReport = $finalReport + ['$str']
+        
+            mac.rxring[$rxRingNo].commit 1              # Receive one already injected packet
+            mac.llh -v rxHead rdmRxDescriptorHeadPointerGet $rxRingNo
+            if $rxHead != $rxHeadBefore + 1:
+                str = 'One packet is not received rxHead = $rxHead rxHeadBefore = $rxHeadBefore overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (6)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+            readreg $rxInjStatus1Reg -n status1Reg
+            if ($status1Reg & $rxInjOfMask) != 0:
+                status1RegStr = hex($status1Reg)
+                str = 'Overflow Error is set $status1RegStr after one packet received, overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (7)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+            
+            commitCnt = ($mngMaxPacketCnt - 1)
+            mac.rxring[$rxRingNo].commit $commitCnt     # Receive already injected packets
+            mac.llh -v rxHead rdmRxDescriptorHeadPointerGet $rxRingNo
+            if $rxHead != $rxHeadBefore + $mngMaxPacketCnt:
+                str = 'Not all packets received rxHead = $rxHead rxHeadBefore = $rxHeadBefore overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (8)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+            readreg $rxInjStatus1Reg -n status1Reg
+            status1RegStr = hex($status1Reg)
+            if ($status1Reg & $rxInjOfMask) != 0:
+                str = 'Overflow Error is set $status1RegStr after all packets received, overflowCase = $overflowCase, mngMaxPacketCnt = $mngMaxPacketCnt (9)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+            
+            mac.rxring[$rxRingNo].clean        
+
+if len($finalReport) > 0:
+    echo
+    echo FinalReport:
+    for str in $finalReport:
+        echo $str
+echo Script done
+cmd

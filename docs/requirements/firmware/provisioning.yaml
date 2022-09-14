@@ -1,0 +1,9 @@
+features:
+  provisioning:
+    requirement_list:
+      - id: FW_PROVISIONING_PTP_1
+        description: PTP shall be enabled only for Jamaica firmware.
+        products: [PROD_JAMAICA_FIRMWARE_2X, PROD_JAMAICA_FIRMWARE_3X, PROD_FELICITY_FIRMWARE_3X, PROD_BERMUDA_FIRMWARE_3X, PROD_BERMUDA_FIRMWARE_3X_PERONI]
+      - id: FW_PROVISIONING_MEDIA_DETECT_1
+        description: Media detect shall be enabled only for Qualcom and Peroni customers.
+        products: [PROD_JAMAICA_FIRMWARE_3X, PROD_BERMUDA_FIRMWARE_3X, PROD_JAMAICA_FIRMWARE_3X_QUALCOM, PROD_BERMUDA_FIRMWARE_3X_PERONI]

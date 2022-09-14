@@ -1,0 +1,323 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Offloads/rxHeaderSplitTest.txt $
+# $Revision: #9 $
+# $DateTime: 2016/08/10 04:47:54 $
+# $Author: msymol $
+#
+# Script rx header split and field HDR_LEN tests
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+    
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    #mac.set loopback System DMA            # No loopback
+    mac.set loopback System Packet $logTag  #Deep loopback for testing Rx filters
+    
+    mac.rxring[$rxRingNo].get splitHeaderSize -n splitHeaderSize $logTag
+    if $splitHeaderSize == None:
+        mac.rxring[$rxRingNo].set splitHeaderSize 256 $logTag
+    
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag
+    
+    mac.rxinit
+    
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+exec $(PWD)/helpers/enableRPF2.txt
+
+#Configure filters
+mac.llhcache on
+mac.llh -C rpfL2PromiscuousModeEnableSet 1
+mac.llh -C rpfL2BroadcastCountThresholdSet 1
+mac.llh -C rpfL2BroadcastFilterActionSet 1
+mac.llh -C rpfL2BroadcastEnableSet 1
+mac.llh -C rpfL2BroadcastCountResetSet 0
+mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+#for bug 4841
+splits = ['Split', 'NoSplit']
+vLans = ['NoVlan', 'Vlan']
+l3Protocols = ['Some', 'ARP', 'PTP', 'IP', 'IPopts', 'IPoptsProto', 'IPfirstFrag', 'IPotherFrag', 'IPv6', 'IPv6opts', 'IPv6optsProto', 'IPv6firstFrag', 'IPv6otherFrag']
+
+l4ProtoForL3 = [['None']] #For Some
+l4ProtoForL3 += [['None']] #For ARP
+l4ProtoForL3 += [['None']] #For PTP
+l4ProtoForL3 += [['None', 'UDP', 'TCP', 'SCTP', 'ICMP', 'UDPwPTP']] #For IP
+l4ProtoForL3 += [['None', 'UDP', 'TCP', 'SCTP', 'ICMP', 'UDPwPTP', 'TCPopts']] #For IPopts
+l4ProtoForL3 += [['None', 'UDP']] #For IPoptsProto
+l4ProtoForL3 += [['None', 'UDP']]  #For 'IPfirstFrag'
+l4ProtoForL3 += [['None', 'UDP']]  #For 'IPotherFrag'
+l4ProtoForL3 += [['None', 'UDP', 'TCP', 'SCTP', 'ICMPv6EchoRequest', 'UDPwPTP']] #For IPv6
+l4ProtoForL3 += [['None', 'UDP', 'TCP', 'SCTP', 'ICMPv6EchoRequest', 'UDPwPTP', 'TCPopts']] #For IPv6opts
+l4ProtoForL3 += [['None', 'UDP']] #For IPv6optsProto
+l4ProtoForL3 += [['None', 'UDP']]  #For 'IPv6firstFrag'
+l4ProtoForL3 += [['None', 'UDP']]  #For 'IPv6otherFrag'
+
+
+optionsIP = {0x0a}
+
+l3HeaderLengths = [0, 28, 0, 20, 32, 32, 20, 20, 40, 48, 48, 48, 48]
+l4HeaderLengths = [0, 8, 20, 12, 8, 8, 24]
+vLansLength = [0, 4]
+payloadLength1 = 30
+payloadLength2 = 50
+payloadLength3 = 32
+ipv6OptsLength = 8
+#l4ProtoValue = [0, 6, 17, 132, 58, 6]
+for vlan in $vLans:
+    countL3Proto = 0
+    for l3Proto in $l3Protocols:
+        l4Protocols = $l4ProtoForL3[$countL3Proto]
+        for l4Proto in $l4Protocols:
+        
+            #put payload
+            if '$l3Proto' =='IPfirstFrag' or '$l3Proto' =='IPotherFrag' or '$l3Proto' =='IPv6firstFrag' or '$l3Proto' =='IPv6otherFrag':
+                pkt.new -n packet$vlan$l3Proto$l4Proto -p $payloadLength3 
+            elif '$l3Proto' == 'Some' or '$l3Proto' == 'PTP' or '$l4Proto' == 'UDPwPTP':
+                pkt.new -n packet$vlan$l3Proto$l4Proto -p $payloadLength2
+            else:
+                pkt.new -n packet$vlan$l3Proto$l4Proto -p $payloadLength1
+            
+            #put L4 Proto
+            if '$l4Proto' != 'None':
+                if '$l4Proto' == 'UDPwPTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 60 -t UDP dport=319 sport=320
+                elif '$l4Proto' == 'TCPopts':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 60 -t TCP options=[('WScale',100)]
+                else: #TCP, UDP, SCTP, ICMP, UDPwPTP, TCPopts
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 60 -t $l4Proto
+            
+            #put L3 Proto
+            if '$l3Proto' == 'ARP':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto pdst="192.168.16.10" psrc="192.168.0.10"
+                
+            elif '$l3Proto' == 'IP':
+                if '$l4Proto' == 'None':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto proto=0x3D dst="192.168.16.10" src="192.168.0.10"
+                elif '$l4Proto' == 'UDPwPTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto dst="224.0.1.129" src="192.168.0.10"
+                else: #TCP, UDP, SCTP, ICMP
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto dst="192.168.16.10" src="192.168.0.10"
+                    
+            elif '$l3Proto' == 'IPopts':
+                if '$l4Proto' == 'None':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IP proto=0x3D options=$optionsIP dst="192.168.16.10" src="192.168.0.10"
+                elif '$l4Proto' == 'UDPwPTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IP options=$optionsIP dst="224.0.1.129" src="192.168.0.10"
+                else: #TCP, UDP
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IP options=$optionsIP dst="192.168.16.10" src="192.168.0.10"
+                    
+            elif '$l3Proto' == 'IPoptsProto':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IP proto=0x3D options=$optionsIP dst="192.168.16.10" src="192.168.0.10"
+                
+            elif '$l3Proto' == 'IPfirstFrag':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IP id=0xFFFF flags=1 frag=0 #MF = 1
+                
+            elif '$l3Proto' == 'IPotherFrag':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IP id=0xFFFF flags=0 frag=4 #MF = 0
+                
+            elif '$l3Proto' == 'IPv6':
+                if '$l4Proto' == 'SCTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto nh=0x84 src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020"
+                elif '$l4Proto' == 'UDPwPTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto src="fe80::b96d:fc9f:4fc2:1010" dst="ff01:0:0:0:0:0:0:181"
+                else: #None, TCP, UDP, ICMPv6EchoRequest
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020"
+                
+            elif '$l3Proto' == 'IPv6opts':
+                if '$l4Proto' == 'UDPwPTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IPv6 src="fe80::b96d:fc9f:4fc2:1010" dst="ff01:0:0:0:0:0:0:181" nh=0
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=0x11
+                else:
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IPv6 src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020" nh=0
+                    
+                if '$l4Proto' == 'None':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=0x3D
+                elif '$l4Proto' == 'TCP' or '$l4Proto' == 'TCPopts':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=0x06
+                elif '$l4Proto' == 'UDP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=0x11
+                elif '$l4Proto' == 'SCTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=0x84
+                elif '$l4Proto' == 'ICMPv6EchoRequest':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=0x3A
+                
+                
+            elif '$l3Proto' == 'IPv6optsProto':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IPv6 src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020" nh=0
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=0x3D
+                
+            elif '$l3Proto' == 'IPv6firstFrag':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IPv6 src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020" nh=0x2c
+                if '$l4Proto' == 'None':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrFragment nh=0x3D offset=0 m=1 id=0xFFFF
+                elif '$l4Proto' == 'UDP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrFragment nh=0x11 offset=0 m=1 id=0xFFFF
+                
+            elif '$l3Proto' == 'IPv6otherFrag':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t IPv6 src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020" nh=0x2c
+                if '$l4Proto' == 'None': 
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrFragment nh=0x3D offset=4 m=0 id=0xFFFF
+                elif '$l4Proto' == 'UDP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrFragment nh=0x11 offset=4 m=0 id=0xFFFF
+                
+            #put Vlan
+            if '$vlan' == 'Vlan':
+                if '$l3Proto' == 'Some':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 30 -t Dot1Q type=0x22F0
+                elif '$l3Proto' == 'PTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 30 -t Dot1Q type=0x88F7
+                else: #IP, IPv6, ARP
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 30 -t Dot1Q
+                
+            
+            #put L2
+            if '$l3Proto' == 'ARP':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="ff:ff:ff:ff:ff:ff"
+            elif '$l3Proto' == 'Some' and '$vlan' == 'NoVlan':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="10:dd:b1:e6:1d:ad" type=0x22F0
+            elif '$l3Proto' == 'PTP':
+                if'$vlan' == 'NoVlan':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="01:1b:19:00:00:00" type=0x88F7
+                else:
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="01:1b:19:00:00:00"
+            else: #IP, IPv6
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="10:dd:b1:e6:1d:ad"
+                
+            #pkt.dump -i $(packet$vlan$l3Proto$l4Proto)
+        countL3Proto += 1
+
+mac.rxring[$rxRingNo].get -n rxRingSize size $logTag
+for split in $splits:
+    if '$split' == 'NoSplit':
+        writereg 0x00005104 0x3c #1111000
+    else:
+        writereg 0x00005104 0x0 #1111000
+    countvLan = 0
+    for vlan in $vLans:
+        countL3Proto = 0
+        for l3Proto in $l3Protocols:
+            countL4Proto = 0
+            l4Protocols = $l4ProtoForL3[$countL3Proto]
+            for l4Proto in $l4Protocols:
+            
+                #setting Payload
+                if '$l3Proto' =='IPfirstFrag' or '$l3Proto' =='IPotherFrag' or '$l3Proto' =='IPv6firstFrag' or '$l3Proto' =='IPv6otherFrag':
+                    payloadLength = $payloadLength3
+                elif '$l3Proto' == 'Some' or '$l3Proto' == 'PTP' or '$l4Proto' == 'UDPwPTP':
+                    payloadLength = $payloadLength2
+                else:
+                    payloadLength = $payloadLength1
+                #setting expectedHeaderLenght
+                #depending on L4
+                if '$split' == 'NoSplit':
+                    if '$l4Proto' == 'SCTP' or '$l4Proto' == 'ICMP' or '$l4Proto' == 'ICMPv6EchoRequest':
+                        expectedHeaderLength = 14 + $vLansLength[$countvLan] + $l3HeaderLengths[$countL3Proto] #End of L3 header
+                        packetLength = $expectedHeaderLength + $l4HeaderLengths[$countL4Proto] + $payloadLength
+                
+                    #depending on L3    
+                    if '$l3Proto' == 'IPoptsProto':
+                        expectedHeaderLength = 14 + $vLansLength[$countvLan] + $l3HeaderLengths[$countL3Proto] #End of L3 header
+                        packetLength = $expectedHeaderLength + $l4HeaderLengths[$countL4Proto] + $payloadLength
+                    elif '$l3Proto' == 'IPfirstFrag' or '$l3Proto' == 'IPotherFrag' or '$l3Proto' == 'IPv6opts' or '$l3Proto' == 'IPv6optsProto' or '$l3Proto' == 'IPv6firstFrag' or '$l3Proto' == 'IPv6otherFrag' or '$l3Proto' == 'Some' or '$l3Proto' == 'ARP'  or '$l3Proto' == 'PTP':
+                        expectedHeaderLength = 0
+                        packetLength = 14 + $vLansLength[$countvLan] + $l3HeaderLengths[$countL3Proto] + $l4HeaderLengths[$countL4Proto] + $payloadLength
+                    elif '$l4Proto' != 'SCTP' and '$l4Proto' != 'ICMP' and '$l4Proto' != 'ICMPv6EchoRequest':
+                        expectedHeaderLength = 14 + $vLansLength[$countvLan] + $l3HeaderLengths[$countL3Proto] + $l4HeaderLengths[$countL4Proto] #End of L4 header
+                        packetLength = $expectedHeaderLength + $payloadLength
+                else:
+                    if '$l3Proto' == 'IPoptsProto' or '$l3Proto' == 'IPotherFrag':
+                        expectedHeaderLength = 14 + $vLansLength[$countvLan] + $l3HeaderLengths[$countL3Proto]#End of L3 header
+                        packetLength = $expectedHeaderLength + $payloadLength + $l4HeaderLengths[$countL4Proto]
+                    elif '$l3Proto' == 'IPv6opts' or '$l3Proto' == 'IPv6optsProto' or '$l3Proto' == 'IPv6firstFrag' or '$l3Proto' == 'IPv6otherFrag':
+                        expectedHeaderLength = 14 + $vLansLength[$countvLan] + $l3HeaderLengths[$countL3Proto] - $ipv6OptsLength#End of L3 header
+                        packetLength = $expectedHeaderLength + $payloadLength + $l4HeaderLengths[$countL4Proto] + $ipv6OptsLength
+                    else:
+                        expectedHeaderLength = 14 + $vLansLength[$countvLan] + $l3HeaderLengths[$countL3Proto] + $l4HeaderLengths[$countL4Proto] #End of L4 header
+                        packetLength = $expectedHeaderLength + $payloadLength
+                mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+                mac.txring[$txRingNo].status $logTag
+                mac.rxring[$rxRingNo].status $logTag
+
+                mac.txring[$txRingNo].insert -i $(packet$vlan$l3Proto$l4Proto) -b $packetLength
+                mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr -l nul#$logTag
+
+                mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size 80
+                mac.txring[$txRingNo].commit
+                mac.txring[$txRingNo].clean
+                mac.rxring[$rxRingNo].clean
+
+                mac.txring[$txRingNo].status $logTag
+                mac.rxring[$rxRingNo].status $logTag
+                
+                if $rxHeadBefore == ($rxRingSize-1):
+                    $rxHeadBefore = -1
+                mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+                rxCount = $rxHeadGood + 0 - $rxHeadBefore
+                if $rxCount != 1:
+                    finalReport += ['(1)Wrong packet number($rxCount) routed to host(packet$vlan$l3Proto$l4Proto)']
+
+                mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n rxAddr -l nul#$logTag
+                mac.rxring[$rxRingNo].getdescval -H 1 -f headerAddress -n rxHdrAddr -l nul#$logTag
+                mac.rxring[$rxRingNo].getdescval -H 1 -f size -n rxPacketSize -l nul #$logTag
+                mac.rxring[$rxRingNo].getdescval -H 1 -f HDR_LEN -n headerLength -l nul #$logTag
+                mac.rxring[$rxRingNo].dumpbuf -H 1 -l cli #$logTag --size 80
+                
+                if $packetLength != $rxPacketSize:
+                    finalReport += ['(2)Wrong packet size on Rx(packet$vlan$l3Proto$l4Proto)']
+                    break
+                payloadAddr = $pAddr + $expectedHeaderLength
+                mem.cmp -p $payloadAddr -p2 $rxAddr -s $payloadLength -l nul -n cmpRes
+                if $cmpRes == False:
+                    finalReport += ['(3)txPacket payload and rxPacket payload are different']
+                if $expectedHeaderLength !=$headerLength:
+                    finalReport += ['(4)Header length($headerLength) is not equal to expected($expectedHeaderLength) for packet$vlan$l3Proto$l4Proto']
+                mem.cmp -p $pAddr -p2 $rxHdrAddr -s $expectedHeaderLength -l nul -n cmpRes
+                if $cmpRes == False:
+                    finalReport += ['(5)txPacket header and rxPacket header are different']
+                
+                mac.rxring[$rxRingNo].fill 1
+                mac.rxring[$rxRingNo].commit 1
+                countL4Proto += 1
+            countL3Proto += 1
+        countvLan += 1
+
+readreg 0x7040
+
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit
+mac.rxring[$rxRingNo].set splitHeaderSize None $logTag

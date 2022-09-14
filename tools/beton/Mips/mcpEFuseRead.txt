@@ -1,0 +1,22 @@
+logTag = -l nul
+
+readreg 0x374 -n baseAddr $logTag
+for i=0; $i<128; i+=1:
+    addr = $baseAddr + $i*4
+    mac.mcp.readmem $addr -n val $logTag
+    byte0 = 0xFF & $val
+    val /= 0x100
+    byte1 = 0xFF & $val
+    val /= 0x100
+    byte2 = 0xFF & $val
+    val /= 0x100
+    byte3 = 0xFF & $val
+    val = hex(($byte0<<24) | ($byte1<<16) |($byte2<<8) |($byte3))
+    echo $i $val
+
+
+
+
+
+
+

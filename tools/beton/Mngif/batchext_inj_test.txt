@@ -1,0 +1,558 @@
+# Script for batch extract/normal inject Injection/extraction loopback
+# linkSimulatorProtocolDefinitions.txt should be executed first (once is enough)
+# It is excessive but suitable
+
+# 1. Variables and constants
+
+# "Include" protocol definitions
+exec $(SCRIPT_PATH)/linkSimulatorProtocolDefinitions.txt
+# "Include" register definitions
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+exec $(SCRIPT_PATH)/rxInjRegDefs.txt
+
+cldFile = $(SCRIPT_PATH)/mcpLinkSimulator/atlantic_Ram.cld
+responderModeLoop = 2
+responderModeNone = 3
+rpbInjMaxSizeShift = 30
+responderModeReg =  0x364
+
+txRingNo = 0            # Can be configured
+rxRingNo = 0            # Hardcoded in firmware
+packetCnt = 128         # Packets to send with one configuration
+minPacketSize = 64
+maxPacketSize = 4096
+alphaPacketSize = 2     # Alpha and beta for packet size distribution
+betaPacketSize = 5
+
+maxExtractorSize = 2048 # Const
+
+# MAC address for filtering
+macAddrFilter = [0x10, 0xdd, 0xb1, 0xe6, 0x1e, 0xa5]
+macAddrFilterStr = ' '.join([hex(elem) for elem in $macAddrFilter])
+macAddrUnmatchedStr = ' '.join([hex(~elem & 0xFF) for elem in $macAddrFilter])
+macFilterLSW = (($macAddrFilter[2] << 24) & 0xFF000000) | (($macAddrFilter[3] << 16) & 0xFF0000) | (($macAddrFilter[4] << 8) & 0xFF00) | ($macAddrFilter[5] & 0xFF)
+macFilterMSW = (($macAddrFilter[0] << 8) & 0xFF00) | ($macAddrFilter[1] & 0xFF)
+
+# IPv4 address for filtering
+ipv4AddrFilter = [0xa9, 0xfe, 0x01, 0x01]
+ipv4AddrFilterStr = ' '.join([hex(elem) for elem in $ipv4AddrFilter])
+ipv4AddrUnmatchedStr = ' '.join([hex(~elem & 0xFF) for elem in $ipv4AddrFilter])
+ipv4FilterWord0 = (($ipv4AddrFilter[0] << 24) & 0xFF000000) | (($ipv4AddrFilter[1] << 16) & 0xFF0000) | (($ipv4AddrFilter[2] << 8) & 0xFF00) | ($ipv4AddrFilter[3] & 0xFF)
+
+# IPv6 address for filtering
+ipv6AddrLen = 16
+ipv6AddrLenWords = ($ipv6AddrLen / 4)
+ipv6AddrFilter = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+ipv6AddrFilterStr = ' '.join([hex(elem) for elem in $ipv6AddrFilter])
+ipv6AddrUnmatchedStr = ' '.join([hex(~elem & 0xFF) for elem in $ipv6AddrFilter])
+for wordNo = 0; $wordNo < $ipv6AddrLenWords; wordNo += 1:
+    addrByte = ($ipv6AddrLenWords - 1 - $wordNo) * 4
+    ipv6FilterWord$(wordNo) = (($ipv6AddrFilter[$addrByte] << 24) & 0xFF000000) | (($ipv6AddrFilter[$addrByte + 1] << 16) & 0xFF0000) | (($ipv6AddrFilter[$addrByte + 2] << 8) & 0xFF00) | ($ipv6AddrFilter[$addrByte + 3] & 0xFF)
+ethTypeLenIpv6 = 0x86 0xDD
+protoIpv6DaOffset = 24
+
+# Value initialization
+vsize = -s 1            # always use byte array for packet filling
+
+# 2. Host init
+mac.set loopback MCP            # No loopback
+mac.init
+
+mac.txinit
+mac.txring[$txRingNo].set bufSize 4096
+mac.txring[$txRingNo].set maxDmaSize 4096
+mac.txring[$txRingNo].enable    # Prepare Tx ring
+mac.txring[$txRingNo].get size -n txRingSize
+
+mac.rxinit
+mac.rxring[$rxRingNo].set bufSize 2048
+mac.rxring[$rxRingNo].set maxDmaSize 2048
+mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+mac.rxring[$rxRingNo].get size -n rxRingSize
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+
+# 3. Load image
+rpbInjMaxSizeBothQueuesMask = ((1 << $rpbInjMaxSizeShift) << 1) | (1 << $rpbInjMaxSizeShift)
+responderModeRegValue = $rpbInjMaxSizeBothQueuesMask | $responderModeLoop
+writereg $responderModeReg $responderModeRegValue
+mac.mcp.set type MIPS
+mac.mcp.bootLoadCld $cldFile
+
+# 4. Send packets cycles
+
+# TODO replace echo by file output
+
+# Queue0 is used if one queue is enough
+filterConfigurations = ['MAC', 'IPv4', 'IPv6', 'ARP', 'MAC_ARP']
+protocols = ['IPv4', 'IPv6', 'ARP', 'other']
+stopExec = False
+
+for injPacketLimit in [1024, 2048]:           # Injection packet limit variation (outer loop because it requires mcp reboot)
+    if $stopExec == True:
+        break
+    echo injPacketLimit = $injPacketLimit
+    
+    # 4.1 Restart mcp with new injection packet limit value
+
+    # (@note it works because run-stall is implemented as reset,
+    # if the behaviour changes, modify this place)
+    if $injPacketLimit == 2048:
+        responderModeRegValue = $responderModeRegValue & ~$rpbInjMaxSizeBothQueuesMask
+    else:
+        responderModeRegValue = $responderModeRegValue | $rpbInjMaxSizeBothQueuesMask
+    writereg $responderModeReg $responderModeRegValue
+    mac.mcp.stall
+    mac.mcp.run
+    pause 100 ms
+    readreg $rxInjCtrlReg -n rxInjCtrl
+    rxInjPacketSize = $rxInjCtrl & ($rxInjSizeMask | ($rxInjSizeMask << 1))
+    if $injPacketLimit == 1024 and $rxInjPacketSize != 0 or $injPacketLimit == 2048 and $rxInjPacketSize == 0:
+        echo Error: injPacketLimit $injPacketLimit has not been applied
+        stopExec = True
+        break
+    truncatedPackets0 = 0
+    truncatedPackets1 = 0
+    overflow0 = 0
+    overflow1 = 0
+    
+    for filterConfiguration in $filterConfigurations:   # Filters configuration variation 
+        if $stopExec == True:
+            break
+        echo filterConfiguration = $filterConfiguration
+        
+        # 4.2 Set filters configuration
+
+        provideMacAddress = False
+        provideProtocol = False
+        provideIpv4Address = False
+        provideIpv6Address = False
+        provideArpTpaAddress = False
+        
+        # Disable filtering before filter value change
+        readreg $txExtCtrlReg -n txExtCtrl
+        txExtCtrl = $txExtCtrl & ~($txExtMACFilterMask | ($txExtMACFilterMask << 1))
+        txExtCtrl = $txExtCtrl & ~($txExtIPFilterMask | ($txExtIPFilterMask << 1))
+        txExtCtrl = $txExtCtrl & ~($txExtARPFilterMask | ($txExtARPFilterMask << 1))
+        writereg $txExtCtrlReg $txExtCtrl
+        
+        if '$filterConfiguration' == 'MAC':
+            provideMacAddress = True
+            writereg $txExtMACFilter0LSWReg $macFilterLSW
+            writereg $txExtMACFilter0MSWReg $macFilterMSW
+            txExtCtrl = $txExtCtrl | $txExtMACFilterMask
+        elif '$filterConfiguration' == 'IPv4':
+            provideProtocol = True
+            provideIpv4Address = True
+            writereg $txExtIPFilter0Reg1 $ipv4FilterWord0
+            txExtCtrl = $txExtCtrl | $txExtIPFilterMask
+        elif '$filterConfiguration' == 'IPv6':
+            provideProtocol = True
+            provideIpv6Address = True
+            for regNo = 0; $regNo < $ipv6AddrLenWords; regNo += 1:
+                regAddr = $txExtIPFilter0Reg1 + $regNo * 4
+                writereg $regAddr $(ipv6FilterWord$regNo)
+            txExtCtrl = $txExtCtrl | $txExtIPFilterMask
+        elif '$filterConfiguration' == 'ARP':
+            provideProtocol = True
+            provideArpTpaAddress = True
+            writereg $txExtIPFilter0Reg1 $ipv4FilterWord0
+            txExtCtrl = $txExtCtrl | $txExtARPFilterMask
+        else: # 'MAC_ARP'
+            provideProtocol = True
+            provideArpTpaAddress = True
+            provideMacAddress = True
+            # ARP on Queue0
+            # MAC on Queue1
+            writereg $txExtIPFilter0Reg1 $ipv4FilterWord0
+            txExtCtrl = $txExtCtrl | $txExtARPFilterMask
+            writereg $txExtMACFilter1LSWReg $macFilterLSW
+            writereg $txExtMACFilter1MSWReg $macFilterMSW
+            txExtCtrl = $txExtCtrl | ($txExtMACFilterMask << 1)
+        writereg $txExtCtrlReg $txExtCtrl
+        
+        # 4.3 Prepare packets send
+        mac.llh -v txHeadExpect tdmTxDescriptorHeadPointerGet $txRingNo
+        mac.llh -v rxHeadExpect rdmRxDescriptorHeadPointerGet $rxRingNo
+        txHead = $txHeadExpect
+        rxHead = $rxHeadExpect
+        
+        matchedPackets = 0
+        packetsToInject = 0
+        
+        # Start from responderMode == $responderModeLoop
+        responderMode = $responderModeLoop
+        responderModePreparedValue = ($responderModeRegValue & $rpbInjMaxSizeBothQueuesMask) | $responderMode
+        writereg $responderModeReg $responderModePreparedValue
+        packetCountToModeSwitchRange = 6, 11    # Number of packets for sending in one pack while MCP is stalled - can be in this range
+        packetCount0ToModeSwitch = random.randint($packetCountToModeSwitchRange) # Packet count on queue0 to switch mode taken around max packet count
+        
+        extractorQueued0 = 0            # Packets kept in queue while MCP was "stallen"
+        extractorQueued1 = 0
+        delayedPacketsToInject0 = 0     # Packets to inject (those which were kept in extraction queue) 
+        delayedPacketsToInject1 = 0
+        delayedPacketsToInjectAr0 = []  # Lists to keep sizes and addresses of packets which were kept in extraction queue
+        delayedPacketsToInjectAr1 = []
+        
+        for packetNo = 0; $packetNo < $packetCnt; packetNo += 1:
+            if $stopExec == True:
+                break
+            
+            # 4.4.1 Randomize packet size
+            # Increase the possibility of packetSizes less than 2048
+            #txPacketSize = random.randint($minPacketSize, $maxPacketSize)
+            txPacketSize = $minPacketSize + int(random.triangular(0, $maxPacketSize - $minPacketSize, random.betavariate($alphaPacketSize, $betaPacketSize)))
+            # TODO workaround for bug with packet lengths 129 .. 132, 257 .. 260, 385 .. 388, 513 .. 516, 641 .. 644, 769 .. 772, 897 .. 900, ...
+            h3210 = ($txPacketSize & 0x0F)
+            h765 = ($txPacketSize & 0x70)
+            if $h765 == 0 and $h3210 >= 1 and $h3210 <= 4:
+                txPacketSize = ($txPacketSize - 4)
+            
+            # 4.4.2 Insert packet to TX queue
+            mac.txring[$txRingNo].insert -b $txPacketSize -p $txPacketSize
+            mac.txring[$txRingNo].getdescval -T 1 -f paddr -n txPhAddr
+            
+            # TODO provide more convenient packet generator
+            
+            # 4.4.3 Randomize packet match, provide addresses and protocol match/unmatch
+            packetMatch0 = random.getrandbits(1)
+            packetMatch1 = 0
+            
+            if '$filterConfiguration' == 'MAC':
+                macAddressMatch = ($packetMatch0 == 1)
+                
+            elif '$filterConfiguration' == 'IPv4' or '$filterConfiguration' == 'IPv6' or '$filterConfiguration' == 'ARP' or '$filterConfiguration' == 'MAC_ARP':
+                protocolInsert = $filterConfiguration # use the fact that configurations are named as protocols (except for compbine MAC_ARP that is processing below)
+                protocolMatch = True
+                ipAddressMatch = True            
+                if $packetMatch0 == 0:
+                    if random.getrandbits(1) == 1: # Protocol match
+                        ipAddressMatch = False
+                    else:
+                        protocolMatch = False
+                        ipAddressMatch = bool(random.getrandbits(1))
+
+                if '$filterConfiguration' == 'MAC_ARP':
+                    protocolInsert = ARP
+                    # Queue0 ARP loopback
+                    # Queue1 MAC loopback
+                    packetMatch1 = random.getrandbits(1)
+                    macAddressMatch = ($packetMatch1 == 1)
+                    
+            packetMatch = $packetMatch0 + $packetMatch1
+            #echo packetMatch = $packetMatch macAddressMatch = $macAddressMatch protocolMatch = $protocolMatch ipAddressMatch = $ipAddressMatch
+            
+            # 4.4.3.1 "Stall" or "run" MCP if it is needed
+            # TODO As run-stall is not implemented in hardware and reset is undesirable,
+            # switch loopback type to None to "stall" MCP
+            wantedNowAdditional0 = 0    # Packets wanted back in addition to recently send (that were kept in extraction queue)
+            wantedNowAdditional1 = 0
+            packetCount0ToModeSwitch = ($packetCount0ToModeSwitch - $packetMatch0)
+            # Prevent switching to None loopback mode at the last step of current filterConfiguration
+            if $packetCount0ToModeSwitch == 0 and $packetNo == $packetCnt - 1 and $responderMode == $responderModeLoop:
+                echo
+                echo Keep the loop at the end of filterConfiguration
+                packetCount0ToModeSwitch = $packetCount0ToModeSwitch + $packetMatch0
+            # Return to normal loopback mode at the end of current filterConfiguration cycle
+            if $packetNo == $packetCnt - 1 and $responderMode == $responderModeNone:
+                echo
+                echo Switching to loop at the end of filterConfiguration
+                packetCount0ToModeSwitch = 0
+            if $packetCount0ToModeSwitch == 0:
+                packetCount0ToModeSwitch = random.randint($packetCountToModeSwitchRange)
+                echo
+                responderMode = ($responderModeNone if $responderMode == $responderModeLoop else $responderModeLoop)
+                responderModePreparedValue = ($responderModeRegValue & $rpbInjMaxSizeBothQueuesMask) | $responderMode
+                writereg $responderModeReg $responderModePreparedValue
+                if $responderMode == $responderModeNone:
+                    extractorQueued0 = 0
+                    extractorQueued1 = 0
+                    delayedPacketsToInject0 = 0
+                    delayedPacketsToInject1 = 0
+                    delayedPacketsToInjectAr0 = []
+                    delayedPacketsToInjectAr1 = []
+                else:
+                    wantedNowAdditional0 = $delayedPacketsToInject0
+                    wantedNowAdditional1 = $delayedPacketsToInject1
+                    wantedNowAdditional = $wantedNowAdditional0 + $wantedNowAdditional1
+                    
+                    rptCnt = 10
+                    # 4.4.3.2 Check packets receive for queued packets
+                    rxHeadExpect = ($rxHeadExpect + $wantedNowAdditional) % $rxRingSize
+                    for rpt = 0; $rpt < $rptCnt; rpt += 1:
+                        mac.llh -v rxHead rdmRxDescriptorHeadPointerGet $rxRingNo
+                        if $rxHead == $rxHeadExpect:
+                            if $wantedNowAdditional > 0:
+                                break
+                        else:
+                            if $wantedNowAdditional > 0:
+                                pause 1 ms
+                            else:
+                                break
+                    if $rxHead != $rxHeadExpect:
+                        echo Error: rxHead = $rxHead rxHeadExpect = $rxHeadExpect while waiting for queued packets processing
+                        stopExec = True
+                        break
+                    mac.rxring[$rxRingNo].clean
+                    
+                    # 4.4.3.3 Compare packets content for queued packets
+                    # If there are only one queue, simple ordered comparing is possible
+                    if len($delayedPacketsToInjectAr1) == 0:
+                        for rxPacketNo = 0; $rxPacketNo < $wantedNowAdditional; rxPacketNo += 1:
+                            index = ($wantedNowAdditional - $rxPacketNo)
+                            mac.rxring[$rxRingNo].getdescval -H $index -f paddr -n rxPhAddrAdditional
+                            mac.rxring[$rxRingNo].getdescval -H $index -f size -n rxPacketSizeAdditional
+                            txPacketSize2Compare = $delayedPacketsToInjectAr0[$rxPacketNo][0]
+                            txPhAddr2Compare = $delayedPacketsToInjectAr0[$rxPacketNo][1]
+                            if $txPacketSize2Compare != $rxPacketSizeAdditional:
+                                echo Error: txPacketSize2Compare = $txPacketSize2Compare rxPacketSizeAdditional = $rxPacketSizeAdditional
+                                stopExec = True
+                                break
+                            else:
+                                #mem.dump -p $txPhAddr2Compare -s $txPacketSize2Compare -l cli
+                                #mem.dump -p $rxPhAddrAdditional -s $rxPacketSizeAdditional -l cli
+                                mem.cmp -p $txPhAddr2Compare -p2 $rxPhAddrAdditional -s $rxPacketSizeAdditional -l nul -n cmpRes
+                                if $cmpRes == False:
+                                    echo Error: txPacket and rxPacket differ while checking queued packets
+                                    stopExec = True
+                                    break
+                    else:
+                        # @note in this case there is no strong order of packets receive:
+                        # neither $delayedPacketsToInjectAr0, then $delayedPacketsToInjectAr1
+                        # nor $delayedPacketsToInjectAr0[0], $delayedPacketsToInjectAr1[0], $delayedPacketsToInjectAr0[1], $delayedPacketsToInjectAr1[1], $delayedPacketsToInjectAr0[2], ...
+                        # and it's normal by design
+                        # So we look for packets identical to received ones in delayed packets array
+                        #echo $delayedPacketsToInjectAr0
+                        #echo $delayedPacketsToInjectAr1
+                        for rxPacketNo = 0; $rxPacketNo < $wantedNowAdditional; rxPacketNo += 1:
+                            index = ($wantedNowAdditional - $rxPacketNo)
+                            mac.rxring[$rxRingNo].getdescval -H $index -f paddr -n rxPhAddrAdditional
+                            mac.rxring[$rxRingNo].getdescval -H $index -f size -n rxPacketSizeAdditional
+                            # note can be unified for delayedPacketsToInjectAr0 and delayedPacketsToInjectAr1 by name evaluation
+                            if len($delayedPacketsToInjectAr0) > 0:
+                                for delayedPacket in $delayedPacketsToInjectAr0:
+                                    delayedPacketSize = $delayedPacket[0]
+                                    if $delayedPacketSize == $rxPacketSizeAdditional:
+                                        delayedPacketPhAddr = $delayedPacket[1]
+                                        mem.cmp -p $delayedPacketPhAddr -p2 $rxPhAddrAdditional -s $delayedPacketSize -l nul -n cmpRes
+                                        if $cmpRes == True:
+                                            # workaround for list.remove()
+                                            delayedPacketsToInjectAr0 = [packet for packet in $delayedPacketsToInjectAr0 if packet != $delayedPacket]
+                                            break
+                            if len($delayedPacketsToInjectAr1) > 0:
+                                for delayedPacket in $delayedPacketsToInjectAr1:
+                                    delayedPacketSize = $delayedPacket[0]
+                                    if $delayedPacketSize == $rxPacketSizeAdditional:
+                                        delayedPacketPhAddr = $delayedPacket[1]
+                                        mem.cmp -p $delayedPacketPhAddr -p2 $rxPhAddrAdditional -s $delayedPacketSize -l nul -n cmpRes
+                                        if $cmpRes == True:
+                                            # workaround for list.remove()
+                                            delayedPacketsToInjectAr1 = [packet for packet in $delayedPacketsToInjectAr1 if packet != $delayedPacket]
+                                            break
+                        #echo $delayedPacketsToInjectAr0
+                        #echo $delayedPacketsToInjectAr1
+                        if len($delayedPacketsToInjectAr0) > 0 or len($delayedPacketsToInjectAr1) > 0:
+                            echo Error: txPackets and rxPackets differ while checking queued packets in case of both queues working
+                            stopExec = True
+                    if $stopExec == True:
+                        break
+                    if $wantedNowAdditional > 0:
+                        mac.rxring[$rxRingNo].fill $wantedNowAdditional
+                        mac.rxring[$rxRingNo].commit $wantedNowAdditional
+            
+            # 4.4.4 Update matched, wanted back, truncated packets counters
+            matchedPackets = $matchedPackets + $packetMatch
+            txExtractedPacketSize = ($maxExtractorSize if $txPacketSize > $maxExtractorSize else $txPacketSize)
+            packetWanted0 = (0 if $txExtractedPacketSize > $injPacketLimit else $packetMatch0)
+            packetWanted1 = (0 if $txExtractedPacketSize > $injPacketLimit else $packetMatch1)
+            packetWanted = $packetWanted0 + $packetWanted1
+            packetsToInject = $packetsToInject + $packetWanted
+            
+            iterTruncatedPackets0 = ($packetMatch0 if $txPacketSize > $maxExtractorSize else 0)
+            iterTruncatedPackets1 = ($packetMatch1 if $txPacketSize > $maxExtractorSize else 0)
+            
+            # @note it looks like packetWantedNow can be removed and directly packetWanted can be cleared in case of responderModeNone,
+            # but looks more readable and debugable
+            if $responderMode == $responderModeLoop:
+                packetWantedNow = $packetWanted
+                
+                truncatedPackets0 = $truncatedPackets0 + $iterTruncatedPackets0
+                truncatedPackets1 = $truncatedPackets1 + $iterTruncatedPackets1
+                
+            else:
+                packetWantedNow = 0
+                
+                for nQueue = 0; $nQueue < 2; nQueue += 1:
+                    extractorQueued$(nQueue) = $(extractorQueued$nQueue) + $(packetMatch$nQueue)
+                    # TODO: currently expecting overflow flag to be set by hardware when queue is full but not yet overflowed, as workaround for bug 4030 
+                    if $(extractorQueued$nQueue) <= 8:
+                        delayedPacketsToInject$(nQueue) = $(delayedPacketsToInject$nQueue) + $(packetWanted$nQueue)
+                        if $(packetWanted$nQueue) > 0:
+                            # Save packet size and paddr by corresponding queue
+                            delayedPacketsToInjectAr$(nQueue) = $(delayedPacketsToInjectAr$nQueue) + [($txExtractedPacketSize, $txPhAddr)]
+                        truncatedPackets$(nQueue) = $(truncatedPackets$nQueue) + $(iterTruncatedPackets$nQueue)
+                    if $(extractorQueued$nQueue) == 8 and $(packetMatch$nQueue) > 0:
+                        overflow$(nQueue) = $(overflow$nQueue) + 1
+            
+            # 4.4.5 Collect fields that should be inserted to packet
+            fields = []
+            if $provideMacAddress == True:
+                if $macAddressMatch == True:
+                    macAddrInsert = $macAddrFilterStr
+                else:
+                    macAddrInsert = ' '.join([hex(random.randint(0, 255)) for i in range($macAddrLen)])
+                    if '$macAddrInsert' == '$macAddrFilterStr':
+                        macAddrInsert = $macAddrUnmatchedStr
+                # set macAddress
+                fields = $fields + [($protoEthDaOffset, '$macAddrInsert')]
+                
+            if $provideProtocol == True:
+                if $protocolMatch == True:
+                    if '$protocolInsert' == 'ARP':
+                        fields = $fields + [($protoEthHeaderLen + $protoArpCommonOffset, '$arpCommon')]
+                else:
+                    $otherProtocols = [elem for elem in $protocols if elem != '$protocolInsert']
+                    protocolInsert = random.choice($otherProtocols)
+                # set etherType
+                if '$protocolInsert' == 'IPv4':
+                    ethTypeInsert = $ethTypeLenIp
+                elif '$protocolInsert' == 'IPv6':
+                    ethTypeInsert = $ethTypeLenIpv6
+                elif '$protocolInsert' == 'ARP':
+                    ethTypeInsert = $ethTypeLenArp
+                else: # 'other'
+                    ethTypeInsert = 0x09 0x00
+                fields = $fields + [($protoEthTypeLenOffset, '$ethTypeInsert')]
+                    
+            if $provideIpv4Address == True or $provideArpTpaAddress == True:
+                if $ipAddressMatch == True:
+                    ipv4AddrInsert = $ipv4AddrFilterStr
+                else:
+                    ipv4AddrInsert = ' '.join([hex(random.randint(0, 255)) for i in range($ipv4AddrLen)])
+                    if '$ipv4AddrInsert' == '$ipv4AddrFilterStr':
+                        ipv4AddrInsert = $ipv4AddrUnmatchedStr
+                # set ipAddress
+                if $provideIpv4Address == True:
+                    ipAddressOffset = $protoEthHeaderLen + $protoIpDaOffset
+                else:
+                    ipAddressOffset = $protoEthHeaderLen + $protoArpTpaOffset
+                fields = $fields + [($ipAddressOffset, '$ipv4AddrInsert')]
+                
+            if $provideIpv6Address == True:
+                if $ipAddressMatch == True:
+                    ipv6AddrInsert = $ipv6AddrFilterStr
+                else:
+                    ipv6AddrInsert = ' '.join([hex(random.randint(0, 255)) for i in range($ipv6AddrLen)])
+                    if '$ipv6AddrInsert' == '$ipv6AddrFilterStr':
+                        ipv6AddrInsert = $ipv6AddrUnmatchedStr
+                # set ipAddress
+                fields = $fields + [($protoEthHeaderLen + $protoIpv6DaOffset, '$ipv6AddrInsert')]
+            
+            # 4.4.6 Insert collected fields to packet
+            for field in $fields:
+                offset = $field[0]
+                value = $field[1]
+                valueLen = '$value'.count('0x')
+                if $offset + $valueLen > $txPacketSize:
+                    echo Debug: script error offset = $offset len = $valueLen packetSize = $txPacketSize
+                    stopExec = True
+                    break
+                addr = $txPhAddr + $field[0]
+                mem.put $value $vsize -p $addr
+            #mac.txring[$txRingNo].dumpbuf -T 1 -l cli
+            
+            rptCnt = 3
+            # 4.4.7 Send the packet, check packet sending
+            mac.txring[$txRingNo].commit
+            pause 10 ms
+            if $responderMode == $responderModeLoop:
+                mac.txring[$txRingNo].clean
+
+            txHeadExpect = ($txHeadExpect + 1) % $txRingSize
+            for rpt = 0; $rpt < $rptCnt and $txHead != $txHeadExpect; rpt += 1:
+                mac.llh -v txHead tdmTxDescriptorHeadPointerGet $txRingNo
+            if $txHead != $txHeadExpect:
+                echo Error: txHead = $txHead txHeadExpect = $txHeadExpect
+                stopExec = True
+                break
+
+            # 4.4.8 Check packet receive/not receive
+            rxHeadExpect = ($rxHeadExpect + $packetWantedNow) % $rxRingSize
+            for rpt = 0; $rpt < $rptCnt; rpt += 1:
+                mac.llh -v rxHead rdmRxDescriptorHeadPointerGet $rxRingNo
+                if $rxHead == $rxHeadExpect:
+                    if $packetWantedNow > 0:
+                        break
+                else:
+                    if $packetWantedNow > 0:
+                        pause 1 ms
+                    else:
+                        break
+            if $rxHead != $rxHeadExpect:
+                echo Error: rxHead = $rxHead rxHeadExpect = $rxHeadExpect
+                stopExec = True
+                break
+            mac.rxring[$rxRingNo].clean
+
+            # 4.4.9 Compare packets content
+            for rxPacketNo = 0; $rxPacketNo < $packetWantedNow; rxPacketNo += 1:
+                index = ($packetWantedNow - $rxPacketNo)
+                mac.rxring[$rxRingNo].getdescval -H $index -f paddr -n rxPhAddr
+                mac.rxring[$rxRingNo].getdescval -H $index -f size -n rxPacketSize
+                if $txExtractedPacketSize != $rxPacketSize:
+                    echo Error: txExtractedPacketSize = $txExtractedPacketSize txPacketSize = $txPacketSize rxPacketSize = $rxPacketSize
+                    stopExec = True
+                    break
+                else:
+                    mem.cmp -p $txPhAddr -p2 $rxPhAddr -s $rxPacketSize -l nul -n cmpRes
+                    if $cmpRes == False:
+                        echo Error: txPacket and rxPacket differs
+                        stopExec = True
+                        break
+            if $stopExec == True:
+                break
+            if $packetWantedNow > 0:
+                mac.rxring[$rxRingNo].fill $packetWantedNow
+                mac.rxring[$rxRingNo].commit $packetWantedNow
+            
+            #mac.llh -v truncCnts mifGlobalMicroprocessorScratchPad27Get
+            #mac.llh -v ofCnts mifGlobalMicroprocessorScratchPad28Get
+            #str = hex($truncCnts) + ' ' + hex($ofCnts)
+            #echo $str $truncatedPackets1 $truncatedPackets0 $overflow1 $overflow0
+        echo
+        
+        # 4.5 Check diagnostic registers
+        mac.llh -v truncCnts mifGlobalMicroprocessorScratchPad27Get
+        mac.llh -v ofCnts mifGlobalMicroprocessorScratchPad28Get
+        mac.llh -v perrCnts mifGlobalMicroprocessorScratchPad29Get
+        
+        for namedCnts in [($truncCnts, 'trunc', $truncatedPackets1, $truncatedPackets0), ($ofCnts, 'of', $overflow1, $overflow0), ($perrCnts, 'perr', 0, 0)]:
+            cnts = $namedCnts[0]
+            cnt1 = ($cnts >> 16) & 0xFFFF
+            cnt0 = $cnts & 0xFFFF
+            cnt1Wanted = $namedCnts[2]
+            cnt0Wanted = $namedCnts[3]
+            if $cnt1 != $cnt1Wanted or $cnt0 != $cnt0Wanted:
+                name = $namedCnts[1]
+                echo Error: $(name)Cnt1 = $cnt1 / $cnt1Wanted $(name)Cnt0 = $cnt0 / $cnt0Wanted
+                stopExec = True
+                break
+        
+        # 4.6 Put information about performed operations
+        echo packetsToInject = $packetsToInject / matchedPackets = $matchedPackets / $packetCnt
+        if $stopExec == False and $packetsToInject < 5:
+            echo
+            echo !! Few packets to inject on injPacketLimit = $injPacketLimit and filterConfiguration = $filterConfiguration
+            echo
+
+# 5. Finalize the test
+echo
+if $stopExec == True:
+    echo Done with errors, not uninit to get debug information
+else:
+    mac.txuninit
+    mac.rxuninit
+    mac.uninit
+    echo Script done
+
+cmd

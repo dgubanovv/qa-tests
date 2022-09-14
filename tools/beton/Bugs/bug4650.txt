@@ -1,0 +1,132 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4650.txt $
+# $Revision: #3 $
+# $DateTime: 2016/03/17 12:27:40 $
+# $Author: pbelous $
+#
+# Bug 4650 - RPF: No VLAN filter to receive untagged or 0==VlanID packets
+
+ifndef logTag:
+    logTag = -l cli
+ifndef rxRingNo:
+    rxRingNo = 0
+ifndef txRingNo:
+    txRingNo = 0
+    
+mac.set loopback System Packet $logTag #deep loopback
+
+mac.init
+mac.txinit
+mac.txring[$txRingNo].enable
+
+mac.rxinit
+mac.rxring[$rxRingNo].enable
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+mac.isr.disable
+
+
+#Enable Promisc
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 256
+mac.llh -C rpfL2BroadcastFilterActionSet 1
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 1
+mac.llh -C rpfL2BroadcastEnableSet 0
+mac.llh -C rpfVlanPromiscuousModeEnableSet 0
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llh -C rpfVlanInnerEthertypeSet 0x8100
+mac.llhcache off
+
+macAddrSrcStr = '[0xAA,0xBB,0xCC,0xDD,0xEE,0xFF]'
+macAddrDstStr = '[0xA1,0xB1,0xC1,0xD1,0xE1,0xF1]'
+
+pkt.new -n pktVlan0 -p 14
+pkt.layer -i $pktVlan0 -L 60 -t ICMP
+pkt.layer -i $pktVlan0 -L 50 -t IP
+pkt.layer -i $pktVlan0 -L 40 -t Dot1Q prio=6 type=0x800 vlan=0x00 #VLAN ID=0
+pkt.layer -i $pktVlan0 -L 25 -t Ether src=$macAddrSrcStr dst=$macAddrDstStr type=0x8100
+
+pkt.new -n pktVlan10 -p 14
+pkt.layer -i $pktVlan10 -L 60 -t ICMP
+pkt.layer -i $pktVlan10 -L 50 -t IP
+pkt.layer -i $pktVlan10 -L 40 -t Dot1Q prio=6 type=0x800 vlan=0x0a #VLAN ID=10
+pkt.layer -i $pktVlan10 -L 25 -t Ether src=$macAddrSrcStr dst=$macAddrDstStr type=0x8100
+
+pkt.new -n pktVlan5 -p 14
+pkt.layer -i $pktVlan5 -L 60 -t ICMP
+pkt.layer -i $pktVlan5 -L 50 -t IP
+pkt.layer -i $pktVlan5 -L 40 -t Dot1Q prio=6 type=0x800 vlan=0x05 #VLAN ID=5
+pkt.layer -i $pktVlan5 -L 25 -t Ether src=$macAddrSrcStr dst=$macAddrDstStr type=0x8100
+
+pkt.new -n pktNoVlan -p 18
+pkt.layer -i $pktNoVlan -L 60 -t ICMP
+pkt.layer -i $pktNoVlan -L 50 -t IP
+pkt.layer -i $pktNoVlan -L 25 -t Ether src=$macAddrSrcStr dst=$macAddrDstStr
+
+#[vlan filter with ID=10 enabled], [vlan with ID=0 enabled], [Vlan filter untagged enabled]
+testCases = [[1, 0, 0], [1, 1, 1], [0, 1, 0], [0, 0, 1]]
+
+givenPackets = [$pktVlan0, $pktVlan10, $pktVlan5, $pktNoVlan]
+givenPacketsStrs = ['VLAN ID=0', 'VLAN ID=10', 'VLAN ID=5', 'VLAN untagged']
+expectRxCounts = [[0, 1, 0, 0], [1, 1, 0, 1], [1, 0, 0, 0], [0, 0, 0, 1]]
+
+#Configure Vlan Filter (common values for filters)
+filterVlanCfiEnable = 0
+filterVlanCfi = 0
+filterVlanRxQueueEnable = 0
+filterVlanRxQueue = 0
+filterVlanAction = 1
+
+testCaseNo = 0
+
+for testCase in $testCases :
+    #Configure Vlan Filter 0
+    filterVlanIndex = 0
+    filterVlanID = 0x0a
+    filterVlanEnable = $testCase[0]
+    exec $(PWD)/helpers/filtersConfigurators/rxVlanFilter.txt
+    
+    #Configure Vlan Filter 1
+    filterVlanIndex = 1
+    filterVlanID = 0x00
+    filterVlanEnable = $testCase[1]
+    exec $(PWD)/helpers/filtersConfigurators/rxVlanFilter.txt
+
+    vlanUntaggedEnabled = $testCase[2]
+    mac.llh rpfVlanAcceptUntaggedPacketsSet $vlanUntaggedEnabled
+    mac.llh rpfVlanUntaggedActionSet 1
+
+    packetsCount = 0
+    
+    expectRxCount = $expectRxCounts[$testCaseNo]
+    
+    for pkt in $givenPackets :
+        mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+        mac.txring[$txRingNo].insert -i $pkt -b 60 #14+4+20+8 + (payload: 14 for vlan or 18 for no vlan )
+        mac.txring[$txRingNo].commit
+        
+        mac.rxring[$rxRingNo].clean
+        mac.txring[$txRingNo].clean
+
+        mac.txring[$txRingNo].status $logTag 
+        mac.rxring[$rxRingNo].status $logTag
+
+        mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+        rxCount = ($rxHeadGood - $rxHeadBefore)
+
+        if $rxCount != $expectRxCount[$packetsCount] :
+            givenPacketStr = $givenPacketsStrs[$packetsCount]
+            if $rxCount == 0:
+                finalReport += ['$givenPacketStr packet was not received for test case: $testCase']
+            else :
+                finalReport += ['$givenPacketStr packet was received for test case: $testCase']
+            
+            
+        packetsCount += 1
+        
+    testCaseNo += 1
+
+#Show result
+exec $(PWD)/helpers/showTestResult.txt
+
+mac.uninit

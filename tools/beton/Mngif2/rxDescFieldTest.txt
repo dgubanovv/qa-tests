@@ -1,0 +1,224 @@
+# Script rx descriptor fields(HDR_LEN, PKT_TYPE, VLAN_TAG) tests
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    #mac.set loopback System DMA            # No loopback
+    mac.set loopback System Packet $logTag  #Deep loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+
+#Configure filters
+mac.llhcache on
+mac.llh -C rpfL2PromiscuousModeEnableSet 1
+mac.llh -C rpfL2BroadcastCountThresholdSet 1
+mac.llh -C rpfL2BroadcastFilterActionSet 1
+mac.llh -C rpfL2BroadcastEnableSet 1
+mac.llh -C rpfL2BroadcastCountResetSet 0
+mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+readreg 0x5104 -n isSplit
+if $isSplit != 0:
+    writereg 0x5104 0
+
+finalReport = []
+
+vLans = ['NoVlan', 'Vlan']
+l3Protocols = ['IP', 'IPv6', 'Some','ARP', 'PTP']
+
+l4ProtoForL3 = [['None', 'TCP', 'UDP', 'SCTP', 'ICMP', 'UDPwPTP']]
+l4ProtoForL3 += [['None', 'TCP', 'UDP', 'SCTP', 'ICMPv6EchoRequest', 'UDPwPTP']]
+l4ProtoForL3 += [['None']]
+l4ProtoForL3 += [['None']]
+l4ProtoForL3 += [['None']]
+
+l4HeaderLengths = [0, 20, 8, 12, 8, 8]
+l3HeaderLengths = [20, 40, 0, 28, 0]
+vLansLength = [0, 4]
+payloadLength = 30
+l4ProtoValue = [0, 6, 17,132, 58, 6]
+for vlan in $vLans:
+    countL3Proto = 0
+    for l3Proto in $l3Protocols:
+        l4Protocols = $l4ProtoForL3[$countL3Proto]
+        for l4Proto in $l4Protocols:
+            #put payload
+            if '$l3Proto' != 'Some' and '$l3Proto' != 'PTP' and '$l4Proto' != 'UDPwPTP':
+                pkt.new -n packet$vlan$l3Proto$l4Proto -p $payloadLength
+            else:
+                pkt.new -n packet$vlan$l3Proto$l4Proto -p 50
+                
+            #put L4 Proto
+            if '$l4Proto' != 'None':
+                if '$l4Proto' != 'UDPwPTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 60 -t $l4Proto
+                else:
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 60 -t UDP dport=319 sport=320
+            
+            #put L3 Proto
+            if '$l3Proto' == 'ARP':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto pdst="192.168.16.10" psrc="192.168.0.10"
+            elif '$l3Proto' != 'Some' and '$l3Proto' != 'PTP':
+                if '$l3Proto' != 'IPv6':
+                    if '$l4Proto' == 'None':
+                        pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto proto=61 dst="192.168.16.10" src="192.168.0.10"
+                    elif '$l4Proto' == 'UDPwPTP':
+                        pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto dst="224.0.1.129" src="192.168.0.10"
+                    else:
+                        pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto dst="192.168.16.10" src="192.168.0.10"
+                else:
+                    if '$l4Proto' == 'SCTP':
+                        pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto nh=132 src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020"
+                    elif '$l4Proto' == 'UDPwPTP':
+                        pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto src="fe80::b96d:fc9f:4fc2:1010" dst="ff01:0:0:0:0:0:0:181"
+                    else:
+                        pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020"
+            #put Vlan
+            if '$vlan' == 'Vlan':
+                if '$l3Proto' == 'Some':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 30 -t Dot1Q type=0x22F0
+                elif '$l3Proto' == 'PTP':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 30 -t Dot1Q type=0x88F7
+                else:
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 30 -t Dot1Q
+                
+            
+            #put L2
+            if '$l3Proto' == 'ARP':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="ff:ff:ff:ff:ff:ff"
+            elif '$l3Proto' == 'Some' and '$vlan' == 'NoVlan':
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="10:dd:b1:e6:1d:ad" type=0x22F0
+            elif '$l3Proto' == 'PTP':
+                if'$vlan' == 'NoVlan':
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="01:1b:19:00:00:00" type=0x88F7
+                else:
+                    pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="01:1b:19:00:00:00"
+            else:
+                pkt.layer -i $(packet$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="10:dd:b1:e6:1d:ad"
+                
+            #pkt.dump -i $(packet$vlan$l3Proto$l4Proto)
+        countL3Proto += 1
+
+
+countvLan = 0
+mac.rxring[$rxRingNo].get -n rxRingSize size
+for vlan in $vLans:
+    countL3Proto = 0
+    for l3Proto in $l3Protocols:
+        countL4Proto = 0
+        l4Protocols = $l4ProtoForL3[$countL3Proto]
+        for l4Proto in $l4Protocols:
+            if '$l3Proto' == 'Some' or '$l3Proto' == 'PTP' or '$l4Proto' == 'UDPwPTP':
+                payloadLength = 50
+            else:
+                payloadLength = 30
+            expectedHeaderLength = 14 + $vLansLength[$countvLan] + $l3HeaderLengths[$countL3Proto] + $l4HeaderLengths[$countL4Proto]
+            packetLength = $expectedHeaderLength + $payloadLength
+            
+            mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+            mac.txring[$txRingNo].status $logTag
+            mac.rxring[$rxRingNo].status $logTag
+
+            mac.txring[$txRingNo].insert -i $(packet$vlan$l3Proto$l4Proto) -b $packetLength
+            mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+
+            mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size $packetLength
+            mac.txring[$txRingNo].commit
+            mac.txring[$txRingNo].clean
+            mac.rxring[$rxRingNo].clean
+
+            mac.txring[$txRingNo].status $logTag
+            mac.rxring[$rxRingNo].status $logTag
+            
+            if $rxHeadBefore == ($rxRingSize-1):
+                $rxHeadBefore = -1
+            mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+            rxCount = $rxHeadGood + 0 - $rxHeadBefore
+            if $rxCount != 1:
+                finalReport += ['(1)Wrong packet number($rxCount) routed to host(packet$vlan$l3Proto$l4Proto)']
+
+            mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n rxAddr -l nul#$logTag
+            mac.rxring[$rxRingNo].getdescval -H 1 -f size -n rxPacketSize -l nul #$logTag
+            mac.rxring[$rxRingNo].getdescval -H 1 -f HDR_LEN -n headerLength -l nul #$logTag
+            mac.rxring[$rxRingNo].getdescval -H 1 -f VLAN_TAG -n vlanTag -l nul #$logTag
+            mac.rxring[$rxRingNo].getdescval -H 1 -f PKT_TYPE -n packetType -l nul #$logTag
+            
+            if $packetLength != $rxPacketSize:
+                finalReport += ['(2)Wrong packet size on Rx(packet$vlan$l3Proto$l4Proto)']
+                break
+            mem.cmp -p $pAddr -p2 $rxAddr -s $rxPacketSize -l nul -n cmpRes
+            if $cmpRes == False:
+                finalReport += ['(3)txPacket and rxPacket differs']
+            if $expectedHeaderLength !=$headerLength:
+                finalReport += ['(4)Header length($headerLength) not equal to expected($expectedHeaderLength) for packet$vlan$l3Proto$l4Proto']
+
+            expectedVlanTag = 0
+            if '$vlan' == 'Vlan':
+                expectedVlanTag = 1
+            if $vlanTag != $expectedVlanTag:
+                finalReport += ['(5)Vlan tag ($vlanTag) not equal to expected($expectedVlanTag) for packet$vlan$l3Proto$l4Proto']
+            if (($packetType>>5)&3 ) != $countvLan:
+                tmp = ($packetType>>5)&3
+                finalReport += ['(6)PacketType ($tmp) not equal to expected for packet$vlan$l3Proto$l4Proto']
+            if '$l4Proto' != 'None':
+                expectedL4Proto = ($countL4Proto-1)
+                if '$l4Proto' == 'UDPwPTP':
+                    expectedL4Proto = 1
+                if (($packetType>>2)&7 ) != expectedL4Proto:
+                    tmp = ($packetType>>2)&7
+                    finalReport += ['(6)PacketType ($tmp) not equal to expected for packet$vlan$l3Proto$l4Proto']
+                    
+            if '$l3Proto' != 'PTP':
+                if ($packetType&3 ) != $countL3Proto:
+                    tmp = ($packetType)&3
+                    finalReport += ['(7)PacketType ($tmp) not equal to expected for packet$vlan$l3Proto$l4Proto']
+            expectPTP = 0
+            if '$l3Proto' == 'PTP' or '$l4Proto' == 'UDPwPTP':
+                expectPTP = 1
+            if (($packetType>>7)&1 ) != $expectPTP:
+                tmp = ($packetType>>7)&1
+                finalReport += ['(8)PacketType ($tmp) not equal to expected for packet$vlan$l3Proto$l4Proto']
+            mac.rxring[$rxRingNo].fill 1
+            mac.rxring[$rxRingNo].commit 1
+            countL4Proto += 1
+        countL3Proto += 1
+    countvLan += 1
+
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

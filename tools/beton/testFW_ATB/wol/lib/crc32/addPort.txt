@@ -1,0 +1,4 @@
+byte = ($TCPPort >> 8) & 0xFF
+exec testFW/wol/lib/crc32/addByte.txt
+byte = ($TCPPort >> 0) & 0xFF
+exec testFW/wol/lib/crc32/addByte.txt

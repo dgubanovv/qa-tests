@@ -1,0 +1,11 @@
+#read mcp mem single value with 4b size, IN: baseAddr - base MCP DRAM address, pCount - num of values, ramSize - size of DRAM
+#OUT: values
+
+values = []
+for i = 0; $i <= $pCount*4; i+=4:
+    if $i >= $ramSize:
+        break
+    addr = $baseAddr + $i
+    mac.mcp.readmem $addr -n val -l nul
+    values +=[[$val]]
+    

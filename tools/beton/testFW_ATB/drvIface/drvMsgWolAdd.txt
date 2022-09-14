@@ -1,0 +1,18 @@
+#drvMsgWoLAdd
+
+addr = $BASEADDR
+
+mac.mcp.writemem $addr $drvMsgWolAdd -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $priority -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $packetType -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $patternId -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $nextWolPatternOffset -l nul
+addr = $addr + 4

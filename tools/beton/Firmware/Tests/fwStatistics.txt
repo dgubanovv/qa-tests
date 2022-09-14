@@ -1,0 +1,31 @@
+ifndef expfwHostInterfaceVersion:
+    expfwHostInterfaceVersion = 4
+    
+finalReport = []
+
+echo TEST : FW Statistics
+############################################################################################
+#Reading address
+readreg 0x360 -n address -l nul
+#Checking version
+mac.mcp.readmem $address -n fwHostInterfaceVersion -l nul
+if $fwHostInterfaceVersion == $expfwHostInterfaceVersion:
+    echo PASS: fwHostInterfaceVersion is GOOD ($fwHostInterfaceVersion)
+else:
+    echo FAIL: fwHostInterfaceVersion is BAD. Expected : $expfwHostInterfaceVersion. Actual : $fwHostInterfaceVersion
+    finalReport += ['(1) fwHostInterfaceVersion is BAD. Expected : $expfwHostInterfaceVersion. Actual : $fwHostInterfaceVersion']
+
+#Checking transactionId
+address = $address + 4
+mac.mcp.readmem $address -n fwHostInterfaceTransactionId1 -l nul
+pause 500 ms
+mac.mcp.readmem $address -n fwHostInterfaceTransactionId2 -l nul
+pause 500 ms
+mac.mcp.readmem $address -n fwHostInterfaceTransactionId3 -l nul
+if $fwHostInterfaceTransactionId3 > $fwHostInterfaceTransactionId2 > $fwHostInterfaceTransactionId1:
+    echo PASS: fwHostInterfaceTransactionId is incremented ($fwHostInterfaceTransactionId1, $fwHostInterfaceTransactionId2, $fwHostInterfaceTransactionId3)
+else:
+    echo FAIL: fwHostInterfaceVersion is BAD. Actual : $fwHostInterfaceTransactionId1, $fwHostInterfaceTransactionId2, $fwHostInterfaceTransactionId3
+    finalReport += ['(2) fwHostInterfaceVersion is BAD. Actual : $fwHostInterfaceTransactionId1, $fwHostInterfaceTransactionId2, $fwHostInterfaceTransactionId3']
+############################################################################################
+#exec $(PWD)/helpers/showTestResult.txt

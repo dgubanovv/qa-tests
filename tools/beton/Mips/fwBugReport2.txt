@@ -1,0 +1,8 @@
+readreg 0x404
+readreg 0x18
+readreg 0x520
+readreg 0x350:0x374
+writereg 0x520 1
+mac.mcp.dbgBuffer -e
+pause 2
+mac.mcp.dbgBuffer -d

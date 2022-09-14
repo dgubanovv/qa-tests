@@ -1,0 +1,5 @@
+mac.llh -v parityError -C $injectionQueueParityErrorGet $queue
+if  $(parityError) != $expectedParityError:
+    str = '$stringId Parity error bit for queue $queue not equal to expected (which is $expectedParityError)'
+    echo $str
+    finalReport = $finalReport + ['$str']

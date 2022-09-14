@@ -1,0 +1,15 @@
+#read mcp mem double values with 4b size , IN: baseAddr - base MCP DRAM address, pCount - num of values, ramSize - size of DRAM
+#OUT: values
+
+values = []
+for i = 0; $i <= $pCount*8; i+=8:
+    if $i >= $ramSize:
+        break
+    addr1 = $baseAddr + $i
+    addr2 = $addr1 + 4
+    mac.mcp.readmem $addr1 -n val1 -l nul
+    mac.mcp.readmem $addr2 -n val2 -l nul
+    if $i != 0 and $val1==0:
+        break
+    values +=[[$val1, $val2 ]]
+    

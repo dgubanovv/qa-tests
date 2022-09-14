@@ -1,0 +1,158 @@
+#!Steps to reproduce:
+#!1. Send 3 packets and extract from Tx
+#!2. Check extraction queue
+#!3. Inject any packet to Tx injection queue 0
+#!4. Check packets in Rx ring
+#!
+#!Expected result: packet on Rx should be not corrupted
+#!Actual result: packet on Rx should be not corrupted. Corruption is replacement of Ethertype field by garbage
+
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    injType = tx
+    logTag = -l cli
+    
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef logTag:
+        logTag = -l cli
+
+if $hostAlreadyInitiated == False:
+    mac.set loopback System Packet $logTag
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable        
+
+
+queueActive = [1,0]    
+exec $(PWD)/helpers/enableRPF2.txt
+exec $(PWD)/helpers/enableTPO2.txt
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/tpbInjectorLlhNames.txt
+exec $(PWD)/helpers/tpoExtractorLlhNames.txt
+exec $(PWD)/helpers/configureTxExtFilters.txt
+
+# Send 3 packets and extract from Tx
+packetToSend = 3
+packetSize = 64
+
+for i = 0; $i < $packetToSend; i +=1:
+    mac.llh -v isInterrupt $extractionQueueInterruptGet $queue
+
+    mac.txring[$txRingNo].insert -b $packetSize -p $packetSize -f indexed_uniq_ramp
+    mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+    #mem.dump -p $pAddr -s $packetSize -l cli
+
+    str = $macAddrFilters[$queue]
+    mem.put $str -s 1 -p $pAddr
+
+    # mac.txring[$txRingNo].dumpdesc -T 1 -l dumptx  $logTag
+    # mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx  $logTag --size 80
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+
+    mac.llh -v isInterrupt $extractionQueueInterruptGet $queue
+
+    # Packet Extract
+    exec $(PWD)/helpers/extractAndCompare.txt
+    mac.llh -v isInterrupt $extractionQueueInterruptGet $queue
+
+
+# Inject any packet to Tx injection queue 0
+headerLen = 12
+mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+# Inject
+
+# Select injection queue
+mac.llh $injectionSelectSet $(queue)
+
+# SOP = 1
+mac.llh $injectionPacketSopSet 1
+
+# Packet Len Header Word
+if '$injType' == 'tx':
+    headerWord = $packetSize
+else:
+    headerWord = ($packetSize << 16)
+mac.llh $injectionPacketDataSet $headerWord
+
+# SOP = 0
+mac.llh $injectionPacketSopSet 0
+
+rpbHdrQueueNumShift = 12
+# Header Rest
+
+for hdrByteCnt = 4; $hdrByteCnt < $headerLen; hdrByteCnt += 4:
+    if $hdrByteCnt == 8:
+        if '$injType' == 'tx':
+            headerWord = 0
+        else:
+            headerWord = ($rxRingNo << $rpbHdrQueueNumShift)
+    else:
+        headerWord = 0
+    mac.llh $injectionPacketDataSet $headerWord
+
+bufStr = ' '
+for byteCount = 0; $byteCount < $packetSize; byteCount += 4:
+    if $byteCount + 4 >= $packetSize:
+        # EOP = 1
+        mac.llh $injectionPacketEopSet 1
+
+    byte0 = $byteCount
+    byte1 = $byteCount + 1
+    byte2 = $byteCount + 2
+    byte3 = $byteCount + 3
+    packetWord = (($byte3 << 24) & 0xFF000000) | (($byte2 << 16) & 0x00FF0000) | (($byte1 << 8) & 0x00000FF00) | ($byte0 & 0x0000000FF)
+    bufStr = '$bufStr' + ' ' + hex($packetWord)
+    mac.llh $injectionPacketDataSet $packetWord
+
+# EOP = 0
+mac.llh $injectionPacketEopSet 0
+
+# Check errors
+mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet $rxRingNo
+if $rxHeadAfter != $rxHeadBefore + 1:
+    finalReport += ['(2)After injection head not updated']
+
+mac.rxring[$rxRingNo].clean
+mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n pAddr $logTag
+mac.rxring[$rxRingNo].getdescval -H 1 -f size -n byteCnt $logTag
+# Check received data
+if $byteCnt != $packetSize:
+    finalReport = $finalReport + ['(3)Wrong byte count $byteCnt received']
+
+mem.cmp -p $pAddr -s $packetSize -V $bufStr -n compareResult $logTag
+if $compareResult != True:
+    finalReport = $finalReport + ['(4) Memory compare failed for injected packet']
+
+
+mac.rxring[$rxRingNo].dumpbuf -H 1 --size 80
+
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

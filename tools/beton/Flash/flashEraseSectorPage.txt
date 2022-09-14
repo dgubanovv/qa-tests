@@ -1,0 +1,87 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Flash/flashEraseSectorPage.txt $
+# $Revision: #5 $
+# $DateTime: 2016/05/06 20:56:05 $
+# $Author: ryanv $
+#
+# sample auto-test script sample, ready to copy&paste
+#
+log.hw Disable #disabled to speed up test
+
+ok = 1
+flash.init
+flash.get jedecid -n FLASH_CONST_JEDECID -l nul
+flash.get flashSize -n FLASH_CONST_FLASH_SIZE -l nul
+flash.get dataChunkSize -n FLASH_CONST_DATA_CHUNK_SIZE -l nul
+flash.get pageSize -n FLASH_CONST_PAGE_SIZE -l nul
+flash.get pagesPerSmallestGroup -n FLASH_CONST_PAGES_PER_GROUP -l nul
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+flashSizeBytes = $FLASH_CONST_FLASH_SIZE
+programCt = ($FLASH_CONST_PAGE_SIZE // $FLASH_CONST_DATA_CHUNK_SIZE)
+    
+blockSize = ($FLASH_CONST_PAGES_PER_GROUP * $FLASH_CONST_PAGE_SIZE)
+
+flash.getPower2Status -n flashPageSizeIsPowerOf2
+if not $flashPageSizeIsPowerOf2:
+    echo Flash page size is not a power of 2! Setting to power of 2 now...
+    flash.setPower2 -n setPower2Successful
+    if not $setPower2Successful:
+        echo Setting flash page size to power of 2 was not successful. Aborting script...
+        finalReport = $finalReport + ['(1) Flash page size was not power of 2 and attempt to force it to power of 2 failed.']
+        ok = 0
+
+flash.jedecid -n id
+if $id != $FLASH_CONST_JEDECID:
+    hex_var = hex($FLASH_CONST_JEDECID)
+    finalReport = $finalReport + ['(2) JEDECID not equal to $hex_var']
+    ok = 0
+
+#Fill entire space with zeros
+for addr = 0; $addr < $flashSizeBytes and $ok == 1; addr+= $FLASH_CONST_PAGE_SIZE: 
+    if ($addr % 102400) == 0:
+        echo .
+    if ($addr % 1024000) == 0:
+        echo addr = $addr
+    flash.program -a $addr -c $programCt 0x0
+    ifndef hideResult:
+        echo zero-filling: $addr
+
+#Erase odd blocks
+for addr = 0; $addr < $flashSizeBytes and $ok == 1; addr+= ($blockSize * 2):
+    if ($addr % 102400) == 0:
+        echo .
+    if ($addr % 1024000) == 0:
+        echo addr = $addr
+    currentAddress = ($addr // $blockSize)
+    flash.erase -a $currentAddress -s $FLASH_CONST_PAGES_PER_GROUP
+    ifndef hideResult:
+        echo erasing: $currentAddress
+
+#Check blocks
+expected = 0xFFFFFFFF
+for i = 0; $i < $flashSizeBytes and $ok == 1; i+= $blockSize:
+    for k = 0; $k < $blockSize and $ok == 1; k+= $FLASH_CONST_PAGE_SIZE:
+        currentAddress = $i + $k
+        if ($currentAddress % 102400) == 0:
+            echo .
+        if ($currentAddress % 1024000) == 0:
+            echo currentAddress = $currentAddress
+        flash.read -a $currentAddress -s $programCt -n data
+        for d in $data:
+            if expected == 0xFFFFFFFF and $d != $expected:
+                finalReport = $finalReport + ['(3) Erase failed on address $currentAddress']
+                ok = 0
+                break
+            elif expected == 0x00000000 and $d != $expected:
+                finalReport = $finalReport + ['(4) Unexpected erase on address $currentAddress']
+                ok = 0
+                break
+        if $expected == 0xFFFFFFFF:
+            expected = 0x00000000
+        else:
+            expected = 0xFFFFFFFF
+        ifndef hideResult:
+            echo check erase: $currentAddress
+
+exec $PWD/helpers/showTestResult.txt
+log.hw Enable

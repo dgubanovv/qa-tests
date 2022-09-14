@@ -1,0 +1,245 @@
+test: Injector/Extractor
+subtests:
+- name: Rx Extractor Checksum
+  script: Mngif2/tpoExtChecksumTest.txt
+  parameters:
+    txRingNo: '0'
+    queue: '0'
+    extType: rx
+    test_num: '-1'
+- name: Rx Extractor Checksum IPv6
+  script: Mngif2/tpoExtChecksumIpv6Test.txt
+  parameters:
+    txRingNo: '0'
+    queue: '0'
+    injType: rx
+    extType: rx
+    queueActive: '[1, 0]'
+    test_num: '-1'
+- name: Tx Extractor Checksum IPv6
+  script: Mngif2/tpoExtChecksumIpv6Test.txt
+  parameters:
+    txRingNo: '0'
+    queue: '0'
+    injType: rx
+    extType: tx
+    queueActive: '[1, 0]'
+    test_num: '-1'
+- name: Tx Extractor Checksum
+  script: Mngif2/tpoExtChecksumTest.txt
+  parameters:
+    txRingNo: '0'
+    queue: '0'
+    extType: tx
+    test_num: '-1'
+- name: Tx Extractor Large Traffic
+  script: Mngif2/extLargeTrafficTest.txt
+  timeout: 900
+  parameters:
+    extType: tx
+    test_num: '-1'
+- name: Rx Extractor Overflow for RRO
+  script: Mngif2/extOverflowTestRRO.txt
+  parameters:
+    txRingNo: '0'
+    extType: rx
+    queueActive: '[1, 0]'
+    hw_options: 'B0RRO'
+    test_num: '-1'
+- name: Large Packet Rx Injection
+  script: Mngif2/rpbInjLargePacketTest.txt
+  parameters:
+    rxRingNo: '0'
+    queue: '0'
+    injType: rx
+    packetMaxSizeKB: '1'
+    test_num: '-1'
+- name: Large Packet Tx Injection
+  script: Mngif2/rpbInjLargePacketTest.txt
+  parameters:
+    rxRingNo: '0'
+    queue: '0'
+    injType: tx
+    packetMaxSizeKB: '1'
+    test_num: '-1'
+- name: Large Packet Rx Extraction >2K
+  script: Mngif2/extLargePacketTestMoreThan2048.txt
+  parameters:
+    txRingNo: '0'
+    segCount: '1'
+    extType: rx
+    queueActive: '[1,0]'
+    test_num: '-1'
+- name: Large Packet Tx Extraction >2K
+  script: Mngif2/extLargePacketTestMoreThan2048.txt
+  parameters:
+    txRingNo: '0'
+    segCount: '1'
+    extType: tx
+    queueActive: '[1,0]'
+    test_num: '-1'
+- name: Large Packet Rx Injection >2K
+  script: Mngif2/rpbInjLargePacketTestMoreThan2048.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    injType: rx
+    queueActive: '[1,0]'
+    test_num: '-1'
+- name: Large Packet Tx Injection >2K
+  script: Mngif2/rpbInjLargePacketTestMoreThan2048.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    injType: tx
+    queueActive: '[1,0]'
+    test_num: '-1'
+- name: Rx Minimal Packet Extraction
+  script: Mngif2/extMinTest.txt
+  parameters:
+    txRingNo: '0'
+    queue: '0'
+    extType: rx
+    test_num: '-1'
+- name: Tx Minimal Packet Extraction
+  script: Mngif2/extMinTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    extType: tx
+    test_num: '-1'
+- name: Rx Minimal Packet Injection
+  script: Mngif2/injMinTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    injType: rx
+    test_num: '-1'
+- name: Tx Minimal Packet Injection
+  script: Mngif2/injMinTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    queue: '0'
+    injType: tx
+    test_num: '-1'
+- name: Rx Extraction Parity Error
+  script: Mngif2/extParityTest.txt
+  parameters:
+    txRingNo: '0'
+    queueActive: '[1,0]'
+    queue: '0'
+    extType: rx
+    segCount: '1'
+    test_num: '-1'
+- name: Tx Extraction Parity Error
+  script: Mngif2/extParityTest.txt
+  parameters:
+    txRingNo: '0'
+    queueActive: '[1,0]'
+    queue: '0'
+    extType: tx
+    segCount: '1'
+    test_num: '-1'
+- name: Rx Extractor Overflow
+  script: Mngif2/extOverflowTest.txt
+  parameters:
+    txRingNo: '0'
+    extType: rx
+    queueActive: '[1, 0]'
+    segCount: '1'
+    test_num: '-1'
+- name: Tx Extractor Overflow
+  script: Mngif2/extOverflowTest.txt
+  parameters:
+    txRingNo: '0'
+    extType: tx
+    queueActive: '[1, 0]'
+    segCount: '1'
+    test_num: '-1'
+- name: Rx Extraction Multiple Segments 2K
+  script: Mngif2/extLargePacketTest2048.txt
+  parameters:
+    txRingNo: '0'
+    segCount: '1'
+    extType: rx
+    queueActive: '[1,0]'
+    test_num: '-1'
+- name: Tx Extraction Multiple Segments 2K
+  script: Mngif2/extLargePacketTest2048.txt
+  parameters:
+    txRingNo: '0'
+    segCount: '1'
+    extType: tx
+    queueActive: '[1,0]'
+    test_num: '-1'
+- name: Rx Injection Parity Error
+  script: Mngif2/rpbInjParityTest.txt
+  parameters:
+    rxRingNo: '0'
+    injType: rx
+    queue: '0'
+    test_num: '-1'
+- name: Tx Injection Parity Error
+  script: Mngif2/rpbInjParityTest.txt
+  parameters:
+    txRingNo: '0'
+    injType: tx
+    queue: '0'
+    test_num: '-1'
+- name: Mix Host and MIF Packets
+  script: Mngif2/injHostAndMIFPktTest.txt
+  parameters:
+    injType: 'tx'
+    test_num: '-1'
+- name: Tx Extraction ARP Filter
+  script: Mngif2/txExtArpFilterTest.txt
+  parameters:
+    txRingNo: '0'
+    queue: '0'
+    test_num: '-1'
+- name: Tx Extraction IP Filter
+  script: Mngif2/txExtIpFilterTest.txt
+  parameters:
+    txRingNo: '0'
+    queue: '0'
+    test_num: '-1'
+- name: Tx Extraction MAC and IP Filter
+  script: Mngif2/txExtMacAndIpFiltersTest.txt
+  parameters:
+    txRingNo: '0'
+    queue: '0'
+    test_num: '-1'
+- name: Tx Extraction MAC Filter
+  script: Mngif2/txExtMacFilterTest.txt
+  parameters:
+    txRingNo: '0'
+    test_num: '-1'
+- name: Various Length Rx Injection
+  script: Mngif2/rpbInjVarLenTest.txt
+  parameters:
+    rxRingNo: 0
+    txRingNo: 0
+    queue: 0
+    injType: 'rx'
+    startPacketLen: 64
+    endPacketLen: 520
+    packetLenStep: 1
+    test_num: '-1'
+- name: Various Length Tx Injection
+  script: Mngif2/rpbInjVarLenTest.txt
+  parameters:
+    rxRingNo: 0
+    txRingNo: 0
+    queue: 0
+    injType: 'tx'
+    startPacketLen: 64
+    endPacketLen: 520
+    packetLenStep: 1
+    test_num: '-1'
+- name: WoL Queue Test
+  script: Mngif2/extTestWoLRRO.txt
+  parameters:
+    test_num: '-1'

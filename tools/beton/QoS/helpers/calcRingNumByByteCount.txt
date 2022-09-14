@@ -1,0 +1,19 @@
+#IN: values = list of values, outputFileName - file name for output, 
+#byteCountValIndex - index of byteCount value
+#OUT - file output 
+#len = len($values)
+byteSentPrev = 0
+#packetCountPrev = 0
+shell echo > $outputFileName
+for elem in $values:
+    if $elem[0]!=0:
+        byteSent = $elem[$byteCountValIndex]
+        dif = ($byteSent - $byteSentPrev)
+        ring = $dif & 0x1F
+        shell echo Ring$ring >> $outputFileName
+        byteSentPrev = $byteSent
+        #if $dif>$packetLength:
+        #    echo dif = $dif
+        #if $packetCountPrev +1 != $elem[0]:
+        #    echo missed packet $elem[0], packetCountPrev=$packetCountPrev
+        #packetCountPrev = $elem[0]

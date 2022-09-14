@@ -1,0 +1,45 @@
+#txtmp$ring = $currentFolder/$(fileNum$ring)
+#txtmp$ring = $(txtmp$ring)_ring$ring
+#txtmp$ring = $(txtmp$ring)_ztx.txt
+#rxtmp$ring = $currentFolder/$(fileNum$ring)
+#rxtmp$ring = $(rxtmp$ring)_ring$ring
+#rxtmp$ring = $(rxtmp$ring)_zrx.txt
+
+#shell ./Scripts/dumpconverter.py -i $(txfile$ring) -o $(txtmp$ring) -m $mark
+#shell ./Scripts/dumpconverter.py -i $(rxfile$ring) -o $(rxtmp$ring) -m $mark
+
+#shell fc $(txtmp$ring) $(rxtmp$ring) > nul
+
+#if $ring < 10:
+#	testGroup = acRing0$ring
+#else:
+#	testGroup = acRing$ring        
+#scmp.isEmpty -g $testGroup -l cli -n scmp_error
+#scmp.status -g $testGroup -l scmp
+
+
+if $ring < 10:
+	testGroup = acRing0$ring
+else:
+	testGroup = acRing$ring        
+scmp.isEmpty -g $testGroup -l cli -n scmp_error
+scmp.status -g $testGroup -l scmp
+
+#set error flag if dumps aren't equal
+if $scmp_error != 0:
+	shell echo [  FAILED  ] $testplanName.$fixtureName.$testName >> $runResults
+
+	error = 2
+
+else:
+	error = 0
+	if $lastCmp == 1:
+		if $ring == ($numOfRings - 1):
+			shell echo [       OK ] $testplanName.$fixtureName.$testName >> $runResults
+		lastCmp = 0
+
+	#shell del $(txfile$ring)
+	#shell del $(rxfile$ring)
+	#shell del $(txtmp$ring)
+	#shell del $(rxtmp$ring)
+

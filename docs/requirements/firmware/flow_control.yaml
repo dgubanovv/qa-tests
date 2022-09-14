@@ -1,0 +1,83 @@
+features:
+  flow_control:
+    requirement_list:
+      - id: FW_FLOW_CONTROL_1
+        description: Flow control should be disabled by default (i.e. after kickstart) when driver is not present; when flow control is disabled MAC should not process or generate any pause frames.
+        products: [atlantic1_firmware_3x, jamaica_firmware_2x, jamaica_firmware_3x, felicity_firmware_3x, bermuda_firmware_3x, pacific_firmware, fiji_firmware]
+      - id: FW_FLOW_CONTROL_2
+        description: It should be possible to enable symmetric, asymmetric or both pause frame settings.
+        products: [atlantic1_firmware_3x, jamaica_firmware_2x, jamaica_firmware_3x, felicity_firmware_3x, bermuda_firmware_3x, pacific_firmware, fiji_firmware]
+        note: Is that possible on Pacific (Fiji)?
+        marks:
+          - ready: no
+      - id: FW_FLOW_CONTROL_3
+        description: Enabling symmetric pause frames should instruct MAC to process incomming pause frames; if only symmetric pause frames are enabled so MAC should never generate pause frames.
+        products: [atlantic1_firmware_2x, atlantic1_firmware_3x, pacific_firmware]
+      - id: FW_FLOW_CONTROL_4
+        description: Enabling asymmetric pause frames should instruct MAC to generate pause frames; if only asymmetric pause frames are enabled so MAC should never process incoming pause frames.
+        products: [atlantic1_firmware_3x, jamaica_firmware_2x, jamaica_firmware_3x, felicity_firmware_3x, bermuda_firmware_3x, pacific_firmware, fiji_firmware]
+      - id: FW_FLOW_CONTROL_5
+        description: It should be possible to enable link pause frames or PFC; and it should not be possible to enable both link pauses and PFC simultaneously.
+        products: [atlantic1_firmware_3x, jamaica_firmware_2x, jamaica_firmware_3x, felicity_firmware_3x, bermuda_firmware_3x, pacific_firmware, fiji_firmware]
+        note: Is that possible on Pacific (Fiji)?
+        marks:
+          - ready: no
+      - id: FW_FLOW_CONTROL_6
+        description: For link pause frames it should be possible to configure low and high thresholds (aka watermarks), quanta and quanta threshold values.
+        products: [atlantic1_firmware_3x, jamaica_firmware_2x, jamaica_firmware_3x, felicity_firmware_3x, bermuda_firmware_3x, pacific_firmware, fiji_firmware]
+        note: Is that possible on Pacific (Fiji)?
+        marks:
+          - ready: no
+      - id: FW_FLOW_CONTROL_7
+        description: For PFC it should be possible to configure low and high thresholds (aka watermarks), quanta and quanta threshold values for all traffic classes.
+        products: [atlantic1_firmware_3x, jamaica_firmware_2x, jamaica_firmware_3x, felicity_firmware_3x, bermuda_firmware_3x, pacific_firmware, fiji_firmware]
+        note: Is that possible on Pacific (Fiji)?
+        marks:
+          - ready: no
+      - id: FW_FLOW_CONTROL_8
+        description: Default value for low threshold should be 0x1000, for high threshold 0x2000, quanta 0xff00, quanta threshold 0xfef0; in PFC case this is applicable for all traffic classes.
+        products: [atlantic1_firmware_3x, jamaica_firmware_2x, jamaica_firmware_3x, felicity_firmware_3x, bermuda_firmware_3x, pacific_firmware, fiji_firmware]
+        note: Quanta threshold value is bad, we need fix it.
+        marks:
+          - ready: no
+      - id: FW_FLOW_CONTROL_9
+        description: When flow control is disabled, flow control in PHY should be disabled too in all directions (both pause frame processing and generation).
+        products: [jamaica_firmware_2x, jamaica_firmware_3x, bermuda_firmware_3x, fiji_firmware]
+        note: Is that possible on Pacific (Fiji)?
+        marks:
+          - ready: no
+      - id: FW_FLOW_CONTROL_10
+        description: When flow control is enabled, flow control in PHY should be disabled in all directions (both pause frame processing and generation).
+        products: [jamaica_firmware_2x, jamaica_firmware_3x, bermuda_firmware_3x]
+      - id: FW_FLOW_CONTROL_11
+        description: When flow control is enabled, flow control in PHY should be configured next way - pause processing is enabled for all directions, pause generation is enabled for SIF->Line side.
+        products: [fiji_firmware]
+        note: We need to specify thresolds and quanta values for PHY.
+        marks:
+          - ready: no
+      - id: FW_FLOW_CONTROL_12
+        description: With a large number of pauses, traffic should not stuck.
+        product: [PROD_ATLANTIC1_FIRMWARE_3X, PROD_JAMAICA_FIRMWARE_2X, PROD_JAMAICA_FIRMWARE_3X, PROD_FELICITY_FIRMWARE_3X, PROD_BERMUDA_FIRMWARE_3X, PROD_PACIFIC_FIRMWARE, PROD_FIJI_FIRMWARE]
+        marks:
+          - ready: yes
+      - id: FW_FLOW_CONTROL_13
+        description: TPS is gated only when opcode == 0x1.
+        product: [PROD_ATLANTIC1_FIRMWARE_3X, PROD_JAMAICA_FIRMWARE_2X, PROD_JAMAICA_FIRMWARE_3X, PROD_FELICITY_FIRMWARE_3X, PROD_BERMUDA_FIRMWARE_3X, PROD_PACIFIC_FIRMWARE, PROD_FIJI_FIRMWARE]
+        marks:
+          - ready: yes
+      - id: FW_FLOW_CONTROL_14
+        description: TPS is gated only when quantum size is nonzero.
+        product: [PROD_ATLANTIC1_FIRMWARE_3X, PROD_JAMAICA_FIRMWARE_2X, PROD_JAMAICA_FIRMWARE_3X, PROD_FELICITY_FIRMWARE_3X, PROD_BERMUDA_FIRMWARE_3X, PROD_PACIFIC_FIRMWARE, PROD_FIJI_FIRMWARE]
+        marks:
+          - ready: yes
+      - id: FW_FLOW_CONTROL_15
+        description: If flow control enabled for speeds 100M and 1G shall be used Software flow control (Pause Ignore and Pause Forward enabled)
+        for other speed should used hardware flow control (Pause Ignore and Pause Forward disabled).
+        product: [PROD_ATLANTIC1_FIRMWARE_3X, PROD_JAMAICA_FIRMWARE_2X, PROD_JAMAICA_FIRMWARE_3X, PROD_FELICITY_FIRMWARE_3X, PROD_BERMUDA_FIRMWARE_3X]
+        marks:
+          - ready: yes
+      - id: FW_FLOW_CONTROL_16
+        description: Rx PFM counter shall increment for each multicast and unicast pause frame.
+        product: [PROD_ATLANTIC1_FIRMWARE_3X, PROD_JAMAICA_FIRMWARE_2X, PROD_JAMAICA_FIRMWARE_3X, PROD_FELICITY_FIRMWARE_3X, PROD_BERMUDA_FIRMWARE_3X]
+        marks:
+          - ready: yes

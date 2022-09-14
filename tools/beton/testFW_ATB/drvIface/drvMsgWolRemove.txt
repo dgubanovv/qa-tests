@@ -1,0 +1,9 @@
+#drvMsgWoLRemove
+
+addr = $BASEADDR
+
+mac.mcp.writemem $addr $drvMsgWolRemove -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $patternId -l nul
+addr = $addr + 4

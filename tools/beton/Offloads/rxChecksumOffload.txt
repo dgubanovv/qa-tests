@@ -1,0 +1,296 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Offloads/rxChecksumOffload.txt $
+# $Revision: #9 $
+# $DateTime: 2016/08/09 03:37:37 $
+# $Author: dgubanov $
+#
+# Script rx checksum offload 
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    logTag = -l cli
+    TPO2 = False
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef TPO2:
+    TPO2 = False
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    #mac.set loopback System DMA            # No loopback
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+
+mac.llh rpoIpv4HeaderChecksumOffloadEnableSet 1
+mac.llh rpoTcpUdpChecksumOffloadEnableSet 1
+
+if $TPO2:
+    exec $(PWD)/helpers/enableTPO2.txt
+    
+exec $(PWD)/helpers/workaroundBug3991.txt
+
+
+
+options = {0x0a}
+PacketTypes = ['Correct', 'Incorrect']
+Vlans = ['NoVlan', 'Vlan','Vlan10']
+l3Protocols = ['IP', 'IPv6','IPopts', 'IPoptsCorrect', 'IPv6opts', 'IP_1frag', 'IP_otherfrag', 'IPv6_1frag', 'IPv6_otherfrag'] #IP = IPv4
+l4ProtoForL3 = [['UDP', 'TCP',  'TCPopts', 'SCTP', 'None', 'ICMP']]
+l4ProtoForL3 += [['UDP', 'TCP', 'TCPopts', 'SCTP', 'None']]
+l4ProtoForL3 += [['UDP', 'TCP', 'TCPopts', 'SCTP', 'None', 'ICMP']] #For 'IPopts'
+l4ProtoForL3 += [['UDP', 'TCP', 'TCPopts', 'SCTP', 'None', 'ICMP']] #For 'IPoptsCorrect'
+l4ProtoForL3 += [['UDP', 'TCP', 'TCPopts', 'SCTP', 'None', 'ICMP']] #For 'IPv6opts'
+l4ProtoForL3 += [['UDP']]#For 'IP_1frag
+l4ProtoForL3 += [['UDP']]#For 'IP_otherfrag
+l4ProtoForL3 += [['UDP']]#For 'IPv6_1frag
+l4ProtoForL3 += [['UDP']]#For 'IPv6_otherfrag
+vlanLength = [0, 4, 4]
+l3HeaderLengths = [20, 40, 32, 32, 48, 20, 20, 48, 48]
+l4HeaderLengths = [8, 20, 24, 12, 0, 8]
+payloadLength = 30
+firstFragmentLength = 16
+otherFragmentLength = 14
+
+for type in $PacketTypes:
+	for vlan in $Vlans:
+		countL3Proto = 0
+		for l3Proto in $l3Protocols:
+			l4Protocols = $l4ProtoForL3[$countL3Proto]
+			for l4Proto in $l4Protocols:
+				#put payload
+                if '$l3Proto' == 'IP_1frag':
+                    pkt.new -n packet$type$vlan$l3Proto$l4Proto -p $firstFragmentLength
+                elif '$l3Proto' == 'IP_otherfrag':
+                    pkt.new -n packet$type$vlan$l3Proto$l4Proto -p $otherFragmentLength
+                else:
+                    pkt.new -n packet$type$vlan$l3Proto$l4Proto -p $payloadLength
+
+				#put L4 Proto
+				if '$l4Proto' == 'TCPopts':
+					pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 60 -t TCP options=[('WScale',100)]
+				elif '$l4Proto' != 'None':
+					pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 60 -t $l4Proto
+
+				#put L3 Proto
+				if '$l3Proto' =='IP':
+					if '$l4Proto' == 'None':
+						pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto proto=61 dst="192.168.16.10" src="192.168.0.10"
+					else:
+						pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto dst="192.168.16.10" src="192.168.0.10"
+				elif '$l3Proto' == 'IPopts' or '$l3Proto' == 'IPoptsCorrect':
+					if '$l4Proto' == 'None':
+						pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t IP proto=61 options=$options
+					else:
+						pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t IP options=$options
+				elif '$l3Proto' == 'IPv6':
+					if '$l4Proto' == 'None':
+						pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto nh=61 src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020"
+					else:
+						pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t $l3Proto src="fe80::b96d:fc9f:4fc2:1010" dst="fe80::b96d:fc9f:4fc2:2020"
+                elif '$l3Proto' == 'IPv6opts':
+                    pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t IPv6 nh=0 
+                    if '$l4Proto' == 'UDP':
+                        pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=17
+                    elif '$l4Proto' == 'TCP' or '$l4Proto' == 'TCPopts':
+                        pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=6
+                    elif '$l4Proto' == 'SCTP':
+                        pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=132
+                    elif '$l4Proto' == 'None':
+                        pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=61                        
+                    elif '$l4Proto' == 'ICMP':
+                        pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrHopByHop nh=1
+                elif '$l3Proto' == 'IP_1frag':
+                    pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t IP id=0xFFFF flags=1 frag=0 
+                elif '$l3Proto' == 'IP_otherfrag':
+                    pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t IP id=0xFFFF flags=0 frag=2 
+				elif '$l3Proto' == 'IPv6_1frag':
+                    pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t IPv6 nh=44 
+                    pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrFragment offset=0 m=1 id=0xFFFF
+                elif '$l3Proto' == 'IPv6_otherfrag':
+                    pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 -t IPv6 nh=44 
+                    pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 55 -t IPv6ExtHdrFragment offset=3 m=0 id=0xFFFF
+
+				#put vlan header
+				#put vlan header
+				if '$vlan' == 'Vlan':
+					pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 40 -t Dot1Q #no VLAN tag
+				elif '$vlan' == 'Vlan10':
+					if '$l3Proto' == 'IP' or '$l3Proto' == 'IPopts' or '$l3Proto' == 'IPoptsCorrect' or '$l3Proto' == 'IP_1frag' or '$l3Proto' == 'IP_otherfrag': 
+						pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 40 -t Dot1Q prio=6 type=0x800 vlan=0x0a #VLAN tag = 10
+                    else:
+						pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 40 -t Dot1Q prio=6 type=0x86DD vlan=0x0a #VLAN tag = 10 IPv6
+                        
+				#put L2
+				pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 25 -t Ether src="10:dd:b1:e6:1e:a5"  dst="10:dd:b1:e6:1d:ad"
+            
+				#pkt.dump -i $(packet$type$vlan$l3Proto$l4Proto)
+			countL3Proto += 1
+mac.rxring[$rxRingNo].get -n rxRingSize size
+
+rxStatIPChksumErrorMask = 0x2
+rxStatTCPUDPChksumErrorMask = 0x4
+rxStatTCPUDPChksumValid = 0x8
+
+for type in $PacketTypes:
+    countVlan=0
+    for vlan in $Vlans:
+        countL3Proto = 0
+        for l3Proto in $l3Protocols:
+            countL4Proto = 0
+            l4Protocols = $l4ProtoForL3[$countL3Proto]
+            for l4Proto in $l4Protocols:
+                #pkt.add2stream -i $(packet$type$vlan$l3Proto$l4Proto) -s $testStreamTag
+            
+                mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+            
+                if '$l3Proto' == 'IP' or '$l3Proto' == 'IPopts' or '$l3Proto' == 'IP_1frag' or '$l3Proto' == 'IP_otherfrag':
+                    pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 50 chksum=0
+                    
+                if '$type' == 'Incorrect':
+                    if '$l4Proto' != 'None':
+                        pkt.layer -i $(packet$type$vlan$l3Proto$l4Proto) -L 60 chksum=0xFFCC
+                
+           
+                mac.txring[$txRingNo].status $logTag
+                mac.rxring[$rxRingNo].status $logTag
+        
+                packetLength = 14 + $vlanLength[$countVlan] + $l3HeaderLengths[$countL3Proto] + $l4HeaderLengths[$countL4Proto] + $payloadLength
+                mac.txring[$txRingNo].insert -i $(packet$type$vlan$l3Proto$l4Proto) -b $packetLength -u 1 -s 1
+                mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+                bufStr = ' '
+                data=0
+                for i=0; $i < $packetLength; i+=4:
+                    addr = $pAddr + $i
+                    mem.get -p $addr -s 4 -n data
+                    bufStr = '$bufStr' + ' ' + hex($data)
+                #echo bufStr = $bufStr
+                #mac.txring[$txRingNo].dumpdesc -T 1 $logTag
+            
+                mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size 80
+                mac.txring[$txRingNo].commit
+                mac.txring[$txRingNo].clean
+                mac.rxring[$rxRingNo].clean
+            
+                mac.txring[$txRingNo].status $logTag
+                mac.rxring[$rxRingNo].status $logTag
+                if $rxHeadBefore == ($rxRingSize-1):
+                    $rxHeadBefore = -1
+                mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+                rxCount = $rxHeadGood + 0 - $rxHeadBefore
+                if $rxCount != 1:
+                    finalReport += ['(1)Wrong packet number($rxCount) routed to host(packet$type$vlan$l3Proto$l4Proto)']
+                mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n pAddr $logTag
+                mem.cmp -p $pAddr -s $packetLength -V $bufStr -n compareResult $logTag
+                mac.rxring[$rxRingNo].getdescval -H 1 -f RX_STAT -n rxStat $logTag
+                mac.rxring[$rxRingNo].getdescval -H 1 -f RX_CNTL -n rxControl $logTag
+                if $rxControl != 3:
+                    finalReport += ['(2)Incorrect RX_CNTL($rxControl), expected(3) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                if $compareResult == False:
+                    finalReport += ['(3)Mem cmp failed']
+				
+                if '$l3Proto' == 'IP' or '$l3Proto' == 'IPopts' or '$l3Proto' == 'IP_1frag' or '$l3Proto' == 'IP_otherfrag':     
+                    mac.llh -v ipChecksumError rpoIpv4HeaderChecksumErrorGet
+                    if $ipChecksumError != 1:
+                        finalReport += ['(4)Incorrect IP checksum error($ipChecksumError), expected(1) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                    if $rxStat&$rxStatIPChksumErrorMask != $rxStatIPChksumErrorMask:
+                            finalReport += ['(5)Incorrect RX_STAT($rxStat), expected($rxStatIPChksumErrorMask) for packet(packet$type$vlan$l3Proto$l4Proto)']
+			
+                if '$l3Proto' == 'IPoptsCorrect':     
+                    mac.llh -v ipChecksumError rpoIpv4HeaderChecksumErrorGet
+                    if $ipChecksumError != 0:
+                        finalReport += ['(6)Incorrect IP checksum error($ipChecksumError), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                    if $rxStat&$rxStatIPChksumErrorMask != 0:
+                            finalReport += ['(7)Incorrect RX_STAT($rxStat), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                            
+                #rpoIpv6HeaderChecksumErrorGet  function doesn't exist              
+                if '$l3Proto' == 'IPv6' or '$l3Proto' == 'IPv6opts' or '$l3Proto' == 'IPv6_1frag' or '$l3Proto' == 'IPv6_otherfrag':
+                    if $rxStat&$rxStatIPChksumErrorMask != 0:
+                        finalReport += ['(8)Incorrect RX_STAT($rxStat), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']   			
+									
+                if '$l4Proto' == 'None' or '$l4Proto' == 'ICMP' or '$l4Proto' == 'SCTP' or '$l3Proto' == 'IPv6opts' or '$l3Proto' == 'IP_1frag' or '$l3Proto' == 'IP_otherfrag' or '$l3Proto' == 'IPv6_1frag' or '$l3Proto' == 'IPv6_otherfrag':
+                    if $rxStat&$rxStatTCPUDPChksumValid != 0:
+                        finalReport += ['(9)Incorrect RX_STAT($rxStat), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']				
+                else:
+                    if $rxStat&$rxStatTCPUDPChksumValid != $rxStatTCPUDPChksumValid:
+                        finalReport += ['(10)Incorrect RX_STAT($rxStat), expected($rxStatTCPUDPChksumValid) for packet(packet$type$vlan$l3Proto$l4Proto)']	
+
+			
+                #ignore checksum for IPv6 with options	
+                if '$type' == 'Correct' or '$l3Proto' == 'IPv6opts' or '$l3Proto' == 'IP_1frag' or '$l3Proto' == 'IP_otherfrag' or '$l3Proto' == 'IPv6_1frag' or '$l3Proto' == 'IPv6_otherfrag':
+                        
+                    if '$l4Proto' == 'TCPopts'  or '$l4Proto' == 'TCP':          
+                        mac.llh -v l4ChecksumError rpoTcpChecksumErrorGet
+                        if $l4ChecksumError != 0:
+                            finalReport += ['(11)Incorrect TCP checksum error($l4ChecksumError), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                        if $rxStat&$rxStatTCPUDPChksumErrorMask != 0:
+                            finalReport += ['(12)Incorrect RX_STAT($rxStat), expected($0) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                        
+                    if '$l4Proto' == 'UDP':
+                        mac.llh -v l4ChecksumError rpoUdpChecksumErrorGet
+                        if $l4ChecksumError != 0:
+                            finalReport += ['(13)Incorrect UDP checksum error($l4ChecksumError), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                        if $rxStat&$rxStatTCPUDPChksumErrorMask != 0:
+                            finalReport += ['(14)Incorrect RX_STAT($rxStat), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                                        
+                    if '$l4Proto' == 'SCTP':          
+                        if $rxStat&$rxStatTCPUDPChksumErrorMask != 0:
+                            finalReport += ['(15)Incorrect RX_STAT($rxStat), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                        
+                    if '$l4Proto' == 'ICMP':
+                        if $rxStat&$rxStatTCPUDPChksumErrorMask != 0:
+                            finalReport += ['(16)Incorrect RX_STAT($rxStat), expected(0) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                        
+                else:
+            
+                    if '$l4Proto' == 'TCPopts'  or '$l4Proto' == 'TCP':   
+                        mac.llh -v l4ChecksumError rpoTcpChecksumErrorGet
+                        if $l4ChecksumError != 1:
+                            finalReport += ['(17)Incorrect TCP checksum error($l4ChecksumError), expected(1) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                        if $rxStat&$rxStatTCPUDPChksumErrorMask != $rxStatTCPUDPChksumErrorMask:
+                            finalReport += ['(18)Incorrect RX_STAT($rxStat), expected($rxStatTCPUDPChksumErrorMask) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                    
+                    if '$l4Proto' == 'UDP':
+                        mac.llh -v l4ChecksumError rpoUdpChecksumErrorGet
+                        if $l4ChecksumError != 1:
+                            finalReport += ['(19)Incorrect UDP checksum error($l4ChecksumError), expected(1) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                        if $rxStat&$rxStatTCPUDPChksumErrorMask != $rxStatTCPUDPChksumErrorMask:
+                            finalReport += ['(20)Incorrect RX_STAT($rxStat), expected($rxStatTCPUDPChksumErrorMask) for packet(packet$type$vlan$l3Proto$l4Proto)']
+                
+                        
+                mac.rxring[$rxRingNo].dumpbuf -H 1 $logTag --size 80
+                countL4Proto +=1
+            countL3Proto += 1
+        countVlan+=1   
+
+
+readreg 0x7040        
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

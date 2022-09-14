@@ -1,0 +1,189 @@
+#Set interrupt mode
+mac.isr.set Mode Multi-Vector
+
+#mac.set loopback System DMA           #Shallow loopback
+mac.set loopback System Packet         #Deep loopback
+
+tests = ['Direct', 'Throttle']
+throttle_time_lst = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0, 0xff]
+CSVFilePath = $PWD\TrottleTesting.csv
+
+
+ring = 0
+wait_count = 5
+wait_timeout = 100
+itr = 100                           # Iterations to be performed
+
+#Setting sources
+if $ring < 10:
+    tx_src = tx0$ring
+    rx_src = rx0$ring
+else:
+    tx_src = tx$ring
+    rx_src = rx$ring
+
+#Getting number of available vectors    
+mac.isr.vc -n numOfVectors
+
+vectors = [i for i in range($numOfVectors)]
+
+#Setting TX vector
+tx_vect = random.randint(1,($numOfVectors-1)) # TX vector must be >=1 and <= (number of available vectors - 1)
+
+#Populating CSV File - Columns
+str = VECTORS;
+for vector in $vectors:
+    str = $str vector $vector;
+shell echo $str >> $CSVFilePath
+#######
+
+for throttle in $throttle_time_lst:
+
+    echo throttle = $throttle
+    AVG_Direct_lst = []
+    AVG_Throttle_lst = []
+    DIFF_lst = []
+    
+    for rx_vect in $vectors:
+    
+        DIFF_str = DIFF;
+        for test in $tests:
+            
+            #RX vector and TX vector must be different
+            if $rx_vect == $tx_vect and $rx_vect != 0:
+                tx_vect = ($rx_vect - 1)
+            elif $rx_vect == $tx_vect and $rx_vect == 0:
+                tx_vect = ($rx_vect + 1)
+                
+            mac.set int_rx_desc_wrb_en True -l nul
+            mac.set int_rx_desc_nempty_en False -l nul
+            mac.set int_rx_desc_empty_en False -l nul
+            
+            if '$test' == 'Direct':
+                echo disabling throttling
+                mac.isr.vector[$tx_vect].set throttle 0x0
+                mac.isr.vector[$rx_vect].set throttle 0x0
+            elif '$test' == 'Throttle':  
+                echo enabling throttling
+                mac.isr.vector[$tx_vect].set throttle 0x0
+                mac.isr.vector[$rx_vect].set throttle $throttle
+            
+            mac.init                            #init for board
+            mac.txinit                          #init for Tx
+            mac.rxinit                          #init for Rx   
+
+            avgDiff$test = 0
+            
+            #Registering handlers
+            tx_interrupt = 0
+            rx_interrupt = 0
+            mac.txring[$ring].set map2vector $tx_vect
+            mac.isr.regHandler -s $tx_src -v $tx_vect -t 10000000 -n tx_interrupt
+
+            mac.rxring[$ring].set map2vector $rx_vect
+            mac.isr.regHandler -s $rx_src -v $rx_vect -t 10000000 -n rx_interrupt
+
+            mac.rxring[$ring].set batchFill 0 -l nul
+            mac.rxring[$ring].enable
+
+            mac.txring[$ring].set wbThreshold 0 -l nul
+            mac.txring[$ring].enable
+            
+            echo Start loop
+            for i = 0; $i < $itr; i += 1:
+                for k = 0; $k < 10; k +=1:
+                    mac.txring[$ring].insert -p 1500 -b 1500 -e 1
+                mac.txring[$ring].insert -w 1 -p 1500 -b 1500 -e 1
+            
+                rx_cnt = ($k + 1)
+                mac.rxring[$ring].fill $rx_cnt
+            
+                tx_interrupt = 0
+                rx_interrupt = 0
+               
+                mac.rxring[$ring].commit
+                mac.txring[$ring].commit          
+
+                #pause $wait_timeout ms
+                
+                for j = 0; $j < $wait_count; j += 1:
+                    error = 0
+                    if $tx_interrupt != 1 or $rx_interrupt == 0:
+                        error = 1
+                    if $error == 0:
+                        break
+                    pause $wait_timeout ms
+                
+                #mac.txring[$ring].status
+                #mac.rxring[$ring].status
+
+            
+                mac.isr.vi -p lastTime -v $tx_vect -n txStopTime -l nul
+                mac.isr.vi -p count -v $rx_vect -n rxCount -l nul
+                mac.isr.vi -p lastTime -v $rx_vect -n rxStopTime -l nul
+                diffTime = ($rxStopTime-$txStopTime)
+                #echo $rxCount
+                #echo $rxStopTime
+                #echo $txStopTime
+                #echo $diffTime
+                avgDiff$test = $(avgDiff$test) + $diffTime
+            
+                if $tx_interrupt != 1:
+                    tx_res = failed
+                else:
+                    tx_res = passed
+                #echo Tx$ring Interrupt is $tx_res (val = $tx_interrupt)
+
+                if $rx_interrupt > 1:
+                    echo Rx$ring Interrupt is $rx_res (val = $rx_interrupt)
+                elif $rx_interrupt == 0:
+                    rx_res = failed
+                else:
+                    rx_res = passed
+                #echo Rx$ring Interrupt is $rx_res (val = $rx_interrupt)
+
+            AVG_$test = ($(avgDiff$test) / $itr)
+            AVG_$(test)_lst += [$(AVG_$(test))]
+            
+            mac.isr.unregHandler -s $tx_src -v $tx_vect
+            mac.isr.unregHandler -s $rx_src -v $rx_vect
+
+            if $error > 0:
+                echo FAILED
+            else:
+                echo OK
+
+            mac.txring[$ring].disable
+            mac.rxring[$ring].disable
+            mac.txuninit
+            mac.rxuninit
+            mac.uninit
+                    
+        DIFF = ($AVG_Throttle - $AVG_Direct)
+        DIFF_lst += [$DIFF]
+        
+
+    echo AVG_Direct_lst = $AVG_Direct_lst
+    echo AVG_Throttle_lst = $AVG_Throttle_lst
+    echo DIFF_lst = $DIFF_lst
+
+    #Populating CSV File 
+    shell echo THROTTLING: $throttle >> $CSVFilePath
+    
+    str = DIRECT;
+    for avg in $AVG_Direct_lst:
+        str = $str $avg;
+    shell echo $str >> $CSVFilePath
+
+    str = THROTTLE;
+    for avg in $AVG_Throttle_lst:
+        str = $str $avg;
+    shell echo $str >> $CSVFilePath
+
+    str = DIFF;
+    for diff in $DIFF_lst:
+        str = $str $diff;
+    shell echo $str >> $CSVFilePath
+    #######
+
+

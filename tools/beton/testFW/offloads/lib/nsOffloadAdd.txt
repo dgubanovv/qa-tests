@@ -1,0 +1,95 @@
+#####################################################
+# Input args:
+#
+# flags
+# remoteIPv6Address[0..3]
+# solNodeAddr[0..3]
+# hostIPv6Address1[0..3]
+# hostIPv6Address2[0..3]
+# Mac0
+# Mac1
+# Mac2
+#
+# Returns
+# result
+#
+#####################################################
+
+exec testFW/wol/lib/wolConstants.txt
+exec testFW/drvIface/getBaseAddress.txt
+
+#####################################################
+### write drvMsgOffloadAdd header
+#####################################################
+
+priority                  = 0x10000000
+offloadType               = $ndisPMProtocolOffloadIdIPv6NS
+offloadId                 = 2
+nextProtocolOffloadOffset = 0
+
+exec testFW/drvIface/drvMsgOffloadAdd.txt
+
+#####################################################
+### write drvMsgOffloadAdd.wolOffload.ipv6Arp
+#####################################################
+
+mac.mcp.writemem $addr $flags -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $remoteIPv6Address0 -l nul
+addr = $addr + 4
+mac.mcp.writemem $addr $remoteIPv6Address1 -l nul
+addr = $addr + 4
+mac.mcp.writemem $addr $remoteIPv6Address2 -l nul
+addr = $addr + 4
+mac.mcp.writemem $addr $remoteIPv6Address3 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $solNodeAddr0 -l nul
+addr = $addr + 4
+mac.mcp.writemem $addr $solNodeAddr1 -l nul
+addr = $addr + 4
+mac.mcp.writemem $addr $solNodeAddr2 -l nul
+addr = $addr + 4
+mac.mcp.writemem $addr $solNodeAddr3 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv6Address1_0 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv6Address1_1 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv6Address1_2 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv6Address1_3 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv6Address2_0 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv6Address2_1 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv6Address2_2 -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv6Address2_3 -l nul
+addr = $addr + 4
+
+$Mac = $Mac0 | ($Mac1 << 16)
+mac.mcp.writemem $addr $Mac -l nul
+addr = $addr + 4
+
+data = ($Mac2 & 0xFFFF)
+mac.mcp.writemem $addr $data -l nul
+addr = $addr + 4
+
+#####################################################
+### execute DRV_MSG_OFFLOAD_ADD transaction
+#####################################################
+
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+result = $transactionResult

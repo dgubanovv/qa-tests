@@ -1,0 +1,123 @@
+echo Bug 3830
+
+itr = 64                  # Send iteration count
+minBatchCount = 16        # Min packet count in iteration
+maxBatchCount = 16        # Max packet count in iteration
+maxRing = 32              # Tested ring count
+txBufSize = 0x800         # 2 KB - SW designed
+minSegSize = 64           # Min segment size
+maxSegSize = 64           # Max segment size
+minOffset = 0             # Min offset
+maxOffset = 0             # Max offset
+loopbackPause = 1000      # 
+ 
+mark = "newline"
+
+mac.init
+mac.txinit
+mac.rxinit
+
+for ring=0; $ring < $maxRing; ring += 1:
+	mac.txring[$ring].enable
+	mac.rxring[$ring].enable
+	mac.txring[$ring].status
+	mac.rxring[$ring].status
+
+	mac.llh -v rxRing8_$ring rdmRxDescriptorLengthGet $ring
+	mac.llh -v txRing8_$ring tdmTxDescriptorLengthGet $ring
+
+	txRingSize$ring = $(txRing8_$ring) * 8
+	rxRingSize$ring = $(rxRing8_$ring) * 8
+	#echo txRingSize$ring == $(txRingSize$ring)
+	#echo rxRingSize$ring == $(rxRingSize$ring)
+	rxRingSizeM1$ring = ($(rxRingSize$ring) - 1)
+	mac.llh -v txtHeadExpected$ring tdmTxDescriptorHeadPointerGet $ring
+	mac.llh -v rxtHeadExpected$ring rdmRxDescriptorHeadPointerGet $ring
+	
+	txHead$ring = $(txtHeadExpected$ring)
+	rxHead$ring = $(rxtHeadExpected$ring)
+
+	txfile$ring = $(LOG_PATH)/tx$ring.txt
+	rxfile$ring = $(LOG_PATH)/rx$ring.txt
+
+	shell del $(rxfile$ring)
+	shell del $(txfile$ring)
+
+
+echo Start loop
+for i = 0; $i < $itr; i += 1:
+#	if ($i % ($itr/10)) == 0:
+#		progress = $i * 100 / $itr
+#		echo Progress: $progress%
+
+	echo /*Iteration: $i*/
+	for ring = 0; $ring < $maxRing; ring += 1:	
+		txcount = random.randint($minBatchCount, $maxBatchCount)
+		segSize = random.randint($minSegSize, $maxSegSize)
+		offset = random.randint($minOffset, $maxOffset)
+		params = -p $segSize -o $offset -b $segSize -c $txcount
+		mac.txring[$ring].insert $params 
+		rxcount$ring = $txcount
+		
+		params = -T $txcount:1 -l dumptx
+		mac.txring[$ring].dumpdesc $params
+				
+		params = $params -a $(txfile$ring)
+		mac.txring[$ring].dumpbuf $params -t $mark
+
+		mac.rxring[$ring].fill $(rxcount$ring)
+		rxtHeadExpected$ring = ($(rxtHeadExpected$ring) + $(rxcount$ring)) % $(rxRingSize$ring)
+		
+		txtHeadExpected$ring = ($(txtHeadExpected$ring) + $txcount) % $(txRingSize$ring)	
+
+	#echo /*mac.rxring[0:$maxRing].commit*/
+	mac.rxring[0:$maxRing].commit
+	#echo /*mac.txring[0:$maxRing].commit*/
+	mac.txring[0:$maxRing].commit
+	
+	pause $loopbackPause ms
+
+	error = 0
+	for ring = 0; $ring < $maxRing; ring += 1:
+		mac.txring[$ring].clean
+		mac.llh -v txHead$ring tdmTxDescriptorHeadPointerGet $ring
+		if $(txHead$ring) != $(txtHeadExpected$ring):
+			error = 1
+			echo Scripts/bug3819:85: error: Value of: txHead$ring : TX head stuck
+			echo   Actual: $(txHead$ring)
+			echo Expected: $(txtHeadExpected$ring)
+						
+	for ring = 0; $ring < $maxRing; ring += 1:
+		mac.rxring[$ring].clean
+		mac.llh -v rxHead$ring rdmRxDescriptorHeadPointerGet $ring
+		if $(rxHead$ring) != $(rxtHeadExpected$ring):
+			error = 2
+			echo Scripts/bug3819:94: error: Value of: rxHead$ring : RX head stuck
+			echo   Actual: $(rxHead$ring)
+			echo Expected: $(rxtHeadExpected$ring)
+				
+	if $error > 0:
+		break
+
+	for ring = 0; $ring < $maxRing; ring += 1:
+		mac.rxring[$ring].dumpdesc -H $(rxcount$ring):1 -l dumprx
+		mac.rxring[$ring].dumpbuf -H $(rxcount$ring):1 -t $mark -a $(rxfile$ring) -l dumprx
+
+if $error == 0:
+	for ring = 0; $ring < $maxRing; ring += 1:
+		txtmp = '$(txfile$ring)' + '_ztx.txt'
+		rxtmp = '$(rxfile$ring)' + '_zrx.txt'
+
+		shell $(BASE_PATH)/Scripts/dumpconverter.py -i $(txfile$ring) -o $txtmp -m $mark
+		shell $(BASE_PATH)/Scripts/dumpconverter.py -i $(rxfile$ring) -o $rxtmp -m $mark
+
+		shell fc $txtmp $rxtmp > nul
+		if $errorlevel != 0:
+			echo FAILED
+		else:
+			echo OK
+
+			shell del $(txfile$ring)
+			shell del $(rxfile$ring)
+			shell del $txtmp
+			shell del $rxtmp

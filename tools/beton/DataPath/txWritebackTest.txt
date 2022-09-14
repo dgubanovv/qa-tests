@@ -1,0 +1,264 @@
+#! Verify that TX head writeback feature work
+#! 
+#! Send 2 types of packets: with segments and without segments
+#! Randomly select write-back feature (on or off)
+#! Check desc  fields before and after commit
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef logTag:
+        logTag = -l cli
+
+
+if $hostAlreadyInitiated == False:
+    mac.set loopback None $logTag  
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].set wbThreshold 0 -l $logTag
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark None $logTag 
+    mac.isr.disable
+    
+    
+#Packet send prepare
+packetsToSend = 15
+    
+#Send packets with write back and without writeback with random order
+wbOptions = [0,1]
+
+#Segments
+minSegCount = 2
+maxSegCount = 8
+packetsNoSegment = 5
+packetsSegmented = 5
+packetsSegmentedDD = $packetsToSend - $packetsNoSegment- $packetsSegmented
+packetSize = 256
+tail = 0
+
+for packet = 0; $packet < $packetsToSend; packet += 1:
+    wbOption = random.choice($wbOptions)
+    #wbOption = 0
+    start_index = $tail
+    
+    #Segmentation = off
+    if $packet < $packetsNoSegment:
+        params = -w $wbOption -p $packetSize -b $packetSize
+        mac.txring[$txRingNo].insert $params
+        tail +=1
+        if tail > 511:
+            tail = 0
+    #Segmentation = on, DD for last segment only
+    elif $packet >= $packetsNoSegment and $packet < ($packetsNoSegment + $packetsSegmented):
+        segCount = random.randint($minSegCount, $maxSegCount)
+        restSize = $packetSize
+        for segment = 0; $segment < $segCount; segment+=1:
+            eop = (1 if $segment == $segCount - 1 else 0)
+            minSegSize = 1
+            maxSegSize = $restSize - ($segCount - $segment - 1)
+            if $segment == $segCount - 1:
+                segSize = $restSize
+            else:
+                segSize = random.randint($minSegSize, $maxSegSize)
+            params = -w $wbOption -p $packetSize -b $segSize -e $eop
+            mac.txring[$txRingNo].insert $params
+            tail +=1
+            if tail > 511:
+                tail = 0
+            restSize -= $segSize
+    #Segmentation = on, DD for each segment
+    else:
+        mac.txring[$txRingNo].set wbThreshold 1 -l $logTag
+        mac.txring[$txRingNo].apply wbThreshold
+        segCount = random.randint($minSegCount, $maxSegCount)
+        restSize = $packetSize
+        for segment = 0; $segment < $segCount; segment+=1:
+            eop = (1 if $segment == $segCount - 1 else 0)
+            minSegSize = 1
+            maxSegSize = $restSize - ($segCount - $segment - 1)
+            if $segment == $segCount - 1:
+                segSize = $restSize
+            else:
+                segSize = random.randint($minSegSize, $maxSegSize)
+            params = -p $packetSize -b $segSize -e $eop
+            mac.txring[$txRingNo].insert $params
+            tail +=1
+            if tail > 511:
+                tail = 0
+            restSize -= $segSize    
+            
+    #Segmentation = off
+    if $packet < $packetsNoSegment:
+        #Save desc fields BEFORE commit
+        mac.txring[$txRingNo].getdescval $start_index -f DATA_BUF_ADDR  -n data_buf_before -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f PAY_LEN  -n pay_len_before -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f CT_EN  -n ct_en_before -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f CT_IDX  -n ct_idx_before -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f TX_CMD  -n tx_cmd_before -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f EOP  -n eop_before -l $logTag       
+        mac.txring[$txRingNo].getdescval $start_index -f BUF_LEN  -n buf_len_before -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f DES_TYP  -n des_type_before -l $logTag
+        values_before = [$data_buf_before,$pay_len_before,$ct_en_before,$ct_idx_before,$tx_cmd_before,$eop_before,$buf_len_before,$des_type_before]
+        
+        mac.txring[$txRingNo].commit    
+        pause 2 s
+        mac.txring[$txRingNo].clean
+        
+        # Save desc fields AFTER commit
+        mac.txring[$txRingNo].getdescval $start_index -f DATA_BUF_ADDR  -n data_buf_after -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f PAY_LEN  -n pay_len_after -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f CT_EN  -n ct_en_after -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f CT_IDX  -n ct_idx_after -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f TX_CMD  -n tx_cmd_after -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f EOP  -n eop_after -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f BUF_LEN  -n buf_len_after -l $logTag
+        mac.txring[$txRingNo].getdescval $start_index -f DES_TYP  -n des_type_after -l $logTag
+        values_after = [$data_buf_after,$pay_len_after,$ct_en_after,$ct_idx_after,$tx_cmd_after,$eop_after,$buf_len_after,$des_type_after]
+        
+        if $wbOption:
+            sum = sum($values_after)
+            if $sum != 0:
+                finalReport += ['(1) Desc fields:  desc fields after commit are incorrect']
+            mac.txring[$txRingNo].getdescval $start_index -f DD  -n desc_done -l $logTag
+            if not $desc_done:
+                finalReport += ['(2) Desc fields: DD field is not equal to 1']
+        else:
+            if $values_before != $values_after:
+                finalReport += ['(3) Desc fields:  desc fields before commit are not equal to desc fields after commit (iteration $packet),wb = $wbOption']
+            mac.txring[$txRingNo].getdescval $start_index -f DD -n desc_done -l $logTag
+            if $desc_done:
+                finalReport += ['(4) Desc fields: DD field is not equal to 0']
+        else:
+        
+    #Segmentation = on, DD for last segment only
+    elif $packet >= $packetsNoSegment and $packet < ($packetsNoSegment + $packetsSegmented):
+        values_before = []
+        for segment = 0; $segment < $segCount; segment+=1:
+            index = $start_index + $segment
+            if index > 511:
+                index -= 512
+            values_before_curr = []
+            mac.txring[$txRingNo].getdescval $index -f DATA_BUF_ADDR  -n data_buf_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f PAY_LEN  -n pay_len_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f CT_EN  -n ct_en_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f CT_IDX  -n ct_idx_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f TX_CMD  -n tx_cmd_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f EOP  -n eop_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f BUF_LEN  -n buf_len_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f DES_TYP  -n des_type_after -l $logTag
+            values_before_curr = [$data_buf_after,$pay_len_after,$ct_en_after,$ct_idx_after,$tx_cmd_after,$eop_after,$buf_len_after,$des_type_after]
+            values_before += [$values_before_curr]
+            
+        mac.txring[$txRingNo].commit    
+        pause 2 s
+        mac.txring[$txRingNo].clean
+        
+        dd = []
+        values_after = []
+        for segment = 0; $segment < $segCount; segment+=1:
+            index = $start_index + $segment
+            if index > 511:
+                index -= 512
+            values_after_curr = []
+            mac.txring[$txRingNo].getdescval $index -f DATA_BUF_ADDR  -n data_buf_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f PAY_LEN  -n pay_len_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f CT_EN  -n ct_en_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f CT_IDX  -n ct_idx_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f TX_CMD  -n tx_cmd_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f EOP  -n eop_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f BUF_LEN  -n buf_len_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f DES_TYP  -n des_type_after -l $logTag
+            
+            #Now descriptor_done is set only for last segment, so check this bit for last descriptor
+            if $wbOption and  $segment == $segCount - 1: 
+                mac.txring[$txRingNo].getdescval $index -f DD  -n desc_done_last -l $logTag
+                # mac.txring[$txRingNo].getdescval $index -f DD  -n dd_seg -l $logTag
+                # dd += [$dd_seg]
+            values_after_curr = [$data_buf_after,$pay_len_after,$ct_en_after,$ct_idx_after,$tx_cmd_after,$eop_after,$buf_len_after,$des_type_after]
+            values_after += [$values_after_curr]
+            
+            #Check fields for last segment
+            if $wbOption and $segment == $segCount - 1:
+                sum = sum($values_after_curr)
+                if $sum != 0:
+                    finalReport += ['(5) Desc fields:  desc fields after commit are incorrect']
+                if not $desc_done_last:
+                    finalReport += ['(6) Desc fields:  DD field is not equal to 1']            
+        
+        #Check fields for all segments with wb = off
+        if not  $wbOption:
+            if $values_before != $values_after:
+                finalReport += ['(7) Desc fields:  desc fields before commit are not equal to desc fields after commit (iteration $packet),wb = $wbOption']
+    
+    #Segmentation = on, DD for each segment    
+    else:
+        values_before = []
+        for segment = 0; $segment < $segCount; segment+=1:
+            index = $start_index + $segment
+            if index > 511:
+                index -= 512
+            values_before_curr = []
+            mac.txring[$txRingNo].getdescval $index -f DATA_BUF_ADDR  -n data_buf_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f PAY_LEN  -n pay_len_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f CT_EN  -n ct_en_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f CT_IDX  -n ct_idx_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f TX_CMD  -n tx_cmd_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f EOP  -n eop_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f BUF_LEN  -n buf_len_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f DES_TYP  -n des_type_after -l $logTag
+            values_before_curr = [$data_buf_after,$pay_len_after,$ct_en_after,$ct_idx_after,$tx_cmd_after,$eop_after,$buf_len_after,$des_type_after]
+            values_before += [$values_before_curr]
+            
+        mac.txring[$txRingNo].commit    
+        pause 2 s
+        mac.txring[$txRingNo].clean
+        
+        dd = []
+        values_after = []
+        for segment = 0; $segment < $segCount; segment+=1:
+            index = $start_index + $segment
+            if index > 511:
+                index -= 512
+            values_after_curr = []
+            mac.txring[$txRingNo].getdescval $index -f DATA_BUF_ADDR  -n data_buf_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f PAY_LEN  -n pay_len_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f CT_EN  -n ct_en_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f CT_IDX  -n ct_idx_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f TX_CMD  -n tx_cmd_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f EOP  -n eop_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f BUF_LEN  -n buf_len_after -l $logTag
+            mac.txring[$txRingNo].getdescval $index -f DES_TYP  -n des_type_after -l $logTag
+             
+            mac.txring[$txRingNo].getdescval $index -f DD  -n dd_seg -l $logTag
+            #mac.txring[$txRingNo].getdescval $index -f DD  -n dd_seg -l $logTag
+            dd += [$dd_seg]
+            
+            values_after_curr = [$data_buf_after,$pay_len_after,$ct_en_after,$ct_idx_after,$tx_cmd_after,$eop_after,$buf_len_after,$des_type_after]
+            values_after += [$values_after_curr]
+            
+            #Check fields for the segment
+            sum = sum($values_after_curr)
+            if $sum != 0:
+                finalReport += ['(8) Desc fields:  desc fields after commit are incorrect']
+            if not $dd_seg:
+                finalReport += ['(9) Desc fields:  DD field is not equal to 1']            
+    
+exec $(PWD)/helpers/showTestResult.txt     
+mac.uninit

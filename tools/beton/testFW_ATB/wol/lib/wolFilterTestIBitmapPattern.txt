@@ -1,0 +1,65 @@
+#####################################################
+#
+# Inputs: `Mask`, `MaskSize`, `Pattern`, `PatternSize`
+# Outputs: `result`
+# In/Out: `Buffer`, `BufferSize`
+#
+# Actions: 
+#    - Writes `wolBitmapPattern` structure to `Buffer`
+#    - Increments `BufferSize`
+#
+# Result:
+#    - Error code if failed, zero overwise
+#
+#####################################################
+
+#####################################################
+### Init
+#####################################################
+
+exec testFW/wol/lib/wolConstants.txt
+
+#####################################################
+### Write header of drvMsgWoLAdd
+#####################################################
+
+priority             = 0
+packetType           = $ndisPMWoLPacketBitmapPattern
+patternId            = 1
+nextWolPatternOffset = 0
+
+exec testFW/wol/lib/writeMsgWoLAddHeader.txt
+
+#####################################################
+### Write wolPattern.wolBitmap
+#####################################################
+
+data0 = $flags
+data1 = 20
+data2 = $MaskSize
+data3 = $data1 + $MaskSize
+data4 = $PatternSze
+
+#####################################################
+### CRC Calculation
+#####################################################
+
+exec testFW/wol/lib/crc32/init.txt
+
+for byteNo = 0; $byteNo < $MaskLen; byteNo += 1:
+
+    maskByteNo = $byteNo / 8
+    maskBitNo = $byteNo % 8
+
+    byteEnable = $(Mask$maskByteNo) & (1 << $maskBitNo)
+
+    if $byteEnable:
+        byte = $(Bitmap$byteNo)
+        exec testFW/wol/lib/crc32/addByte.txt
+
+
+#####################################################
+### Exec and validate
+#####################################################
+
+exec testFW/wol/lib/wolSendEnableCheck.txt

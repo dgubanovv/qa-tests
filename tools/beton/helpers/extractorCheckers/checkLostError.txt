@@ -1,0 +1,5 @@
+mac.llh -v lostError -C $extractionQueueLostErrorGet $queue
+if  $(lostError) != $expectedLostError:
+    str = '$stringId Lost error bit for queue $queue not equal to expected (which is $expectedLostError)'
+    echo $str
+    finalReport = $finalReport + ['$str']

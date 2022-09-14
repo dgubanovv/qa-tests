@@ -1,0 +1,19 @@
+#Rx untagged VLAN filter configurator
+#Use global values: 
+#filterVlanUntgRxQueueEnable - Enable(1) or disable(0) Rx queue assignment if matched by untagged VLAN filter.
+#filterVlanUntgMngmtQueue - Select Management Queue for untagged VLAN
+#filterVlanUntgRxQueueNum - Select RX Queue for untagged VLAN
+#filterVlanUntgAction - 0=Discard, 1=Host, 2=Management, 3=Host & Management, 4=Wake-on-LAN, 5 to 7=Reserved
+#filterVlanUntgPktAccept - Enable(1) or disable(0) accepting untagged packets 
+#filterVlanPromisc - Enable(1) or disable(0) promiscous mode
+#filterVlanDblVlan - Enable(1) or disable(0) processing of outer & inner VLAN tags
+
+mac.llhcache on
+mac.llh -C rpfVlanUntaggedRxQueueEnableSet $filterVlanUntgRxQueueEnable
+mac.llh -C rpfVlanUntaggedManagementQueueSet $filterVlanUntgMngmtQueue
+mac.llh -C rpfVlanUntaggedRxQueueSet $filterVlanUntgRxQueueNum
+mac.llh -C rpfVlanUntaggedActionSet $filterVlanUntgAction
+mac.llh -C rpfVlanAcceptUntaggedPacketsSet $filterVlanUntgPktAccept
+mac.llh -C rpfVlanPromiscuousModeEnableSet $filterVlanPromisc
+mac.llh -C rpfDoubleVlanEnableSet $filterVlanDblVlan
+mac.llhcache off

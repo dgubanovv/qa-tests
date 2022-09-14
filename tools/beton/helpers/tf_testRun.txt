@@ -1,0 +1,16 @@
+#run test by name and save report
+#IN: $scriptPath - full name by test script. Ex: $(SCRIPT_PATH)/someTest.txt
+#delimeter - any tests cli delimeter
+#INOUT testReport - to save test report
+shell echo [ RUN      ] $scriptPath >> $runResults
+exec $scriptPath
+
+if len($finalReport)>0:
+    shell echo [  FAILED  ] $scriptPath >> $runResults
+    testReport += [ ['$scriptPath', $finalReport]]
+elif not $testExecuted:
+    shell echo [  FAILED  ] $scriptPath >> $runResults
+    testReport += [ ['$scriptPath', ["testExecuted flag is not set"] ]]
+else:
+    shell echo [       OK ] $scriptPath >> $runResults
+numTestsToRun += 1

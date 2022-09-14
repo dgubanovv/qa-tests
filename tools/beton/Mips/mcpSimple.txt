@@ -1,0 +1,65 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mips/mcpSimple.txt $
+# $Revision: #1 $
+# $DateTime: 2016/03/25 07:28:29 $
+# $Author: alexey $
+#
+# sample auto-test script sample, ready to copy&paste
+#
+
+finalReport = []                               #mandatory clear, empty means tests passed.
+
+ifndef test_num:
+    # default param values for manual run
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    isa = 'mmips'
+
+if $isa == 'mmips':
+    cldFile = $(SCRIPT_PATH)/mcpSimple/atlantic_Test_simple.cld
+else:
+    cldFile = $(SCRIPT_PATH)/mcpSimple/atlantic_Test_simple_mips32.cld
+
+pattern1 = 0xFF00FF00
+pattern2 = 0x00FF00FF
+
+#---Workaround for bug 4807
+mac.mcp.setReset
+sleep 100 mc
+#---End of Workaround for bug 4807
+    
+writereg 0x300 $pattern1
+writereg 0x304 $pattern2
+writereg 0x308 0x0
+writereg 0x30c 0xFFFFFFFF
+    
+mac.mcp.bootLoadCld $cldFile
+pause 500 ms
+
+
+readreg -n reg300 0x300
+readreg -n reg304 0x304
+readreg -n reg308 0x308
+readreg -n reg30c 0x30c
+mac.mcp.readmem -n mem2 0x1fb00000
+mac.mcp.readmem -n mem1 0x1fb00004
+
+if $reg300 != 0xAAAA5555:
+	finalReport = $finalReport + ['(1) FAIL: register 0x300 has wrong value']
+    
+if $reg304 != 0x5555AAAA:
+	finalReport = $finalReport + ['(2) FAIL: register 0x304 has wrong value']
+    
+if $reg308 != 0xBEEFBABA:
+	finalReport = $finalReport + ['(3) FAIL: register 0x308 has wrong value']
+    
+if $reg30c != 0xBABABEEF:
+	finalReport = $finalReport + ['(4) FAIL: register 0x30c has wrong value']
+    
+if $mem2 != $pattern2:
+	finalReport = $finalReport + ['(6) FAIL: DRAM offset 0 has wrong value']
+    
+if $mem1 != $pattern1:
+	finalReport = $finalReport + ['(5) FAIL: DRAM offset 1 has wrong value']
+    
+
+
+exec helpers/showTestResult.txt 

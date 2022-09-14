@@ -1,0 +1,18 @@
+features:
+  wol:
+    requirement_list:
+      - id: DRV_WOL_01
+        description: The driver shall support wake on link status change feature.
+        products: [PROD_WINDOWS_NDIS_DRIVER, PROD_WINDOWS_XBOX_DRIVER, PROD_WINDOWS_FIJI_DRIVER, PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_LINUX_CDC_FIJI_DRIVER, PROD_LINUX_FIJI_DRIVER, PROD_MACOS_ECM_FIJI_DRIVER, PROD_MACOS_FIJI_DRIVER]
+      - id: DRV_WOL_02
+        description: If wake on link is disabled the computer shall not wake up from sleep state when link changes from up to down state.
+        products: [PROD_WINDOWS_NDIS_DRIVER, PROD_WINDOWS_XBOX_DRIVER, PROD_WINDOWS_FIJI_DRIVER, PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_LINUX_CDC_FIJI_DRIVER, PROD_LINUX_FIJI_DRIVER, PROD_MACOS_ECM_FIJI_DRIVER, PROD_MACOS_FIJI_DRIVER]
+      - id: DRV_WOL_03
+        description: If wake on link is disabled the computer shall not wake up from sleep state when link changes from down to up state.
+        products: [PROD_WINDOWS_NDIS_DRIVER, PROD_WINDOWS_XBOX_DRIVER, PROD_WINDOWS_FIJI_DRIVER, PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_LINUX_CDC_FIJI_DRIVER, PROD_LINUX_FIJI_DRIVER, PROD_MACOS_ECM_FIJI_DRIVER, PROD_MACOS_FIJI_DRIVER]
+      - id: DRV_WOL_04
+        description: If wake on link is enabled the computer shall wake up from sleep state when link changes from up to down state.
+        products: [PROD_WINDOWS_NDIS_DRIVER, PROD_WINDOWS_XBOX_DRIVER, PROD_WINDOWS_FIJI_DRIVER, PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_LINUX_CDC_FIJI_DRIVER, PROD_LINUX_FIJI_DRIVER, PROD_MACOS_ECM_FIJI_DRIVER, PROD_MACOS_FIJI_DRIVER]
+      - id: DRV_WOL_05
+        description: If wake on link is enabled the computer shall wake up from sleep state when link changes from down to up state.
+        products: [PROD_WINDOWS_NDIS_DRIVER, PROD_WINDOWS_XBOX_DRIVER, PROD_WINDOWS_FIJI_DRIVER, PROD_LINUX_DRIVER, PROD_LINUX_FORWARDING_DRIVER, PROD_LINUX_CDC_FIJI_DRIVER, PROD_LINUX_FIJI_DRIVER, PROD_MACOS_ECM_FIJI_DRIVER, PROD_MACOS_FIJI_DRIVER]

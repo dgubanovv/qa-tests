@@ -1,0 +1,168 @@
+numOfRings = 32
+minPortNum = 1
+maxPortNum = 65535
+pktsPerStream = 2	#number of packets to send in each stream, with each packet having same header
+numStreams = 2		#total number of streams to send
+rssType = 1			#0 - no dependency, 1 - one L3/L4 header, 2 - the same last 3 bits
+l3Type = 2			#0 - no dependency, 1 - IPv4, 2 - IPv6
+l4Type = 1 			#0 - no dependency, 1 - TCP, 2 - UDP
+vlan_tag = 0x123
+maxtc = 4
+if $maxtc == 4:
+	q_ct = 8
+	bit_mask = 0x7
+else:
+	q_ct = 4
+	bit_mask = 0x3
+
+testGroupTag = 0
+scmp.clean
+scmp.autofill -r
+scmp.newGroup -g $testGroupTag
+
+for ring = 0; $ring < $numOfRings; ring += 1:
+	if $ring < 10:
+		ltag_$ring = TX0$ring
+		rtag_$ring  = RX0$ring
+	else:
+		ltag_$ring = TX$ring
+		rtag_$ring = RX$ring
+		
+	#scmp.newPktStream -s $(ltag_$ring) 
+	#scmp.add -g $testGroupTag -l $(ltag_$ring) -r $(rtag_$ring)
+	#scmp.stream.run -t $(ltag_$ring) 
+
+for currStrm = 0; $currStrm < $numStreams; currStrm += 1:
+	#L2 Layering Preparation
+	l2Protcol = Ether
+	for j = 0; $j < 6; j += 1:
+		src$j = format(random.randint(0x0, 0xFF), 'x')  #get random string without 0x in front
+		dest$j = format(random.randint(0x0, 0xFF), 'x')
+	l2_src_list = "$src0:$src1:$src2:$src3:$src4:$src5"
+	l2_dest_list = "$dest0:$dest1:$dest2:$dest3:$dest4:$dest5"
+	
+	#L3 Layering Preparation
+	if $l3Type != 0:
+		l3_src_list = "  #create string with concatenation
+		l3_dest_list = " #create string with concatenation
+		if $l3Type == 1:
+			l3Protocol = IP
+			maxRandNum = 0xFF
+			strDivider = .
+			randNumCount = 4
+			format_spec = 'd'
+		elif $l3Type == 2:
+			l3Protocol = IPv6
+			maxRandNum = 0xFFFF
+			strDivider = :
+			randNumCount = 8
+			format_spec = 'x'
+		for j = 0; $j < $randNumCount; j += 1:
+			src_num$j = format(random.randint(0x0, $maxRandNum), $format_spec)
+			dest_num$j = format(random.randint(0x0, $maxRandNum), $format_spec)
+			if $j > 0:
+				l3_src_list = $(l3_src_list)$(strDivider)$(src_num$j)
+				l3_dest_list = $(l3_dest_list)$(strDivider)$(dest_num$j)
+			else:
+				l3_src_list = $(l3_src_list)$(src_num$j)
+				l3_dest_list = $(l3_dest_list)$(dest_num$j)
+		l3_src_list = $(l3_src_list)" #add final quotation character
+		l3_dest_list = $(l3_dest_list)" #add final quotation character
+	
+	#L4 layering Preparation
+	if $l4Type != 0:
+		dport = random.randint($minPortNum, $maxPortNum)
+		sport = random.randint($minPortNum, $maxPortNum)
+		l4Protocol = ("TCP" if $l4Type == 1 else "UDP")
+
+	for currPkt = 0; $currPkt < $pktsPerStream; currPkt += 1:
+		pkt.new -n strm($currStrm)_pkt$currPkt
+		currPktID = $(strm($currStrm)_pkt$currPkt)
+		
+		#layering
+		if $l4Type != 0:
+			pkt.layer -i $currPktID -L 75 -t $l4Protocol dport=$dport sport=$sport
+		if $l3Type != 0:
+			pkt.layer -i $currPktID -L 50 -t $l3Protocol dst=$l3_dest_list src=$l3_src_list
+		pkt.layer -i $currPktID -L 25 -t $l2Protcol dst=$l2_dest_list src=$l2_src_list
+		
+	#rss and ring
+	pkt.rss -i $currPktID -n hashKey #get rss from last packetID of above loop, since all stream packets have same header
+	
+	recvTc = random.randint(0, ($maxtc-1))
+	ring_$currStrm = ($recvTc * $q_ct) + ($hashKey & $bit_mask)
+	curr_ltag = $(ltag_$(ring_$currStrm))
+	curr_rtag = $(rtag_$(ring_$currStrm))
+	
+	#set up stream
+	scmp.newPktStream -s $currStrm
+	scmp.add -g $testGroupTag -l $currStrm -r $curr_rtag
+	for currPkt = 0; $currPkt < $pktsPerStream; currPkt += 1:
+		currPktID = $(strm($currStrm)_pkt$currPkt)
+		pkt.add2stream -i $currPktID -s $currStrm
+	scmp.stream.run -t $currStrm
+	
+#Only deep loopback
+mac.set loopback System Packet -l nul
+#Enable rss
+mac.rfc.rss.enable
+#Set maxtc
+mac.set txDcbTcCount $maxtc
+mac.set rxDcbTcCount $maxtc
+
+#Initialize HW
+mac.init
+mac.txinit
+mac.rxinit
+
+#enable all rings
+for ring = 0; $ring < $numOfRings; ring += 1:
+	#Enable expected rx ring
+	mac.rxring[$ring].set -l nul batchFill 0 #Disable autofill after interrupt
+	mac.rxring[$ring].enable
+
+	#Enable tx ring
+	mac.txring[$ring].set PacketMark None -l nul
+	mac.txring[$ring].enable
+	
+for currStrm = 0; $currStrm < $numStreams; currStrm += 1:
+	rssRing = $(ring_$currStrm)
+	txRing = random.randint(0, ($numOfRings - 1))
+	for currPkt = 0; $currPkt < $pktsPerStream; currPkt += 1:
+		currPktID = $(strm($currStrm)_pkt$currPkt)
+		mac.rxring[$rssRing].fill 1
+		mac.rxring[$rssRing].commit
+		
+		#Insert packet in tx ring
+		full_vlan_tag = $vlan_tag | ($rssRing << 13)
+		mac.txring[$txRing].insertcontext -I 0 -V $full_vlan_tag
+		mac.txring[$txRing].insert -i $currPktID -C 0 -v 1
+		#mac.txring[$txRing].dumpdesc -T 2:1 -l cli
+		mac.txring[$txRing].dumpdesc -T 1 -l cli
+		mac.txring[$txRing].dumpbuf -T 1 -l cli
+		mac.txring[$txRing].commit
+		pause 100 ms
+		#Receive data
+		mac.txring[$txRing].clean
+		mac.rxring[$rssRing].clean
+		mac.txring[$txRing].status
+		mac.rxring[$rssRing].status
+		mac.rxring[$rssRing].dumpdesc -H 1 -l cli
+		mac.rxring[$rssRing].dumpbuf -H 1 -l cli
+
+mac.txuninit
+mac.rxuninit
+mac.uninit
+
+#groups = acAllRings
+scmp.isEmpty -g $testGroupTag -l cli -n scmperror
+scmp.status -g $testGroupTag -l scmp
+
+#for ring = 0; $ring < $numOfRings; ring += $q_ct:
+	#scmp.removeStream -s $(ltag_$ring)
+
+if $scmperror > 0:
+    echo Received stream is not the same as prepared 
+    #cmd
+else:
+    echo Received stream is the same as prepared

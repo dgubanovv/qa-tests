@@ -1,0 +1,203 @@
+# Feature: Send packets
+# Scenario: Send random size packets through $numOfRings rings (with workaround bug:3712 bug:)
+#	Given rings to send 0-($numOfRings - 1)
+#	   And Need to to send $sp packets
+#	And TPB size $tpbsize kb
+#	And RPB size $rpbsize kb
+#	And ring size txRing8_$ring
+#	And max packets per commint up to $numOfDesc (bad variable name should be numPackets)
+#	   And bugs workarounds applied
+#	And insert packet's descriptors
+#	And commits a group of descriptors 
+#	   Then sent $sp packets Or sum of packets sizes ($fileSize) should be > $outputSize
+#	   And calls compare.txt
+#	And $error should be 0
+
+testName = sp$sp
+testName = $(testName)frag$frag
+testName = $(testName)numOfDesc$numOfDesc
+
+shell echo [ RUN	   ] $testplanName.$fixtureName.$testName >> $runResults
+
+currentFolder = $folder/sp$sp  
+currentFolder = $(currentFolder)frag$frag
+currentFolder = $(currentFolder)numOfDesc$numOfDesc
+
+shell mkdir $currentFolder
+
+for ring in $ring_lst:
+	fileNum$ring = 1
+	txfile$ring = $currentFolder/$(fileNum$ring)
+	txfile$ring = $(txfile$ring)_$ring
+	txfile$ring = $(txfile$ring)_tx.txt
+
+	rxfile$ring = $currentFolder/$(fileNum$ring)
+	rxfile$ring = $(rxfile$ring)_$ring
+	rxfile$ring = $(rxfile$ring)_rx.txt
+
+lastRing = $ring
+echo lastRing = $ring
+pause 1000 ms
+step = 0
+lastCmp = 0
+needToBreak = 0
+trafficClassInit = 0
+sendAll = 0
+ringsCompleted = 0
+startRing = 0
+
+
+
+for ring in $ring_lst:
+	fileNum$ring = 1
+	fileSize$ring = 0
+
+for i = 0; $i < $sp; i += $step:
+	step = 0
+
+	if $error > 0:
+		break
+
+	startRing = ($startRing % $numOfRings)
+
+	for ring = $startRing; $ring < $numOfRings; ring = ($ring + 1):
+		currentTc = ($ring // $q_ct)
+		if $error > 0:
+			break
+			
+
+		abn = 0
+		sizeToSend = 0
+		tailCounter$ring = 0
+
+		#fill tx
+		
+		add_rx_bufs = 0
+		for j = 0; $j < $numOfDesc; j += 1:
+			if $error > 0:
+				break
+				
+			#if ring was completed "abnormally"
+			if $ringsCompleted == $ringsPerTc:
+				break
+
+			packetSize = 0
+
+			for fragNum = 1; $fragNum <= $frag; fragNum += 1:
+				if $withOffset == 1:
+					randomOffset$fragNum = random.randint(0, $maxOffset)
+
+				#construct fragXSizeY, ex: frag4Size3
+				tmp1 = frag$frag
+				tmp2 = Size$fragNum
+				tmp3 = Tc$currentTc
+				max = $($tmp1$tmp2$tmp3)
+				max = ($max - $(randomOffset$fragNum)) #prevents tx buffer overflow
+
+				size$fragNum = random.randint(6, $max)  # min segSize is 6
+
+				packetSize += $(size$fragNum)
+			sizeToSend += $packetSize
+
+			#if packet size less than min packet size increase last packet's fragment so overall packet size == minSize
+
+			if $packetSize < $minSize:
+				sizeToSend = ($sizeToSend - $packetSize)
+				packetSize = ($packetSize - $(size$frag))
+
+				size$frag = ($minSize - $packetSize)
+				packetSize = $minSize
+				sizeToSend += $packetSize
+
+			tailCounter$ring += $frag
+			
+			if $(tailCounter$ring) > $(txRingSize$ring):
+				ringsCompleted += 1  #this ring is full
+				abn = 1
+				break
+	
+			#break if tpb size was reached ($j * 16 - packet internal data size, at least 128)
+			if ($(tpbsizeTc$currentTc) * 1024) < ($sizeToSend + $j * 16):
+				ringsCompleted += 1 #done with this ring
+				abn = 1
+				break
+
+			if ($(tpbsizeTc$currentTc) * 1024) < ($sizeToSend + 128):
+				ringsCompleted += 1 #done with this ring
+				abn = 1
+				break
+
+			params = -T 1 -a $(txfile$ring) -t $mark -l dumptx
+			
+			#when packet size goes over 2KB limit, those extra buffers need to be added to count
+			bufs_over_rx_limit = ($packetSize - 1) / $rxBufSize  #will be 0 when packetSize < rxBufSize
+			add_rx_bufs += $bufs_over_rx_limit
+			for fragNum = 1; $fragNum < $frag; fragNum += 1:	
+				randomOffset$fragNum = $(randomOffset$fragNum) #& 0xFFFFFFF0   #workaround for Bug3925
+				mac.txring[$ring].insert -b $(size$fragNum) -p $packetSize -e 0 -o $(randomOffset$fragNum)
+				mac.txring[$ring].dumpdesc -T 1 -l dumpdesc
+				#mac.txring[$ring].dumpbuf $params
+				
+				if $fragNum == 1:
+					#remove $mark
+					params = -T 1 -a $(txfile$ring) -l dumptx
+					
+
+			mac.txring[$ring].insert -b $(size$frag) -p $packetSize -o $(randomOffset$frag)
+			mac.txring[$ring].dumpdesc -T 1 -l dumpdesc
+			#mac.txring[$ring].dumpbuf $params
+			
+		lastBatchCount$ring += $j 
+		
+		#if ring was not completed "abnormally"
+		if $abn == 0:
+			ringsCompleted += 1
+				
+		#j == number of packets in buffer
+
+		#dump rx when ring half full and reset indexes
+		if $(counter$ring) > -1:
+			exec $scriptDir/updateRx.txt
+			if $error > 0:
+				break
+
+		#pause to prevent tx buffer overflow
+		if $(acc$ring) > ($(tpbsizeTc$currentTc) * 1024 - $sizeToSend):
+			if pausesOn != 0:
+				pause $delay ms
+			acc$ring = 0
+
+		acc$ring += $sizeToSend
+		counter$ring += $j
+		counter$ring += $add_rx_bufs
+			
+		if $ringsCompleted == $ringsPerTc:
+			startRing = ($ring + $q_ct - $ringsPerTc + 1)
+			ringsCompleted = 0
+			break 
+
+	start = ($startRing - $q_ct)
+	if $error > 0:
+		break
+	for ring = $start; $ring < ($start + $ringsPerTc); ring = ($ring + 1):
+		if $error > 0:
+			break
+			
+		mac.txring[$ring].commit
+		
+		#update tx head
+		mac.txring[$ring].clean
+	if ($ring - 1) == $lastRing:
+		step = 1
+
+groups = acRing00
+for ring in $ring_lst:   #CHANGECHANGE
+	if $error > 0:
+		break
+
+	lastCmp = 1
+	#dump the rest rx and reset indexes
+	if $(counter$ring) > -1:
+		exec $scriptDir/updateRx.txt
+		
+	exec $scriptDir/compare.txt

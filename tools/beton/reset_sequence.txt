@@ -1,0 +1,193 @@
+#reloadPhyFw = 1
+usePhyReset = 0
+#clxForFlashless = ../15mhz.clx
+#forceFlashless = 0
+#MAC FW is always reloaded
+#boot code is always reloaded
+
+for k = 0; $k < 1000; k += 1:
+    readreg 0x704 -n flbStatus
+    readreg 0x388 -n bootExitCode
+    if $flbStatus != 0x06000000 or $bootExitCode != 0:
+        break
+
+if $k == 1000:
+    echo Neither RBL nor FLB started
+    exit
+
+if $bootExitCode != 0:
+    rblEnabled = 1
+else:
+    rblEnabled = 0
+
+
+if $rblEnabled == 0:
+    writereg 0x404 0x40e1
+    #Let Felicity hardware to complete SMBUS transaction before Global software reset
+    pause 50 ms
+
+    # If SPI burst transaction was interrupted (before running the script), global software reset may not clear SPI interface
+    # Clean it up manualy before global reset
+    readreg 0x53c -n nvrProv4
+    nvrProv4 = $nvrProv4 | 0x10 
+    writereg 0x53c $nvrProv4
+
+    readreg 0x0 -n regTemp
+    regTemp = ($regTemp & 0xBFFF )| 0x8000
+    writereg 0x0 $regTemp
+    #pause 10 ms
+
+    #Kickstart
+    writereg 0x404 0x80e0
+    writereg 0x32a8 0x0
+    writereg 0x520 1
+    #For the case SPI burst transaction was interrupted (by MCP reset above), reset SPI interface
+    readreg 0x53c -n nvrProv4
+    nvrProv4reset = $nvrProv4 | 0x10
+    writereg 0x53c $nvrProv4reset
+    pause 10 ms
+    writereg 0x53c $nvrProv4
+
+    writereg 0x404 0x180e0
+    for k = 0; $k < 1000; k += 1:
+        readreg 0x704 -n flbStatus
+        flbStatus = $flbStatus & 0x10
+        if $flbStatus != 0:
+            break
+        pause 10 ms
+    if $flbStatus == 0:
+        echo MAC kickstart failed
+        exit
+    k = $k * 10
+    echo MAC kickstart: $k ms
+
+    writereg 0x404 0x80e0
+    #Let Felicity hardware to complete SMBUS transaction before Global software reset
+    pause 50 ms
+    writereg 0x3a0 1
+
+    #PHY Kickstart
+    if $reloadPhyFw != 0:
+        if $usePhyReset != 0:
+            writephyreg 0x1e.0x2681 1
+        else:
+            writephyreg 0x1e.0xc001 0x41
+            #This is to make sure reset will be triggered later with setting 1e.0.F, as rising edge is needed
+            writephyreg 0x1e.0x0 0x0
+            writephyreg 0x1e.0xc442 0x1
+            #Reset PHY
+            writephyreg 0x1E.0xC3FE 0x0
+            writephyreg 0x1e.0x0 0x8000
+            writephyreg 0x1e.0xc001 0x0
+
+        # Without this pause, we sometimes get 0xFFFF from MDIO. Anyway, I put another protection against this below
+        pause 30 ms
+        for k = 0; $k < 1000; k += 1:
+            readphyreg 0x1e.0xC841 -n daisyChainStatus
+            if $daisyChainStatus != 0xFFFF:
+                daisyChainStatus = $daisyChainStatus & 0x40
+                if $daisyChainStatus != 0:
+                    break
+            pause 10 ms
+
+        if $daisyChainStatus == 0:
+            echo PHY kickstart failed
+            exit
+        k = $k * 10
+        echo PHY kickstart: $k ms
+
+    #Global software reset
+    readreg 0x5000 -n regTemp
+    regTemp = $regTemp & 0xDFFFFFFF
+    writereg 0x5000 $regTemp
+    readreg 0x7000 -n regTemp
+    regTemp = $regTemp & 0xDFFFFFFF
+    writereg 0x7000 $regTemp
+    readreg 0x4000 -n regTemp
+    regTemp = $regTemp & 0xDFFFFFFF
+    writereg 0x4000 $regTemp
+    readreg 0x0 -n regTemp
+    regTemp = ($regTemp & 0xBFFF )| 0x8000
+    writereg 0x0 $regTemp
+
+    for k = 0; $k < 1000; k += 1:
+        readreg 0x18 -n restartCompleted
+        if $restartCompleted != 0:
+            break
+        pause 10 ms
+    if $restartCompleted == 0:
+        echo Restart failed
+        exit
+    k = $k * 10
+    echo Firmware restart: $k ms
+else:
+    writereg 0x404 0x40e1
+    writereg 0x3a0 1
+    writereg 0x32a8 0x0
+    #MAC FW will reload PHY FW if 1E.1000.3 was cleaned
+    if $reloadPhyFw != 0:
+        if $usePhyReset != 0:
+            writephyreg 0x1e.0x2681 1
+        else:
+            readphyreg 0x1e.0x1000 -n phyControlReg
+            phyControlReg = $phyControlReg & 0xFFFFFFF7
+            writephyreg 0x1e.0x1000 $phyControlReg
+                    
+    #Change RBL status so we can poll and know when boot completed (or entered flashless mode)
+    #But don't reset it to 0, so script will never execute non-RBL branch
+    writereg 0x388 0xDEAD
+
+    # If SPI burst operation is in progress at the time when MCP is being stalled, next SPI interface read request fails
+    # Reset does not clear this state of SPI interface, so need  to reset it explicitly
+    readreg 0x53c -n nvrProv4
+    nvrProv4 = $nvrProv4 | 0x10 
+    writereg 0x53c $nvrProv4
+
+    #Global software reset with cleaning all registers (this will restart RBL and reload MAC FW)
+    readreg 0x5000 -n regTemp
+    regTemp = $regTemp & 0xDFFFFFFF
+    writereg 0x5000 $regTemp
+    readreg 0x7000 -n regTemp
+    regTemp = $regTemp & 0xDFFFFFFF
+    writereg 0x7000 $regTemp
+    readreg 0x4000 -n regTemp
+    regTemp = $regTemp & 0xDFFFFFFF
+    writereg 0x4000 $regTemp
+    readreg 0x0 -n regTemp
+    regTemp = ($regTemp & 0xFFFFBFFF )| 0x8000
+    writereg 0x0 $regTemp
+    if $forceFlashless != 0:
+        writereg 0x534 0
+    writereg 0x404 0x40e0
+    
+    #Wait until RBL boot code completed
+    for k = 0; $k < 1000; k += 1:
+        readreg 0x388 -n restartCompleted
+        restartCompleted = $restartCompleted & 0xFFFF
+        if $restartCompleted != 0 and $restartCompleted != 0xDEAD:
+            break
+        pause 10 ms
+    if $restartCompleted == 0 or $restartCompleted == 0xDEAD:
+        echo RBL restart failed
+        exit
+    k = $k * 10
+    echo RBL restart: $k ms
+    #Restore NVR interface
+    if $forceFlashless != 0:    
+        writereg 0x534 0xA0
+    
+    #We can perform flashless boot load here
+    #if $restartCompleted == 0xF1A7:
+    #    mac.loadfw -f $clxForFlashless -C 0xe2
+    
+    for k = 0; $k < 1000; k += 1:
+        readreg 0x18 -n restartCompleted
+        if $restartCompleted != 0:
+            break
+        pause 10 ms
+    if $restartCompleted == 0:
+        echo Restart failed
+        exit
+    k = $k * 10
+    echo Kickstart: $k ms
+             

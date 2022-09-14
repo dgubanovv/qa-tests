@@ -1,0 +1,115 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4654.txt $
+# $Revision: #2 $
+# $DateTime: 2016/03/18 07:41:06 $
+# $Author: oxy $
+#
+# Add a bit in Rx descriptor. Set this bit if the packet matched a Unicast filter.
+
+finalReport = [] #mandatory clear, empty means tests passed.
+
+ifndef logTag:
+    logTag = -l cli
+ifndef rxRingNo:
+    rxRingNo = 0
+ifndef txRingNo:
+    txRingNo = 0
+    
+mac.set loopback System Packet $logTag #deep loopback
+
+
+mac.init
+mac.txinit
+mac.txring[$txRingNo].enable
+
+mac.rxinit
+mac.rxring[$rxRingNo].enable
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+
+#Disable Promisc
+
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 256
+mac.llh -C rpfL2BroadcastFilterActionSet 1
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llh -C rpfL2BroadcastEnableSet 1
+mac.llh -C rpfVlanPromiscuousModeEnableSet 1
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llhcache off
+
+
+#configure Unicast Filter[0]
+
+filterUnicastIndex = 0
+filterUnicastEnable  = 1 #Enable
+filterUnicastMngQueue = 0
+filterUnicastAction = 1 #Host
+filterUnicastMacAddr = [0x11,0x12,0x13,0x14,0x15,0x16]
+
+exec $(PWD)/helpers/filtersConfigurators/rxUnicastFilter.txt
+
+#configure multicast filter
+filterMulticastIndex = 0
+filterMulticastEnable = 1
+filterMulticastAction = 1
+filterMulticastMacAddr = 0x010
+
+mac.llh rpfL2MulticastDestinationAddressMaskSet 0xfff
+
+exec $(PWD)/helpers/filtersConfigurators/rxMulticastFilter.txt
+
+#create test packets
+givenMacaddrSrcStr = '[0x21,0x22,0x23,0x24,0x25,0x26]'
+givenMacaddrDstStrs = ['[0x11,0x12,0x13,0x14,0x15,0x16]', '[0x15,0x15,0x15,0x15,0x15,0x15]','[0xff,0xff,0xff,0xff,0xff,0xff]', '[0x01,0x00,0x5e,0x01,0x02,0x03]']
+
+givenPacketTypesStr = ['Unicast (filter match)','Unicast (flter not match)','Broadcast', 'Multicast IPv4']
+
+expectEStat = [0x02,0x00,0x00,0x00]
+
+expectRxCount = [1,0,1,1]
+#expectRxCount = [0,1,0,0] #fail
+
+countPackets = 0
+
+for givenMacaddrDstStr in $givenMacaddrDstStrs :
+    # Get Rx head before packet insertion
+    mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+
+    pkt.new -n pkt$countPackets -p 32
+    pkt.layer -i $(pkt$countPackets) -L 60 -t ICMP
+    pkt.layer -i $(pkt$countPackets) -L 50 -t IP
+    pkt.layer -i $(pkt$countPackets) -L 25 -t Ether src=$givenMacaddrSrcStr type=0x800 dst=$givenMacaddrDstStr
+
+    mac.txring[$txRingNo].insert -i $(pkt$countPackets) -b 74
+
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.rxring[$rxRingNo].clean
+
+    mac.txring[$txRingNo].status $logTag
+    mac.rxring[$rxRingNo].status $logTag
+    
+    #Check packet in rx ring
+    mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+    
+    rxCount = ($rxHeadGood - $rxHeadBefore)
+
+    packetType = $givenPacketTypesStr[$countPackets]
+
+    if $rxCount != $expectRxCount[$countPackets]:
+        if $rxCount == 0 :
+            finalReport += ['($countPackets)$packetType packet was not received']
+        else :
+            finalReport += ['($countPackets)$packetType packet was received']
+    if $rxCount != 0:
+        mac.rxring[$rxRingNo].getdescval -H 1 -f RX_ESTAT -n rxEStat -l nul #$logTag
+        if (($rxEStat & 0x2) != $expectEStat[$countPackets]) : 
+            finalReport += ['($countPackets)$packetType packet: Wrong unicast match bit']
+    countPackets += 1
+
+#Show result
+exec $(PWD)/helpers/showTestResult.txt
+
+
+mac.uninit

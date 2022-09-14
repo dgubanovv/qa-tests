@@ -1,0 +1,43 @@
+allDefined = True
+
+ifndef pkt_type:
+    echo Packet type is not definded. Please define variable pkt_type
+    allDefined = False
+
+ifndef buffer_address:
+    echo Buffer address is not definded. Please define variable buffer_address
+    allDefined = False
+
+ifndef timestamp_offset:
+    echo Timestamp offset is not defined. Please define variable timestamp_offset
+    allDefined = False
+
+if $allDefined == True:
+    timestamp_size = 12
+    
+    start_addr = $buffer_address + $timestamp_offset
+    end_addr   = $start_addr + $timestamp_size
+    
+    timestamp_lst = []
+    timestamp = 0
+    
+    for addr in range($start_addr, $end_addr):
+        mem.get -p $addr -s 1 -n data
+        #hdata = hex($data)
+        #echo BYTE: $hdata
+        timestamp_lst += [hex($data)]
+    
+    sec_timestamp  = 0
+    nsec_timestamp = 0
+    
+    for element in $timestamp_lst[8:]:
+        nsec_timestamp = ($nsec_timestamp << 8) + $element
+    
+    for element in $timestamp_lst[:8]:
+        sec_timestamp = ($sec_timestamp << 8) + $element
+    
+    timestamp = $sec_timestamp.$nsec_timestamp
+    timestamp_ns_int = $sec_timestamp * 10**9 + $nsec_timestamp
+    echo TIMESTAMP (FROM MEM) : $timestamp
+else:
+    echo Not all variables are defined. Exiting script

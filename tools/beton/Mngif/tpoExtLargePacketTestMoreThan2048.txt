@@ -1,0 +1,336 @@
+# Script for large packets extraction on mng queue0 using mac filter
+
+hostAlreadyInitiated = False
+txRingNo = 0
+checkTruncErrorEarly = False # check truncation error at once
+#packetLenMoreThan2048 = 2049
+packetLenMoreThan2048 = 3000
+nextPacketLen = 125
+nextPacketCnt = 1
+
+segCount = 4#Number of segments to split packet onto
+
+queueActive = [1, 1]
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+    mac.isr.disable
+    mac.txinit
+    mac.txring[$txRingNo].set bufSize 4096
+    mac.txring[$txRingNo].set maxDmaSize 4096
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq
+
+# Tx Extractor prepare
+
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+
+readreg $txExtStatus2Reg -n status2Reg
+nPackets = $status2Reg & ($txExtCntMasks[0] | $txExtCntMasks[0])
+if $nPackets > 0:
+    echo Please run script on clear queue
+    exit
+
+# Set mode
+# Set corresponding filters enable and clear other
+
+readreg $txExtCtrlReg -n txExtCtrl
+for queue = 0; $queue < 2; queue += 1:
+    txExtCtrl = $txExtCtrl | $txExtLimitMasks[$queue]
+    txExtCtrl = $txExtCtrl & ~$txExtReplicateMasks[$queue]
+    if $queueActive[$queue] > 0:
+        txExtCtrl = $txExtCtrl | $txExtMACFilterMasks[$queue]
+    else:
+        txExtCtrl = $txExtCtrl & ~$txExtMACFilterMasks[$queue]
+    txExtCtrl = $txExtCtrl & ~$txExtIPFilterMasks[$queue]
+    txExtCtrl = $txExtCtrl & ~$txExtARPFilterMasks[$queue]
+writereg $txExtCtrlReg $txExtCtrl
+
+macAddrFilter1 = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05]
+macAddrFilterStr1 = ' '.join([hex(elem) for elem in $macAddrFilter1])
+macFilterLSW1 = (($macAddrFilter1[2] << 24) & 0xFF000000) | (($macAddrFilter1[3] << 16) & 0xFF0000) | (($macAddrFilter1[4] << 8) & 0xFF00) | ($macAddrFilter1[5] & 0xFF)
+macFilterMSW1 = (($macAddrFilter1[0] << 8) & 0xFF00) | ($macAddrFilter1[1] & 0xFF)
+
+macAddrFilter2 = [0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F]
+macAddrFilterStr2 = ' '.join([hex(elem) for elem in $macAddrFilter2])
+macFilterLSW2 = (($macAddrFilter2[2] << 24) & 0xFF000000) | (($macAddrFilter2[3] << 16) & 0xFF0000) | (($macAddrFilter2[4] << 8) & 0xFF00) | ($macAddrFilter2[5] & 0xFF)
+macFilterMSW2 = (($macAddrFilter2[0] << 8) & 0xFF00) | ($macAddrFilter2[1] & 0xFF)
+
+macAddrFilters = ['$macAddrFilterStr1', '$macAddrFilterStr2']
+
+writereg $txExtMACFilter0LSWReg $macFilterLSW1
+writereg $txExtMACFilter0MSWReg $macFilterMSW1 
+
+writereg $txExtMACFilter1LSWReg $macFilterLSW2
+writereg $txExtMACFilter1MSWReg $macFilterMSW2 
+
+# Read status reg1 to self-clear errors
+readreg $txExtStatus1Reg
+
+# Read other status regs for information
+readreg $txExtStatus2Reg
+readreg $txExtStatus3Reg
+
+segmentLen = ($packetLenMoreThan2048 / $segCount / 4) * 4
+segmentLenLast = $packetLenMoreThan2048 - ($segmentLen * ($segCount - 1))
+pAddrAr0 = []
+pAddrAr1 = []
+
+# Packet Send
+for queue = 0; $queue < 2; queue += 1:
+    for segment = 0; $segment < $segCount; segment += 1:
+        if $segment < $segCount - 1:
+            len = $segmentLen
+        else:
+            len = $segmentLenLast
+        mac.txring[$txRingNo].insert -b $len -p $packetLenMoreThan2048 -f indexed_uniq_ramp
+        mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr
+        if $queue == 0:
+            pAddrAr0 += [$pAddr]
+        else:
+            pAddrAr1 += [$pAddr]
+        str = $macAddrFilters[$queue]
+        mem.put $str -s 1 -p $pAddr
+        
+totalSegs = $segCount * $queue
+mac.txring[$txRingNo].dumpdesc -T 1:$totalSegs -l dumptx
+mac.txring[$txRingNo].dumpbuf -T 1:$totalSegs -l dumptx
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.txring[$txRingNo].status
+
+# Packet Extract
+finalReport = [] # final report is useful when command line window has huge output
+
+readreg $txExtStatus2Reg -n status2Reg
+readreg $txExtStatus1Reg -n status1Reg
+
+for queue = 0; $queue < 2; queue += 1:
+    nPackets = ($status2Reg & $txExtCntMasks[$queue]) >> $txExtCntShifts[$queue]
+    if $nPackets[$queue] != $queueActive[$queue]:
+        echo Wrong packet count (queue $queue) $nPackets
+        exit
+    if ($status1Reg & $txExtRdyMasks[$queue]) != $txExtRdyMasks[$queue]:
+        status1RegStr = hex($status1Reg)
+        str = 'Ready bit for queue $queue is not set $status1RegStr (1)'
+        echo $str
+        finalReport = $finalReport + ['$str']
+
+# Check errors
+readreg $txExtStatus1Reg -n status1Reg
+status1RegStr = hex($status1Reg)
+for queue = 0; $queue < 2; queue += 1:
+    if $checkTruncErrorEarly == True:
+        if ($status1Reg & $txExtTruncMasks[$queue]) != 0:
+            str = 'Truncation Error for queue $queue is set $status1RegStr (2)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+    if ($status1Reg & $txExtOfMasks[$queue]) != 0:
+        str = 'Overflow Error for queue $queue is set $status1RegStr (3)'
+        echo $str
+        finalReport = $finalReport + ['$str']
+
+deltas = []
+byteCnts = []
+for queue = 0; $queue < 2; queue += 1:
+    bufArray = []
+    byteCnt = 0
+    delta = 0
+    if $queueActive[$queue] != 0:
+        # Select Queue
+        if $queue == 0:
+            txExtCtrl = $txExtCtrl & ~$txExtSelectQueueMask
+        else:
+            txExtCtrl = $txExtCtrl | $txExtSelectQueueMask
+        writereg $txExtCtrlReg $txExtCtrl
+
+        txExtCtrl0 = $txExtCtrl & ~$txExtReadMask
+        txExtCtrl1 = $txExtCtrl | $txExtReadMask
+        # for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+        for byteCnt = 0; $byteCnt < 2080; byteCnt += 4: # increase limit for test goals
+            # generate rising edge
+            writereg $txExtCtrlReg $txExtCtrl0
+            writereg $txExtCtrlReg $txExtCtrl1
+            readreg $txExtDataReg -n dataExtracted
+            bufArray += [$dataExtracted]
+
+            readreg $txExtStatus2Reg -n status2Reg
+            eop = $status2Reg & $txExtEopMask
+            if $eop <> 0:
+                byteCnt += 4
+                break
+        writereg $txExtCtrlReg $txExtCtrl0
+        if $queue == 0:
+            bufArr0 = $bufArray
+        else:
+            bufArr1 = $bufArray
+
+        # Process data_vld field
+        delta = 0
+        valid = ($status2Reg & $txExtDataValidMask) >> $txExtDataValidShift
+        if $valid > 0:
+            for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+                byteCnt = $byteCnt + 0 - 1
+                delta += 1
+        else:
+            byteCnt = $byteCnt + 0 - 4
+            delta += 4
+
+        readreg $txExtStatus3Reg -n extOffset
+        if $extOffset != 0:
+            extOffsetStr = hex($extOffset)
+            str = 'Wrong ext_offset $extOffsetStr after extraction (byteCnt $byteCnt) (4)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+
+        nPackets = ($status2Reg & $txExtCntMasks[$queue]) >> $txExtCntShifts[$queue]
+        if $nPackets != 0:
+            str = 'Wrong packet count $nPackets after extraction on queue $queue (byteCnt $byteCnt)(5)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+
+        # Check received data
+        # @note: is there any way to acquire mem.cmp result to stop next execution?
+        if ($packetLenMoreThan2048 > 2048 and $byteCnt != 2048) or ($packetLenMoreThan2048 <= 2048 and $byteCnt != $packetLenMoreThan2048):
+            str = 'Wrong byte count $byteCnt extracted (6)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+    deltas += [$delta]
+    byteCnts += [$byteCnt]
+
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] != 0:
+        if $queue == 0:
+            arr = $bufArr0
+        else:
+            arr = $bufArr1
+        for segment = 0; $segment < $segCount; segment += 1:
+            bufStr = ' '
+            if $queue == 0: 
+                pAddr = $pAddrAr0[$segment]
+            else:
+                pAddr = $pAddrAr1[$segment]
+            if $segment < $segCount - 1:
+                len = $segmentLen
+            else:
+                len = $segmentLenLast
+            for dwordCnt = $segment * ($segmentLen / 4); (($dwordCnt < $segment * ($segmentLen / 4) + (($len + $deltas[$queue]) /4)) and ($dwordCnt < ($byteCnts[$queue] / 4))); dwordCnt += 1:
+                data = $arr[$dwordCnt]
+                hexdata = hex($data)
+                bufStr = '$bufStr' + ' ' + '$hexdata'
+            if $dwordCnt * 4 >= $byteCnts[$queue]:
+                len = ($dwordCnt + 0 - $segment * ($segmentLen / 4)) * 4
+            mem.cmp -p $pAddr -s $len -V $bufStr -l cli
+            if $dwordCnt * 4 >= $byteCnts[$queue]:
+                break
+
+# Check errors
+readreg $txExtStatus1Reg -n status1Reg
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] != 0:
+        if ($status1Reg & $txExtTruncMasks[$queue]) == 0:
+            status1RegStr = hex($status1Reg)
+            str = 'Truncation Error for queue $queue is not set $status1RegStr (7)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+
+readreg $txExtStatus1Reg -n status1Reg
+for queue = 0; $queue < 2; queue += 1:
+    if $queueActive[$queue] != 0:
+        if ($status1Reg & $txExtTruncMasks[$queue]) != 0:
+            status1RegStr = hex($status1Reg)
+            str = 'Truncation Error is not cleared after packet processed and register read $status1RegStr (8)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+
+readreg $txExtStatus2Reg -n status2Reg
+for queue = 0; $queue < 2; queue += 1:
+    nPackets = ($status2Reg & $txExtCntMasks[$queue]) >> $txExtCntShifts[$queue]
+    if $nPackets[$queue] != 0:
+        echo Wrong packet count $nPackets after extraction on queue $queue (8.1)
+        exit
+
+# Next packet (s)
+for queue = 0; $queue < 2; queue += 1:
+    for nextPacketNo = 0; $nextPacketNo < $nextPacketCnt; nextPacketNo += 1:
+        mac.txring[$txRingNo].insert -b $nextPacketLen -p $nextPacketLen -f indexed_uniq_ramp
+        mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr
+        str = $macAddrFilters[$queue]
+        mem.put $str -s 1 -p $pAddr
+        mac.txring[$txRingNo].dumpdesc -T 1 -l dumptx
+        mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx
+        mac.txring[$txRingNo].commit
+        mac.txring[$txRingNo].clean
+        mac.txring[$txRingNo].status
+        
+        readreg $txExtStatus2Reg -n status2Reg
+        nPackets = ($status2Reg & $txExtCntMasks[$queue]) >> $txExtCntShifts[$queue]
+        if $nPackets != queueActive[$queue]:
+            str = 'Wrong packet count $nPackets after insertion of next packet $nextPacketNo (9)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+
+        if $nPackets > 0:
+            # Select Queue
+            if $queue == 0:
+                txExtCtrl = $txExtCtrl & ~$txExtSelectQueueMask
+            else:
+                txExtCtrl = $txExtCtrl | $txExtSelectQueueMask
+            writereg $txExtCtrlReg $txExtCtrl
+            bufStr = ' '
+            txExtCtrl0 = $txExtCtrl & ~$txExtReadMask
+            txExtCtrl1 = $txExtCtrl | $txExtReadMask
+            # for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+            for byteCnt = 0; $byteCnt < 2080; byteCnt += 4: # increase limit for test goals
+                # generate rising edge
+                writereg $txExtCtrlReg $txExtCtrl0
+                writereg $txExtCtrlReg $txExtCtrl1
+                readreg $txExtDataReg -n dataExtracted
+                bufStr = '$bufStr' + ' ' + hex($dataExtracted)
+                readreg $txExtStatus2Reg -n status2Reg
+                eop = $status2Reg & $txExtEopMask
+                if $eop <> 0:
+                    byteCnt += 4
+                    break
+            writereg $txExtCtrlReg $txExtCtrl0
+
+            # Process data_vld field
+            valid = ($status2Reg & $txExtDataValidMask) >> $txExtDataValidShift
+            if $valid > 0:
+                for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+                    byteCnt = $byteCnt + 0 - 1
+            else:
+                byteCnt = $byteCnt + 0 - 4
+
+            nPackets = ($status2Reg & $txExtCntMasks[$queue]) >> $txExtCntShifts[$queue]
+
+            if $nPackets != 0:
+                str = 'Wrong packet count $nPackets after extraction of next packet $nextPacketNo on queue $queue(10)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+
+            # Check received data
+            # @note: is there any way to acquire mem.cmp result to stop next execution?
+            if $byteCnt != $nextPacketLen:
+                str = 'Wrong byte count $byteCnt extracted on next packet $nextPacketNo (11)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+            mem.cmp -p $pAddr -s $byteCnt -V $bufStr
+
+            # Check errors
+            readreg $txExtStatus1Reg -n status1Reg
+            if ($status1Reg & $txExtTruncMasks[$queue]) != 0:
+                status1RegStr = hex($status1Reg)
+                str = 'Truncation Error is set $status1RegStr on next packet $nextPacketNo (12)'
+                echo $str
+                finalReport = $finalReport + ['$str']
+
+if len($finalReport) > 0:
+    echo
+    echo FinalReport:
+    for str in $finalReport:
+        echo $str
+echo Script done
+cmd

@@ -1,0 +1,12 @@
+# Script for one injected packet show
+
+# Packet Show
+
+mac.rxring[$rxRingNo].clean
+mac.rxring[$rxRingNo].status
+mac.rxring[$rxRingNo].dumpdesc -H 1 -l cli
+mac.rxring[$rxRingNo].dumpbuf -H 1 -l cli
+
+#readreg 0x5718
+#readreg 0x5b14
+cmd

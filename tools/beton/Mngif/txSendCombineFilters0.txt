@@ -1,0 +1,42 @@
+# Script for packet extraction with simultaneous MAC & IP filters
+
+bufLen = 64
+
+# Send 5 packets: MAC IP, !MAC IP, MAC !IP, !MAC !IP, re MAC IP
+
+da1 = (($ipFilter << 8) & 0xFF000000) | (($ipFilter >> 8) & 0x00FF0000) | 0x1d1c
+da2 = 0x23220000 | (($ipFilter << 8) & 0x0000FF00) | (($ipFilter >> 8) & 0x000000FF)
+
+for packetNo = 0; $packetNo < 5; packetNo += 1:
+    # Packet Send
+
+    if $packetNo == 1 or $packetNo == 3:
+        pattern = 0x30201000 # mac destination address will not match
+    else:
+        pattern = ramp
+    mac.txring[$txRingNo].insert -b $bufLen -p $bufLen -f $pattern
+    mac.txring[$txRingNo].dumpdesc -T 1 -l cli
+    mac.txring[$txRingNo].getdescval -T 1 -f paddr -n pAddr
+
+    # set EtherType, IP Version
+    addr = $pAddr
+    if $packetNo == 1 or $packetNo == 3:
+        mem.put 0x30201000 0x30201000 0x30201000 0x00450008 -p $addr
+    else:
+        mem.put 0x03020100 0x07060504 0x0b0a0908 0x00450008 -p $addr
+    if $packetNo == 0 or $packetNo == 1 or $packetNo == 4:
+        # set DA
+        addr = $addr+0x10
+        mem.put 0x13121110 0x17161514 0x1b1a1918 $da1 -p $addr
+        # set DA Address (other 2 bytes)
+        addr = $addr+0x10
+        mem.put $da2 0x27262524 0x2b2a2928 0x2f2e2d2c -p $addr
+    echo
+
+    mac.txring[$txRingNo].dumpbuf -T 1 -l cli
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.txring[$txRingNo].status
+
+echo $packetNo packets are sent
+cmd

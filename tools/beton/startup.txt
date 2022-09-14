@@ -1,0 +1,2 @@
+readcsr 0x2c
+cmd

@@ -1,0 +1,102 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mngif2/extMinTest.txt $
+# $Revision: #9 $
+# $DateTime: 2016/08/11 02:22:39 $
+# $Author: dgubanov $
+#
+# Script for large packets extraction on mng queue0 using mac filter
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    rxRingNo = 0
+    txRingNo = 0
+    queue = 0
+    extType = rx
+    logTag = -l cli
+else:
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef extType:
+        extType = rx
+    ifndef logTag:
+        logTag = -l cli
+
+queueActive = [1,0]
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    if '$extType' == 'rx':
+        mac.set loopback System Packet $logTag
+    else:
+        mac.set loopback None $logTag
+    mac.init
+    mac.isr.disable
+    if '$extType' == 'rx':
+        mac.rxinit
+        mac.rxring[$rxRingNo].enable
+        mac.rxring[$rxRingNo].fill
+    
+    mac.txinit
+    mac.txring[$txRingNo].set bufSize 4096 $logTag
+    mac.txring[$txRingNo].set maxDmaSize 4096 $logTag
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+
+if '$extType' == 'rx':
+    exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+else:
+    exec $(PWD)/helpers/tpoExtractorLlhNames.txt
+
+# Set mode
+# Set corresponding filters enable and clear other
+
+if '$extType' == 'rx':
+    exec $(PWD)/helpers/configureRxExtFilters.txt
+else:
+    exec $(PWD)/helpers/configureTxExtFilters.txt
+
+packetLengths = [64, 1518]
+
+for packetLen in $packetLengths:
+    # Packet Send
+    mac.llh -v isInterrupt $extractionQueueInterruptGet $queue
+
+    mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+    mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+    #mem.dump -p $pAddr -s $packetLen -l cli
+
+    str = $macAddrFilters[$queue]
+    mem.put $str -s 1 -p $pAddr
+
+    mac.txring[$txRingNo].dumpdesc -T 1 -l dumptx  $logTag
+    mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx  $logTag --size 80
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.txring[$txRingNo].status $logTag
+    
+    mac.llh -v isInterrupt $extractionQueueInterruptGet $queue
+    
+    # Packet Extract
+    exec $(PWD)/helpers/extractAndCompare.txt
+    
+    mac.llh -v isInterrupt $extractionQueueInterruptGet $queue
+
+readreg 0x7040
+mac.uninit
+exec $(PWD)/helpers/showTestResult.txt

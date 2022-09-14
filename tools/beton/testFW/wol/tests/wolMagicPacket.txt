@@ -1,0 +1,63 @@
+#####################################################
+### Config
+#####################################################
+
+Mac0 = 0x0102
+Mac1 = 0x0304
+Mac2 = 0x0405
+
+test_result = 0
+
+echo Test "wolMagicPacket"
+
+#####################################################
+### Central state
+#####################################################
+
+exec testFW/wol/lib/wolCentralState.txt
+
+#####################################################
+### DRV_MSG_WOL_ADD
+#####################################################
+
+exec testFW/wol/lib/magicPacketAdd.txt
+if $result != 0:
+    echo wolMagicPacket: Add filter failed
+    test_result = -1
+
+#####################################################
+### DRV_MSG_ENABLE_WAKEUP
+#####################################################
+
+exec testFW/wol/lib/wolEnableAllWakeups.txt
+if $result != 0:
+    echo wolMagicPacket: Enable filter failed
+    test_result = -1
+
+#####################################################
+### Validate
+#####################################################
+
+readphyreg 0x1D.0xC356 -n reg -l nul
+
+if $reg != 1:
+    echo wolMagicPacket: Packet detection is not enabled
+    test_result = -1
+else:
+    readphyreg 0x1D.0xC339 -n reg -l nul
+    if $reg != $Mac0:
+        echo wolMagicPacket: Mac address0 mismatch. Local: $Mac0, DUT: $reg
+        test_result = -1
+    else:
+        readphyreg 0x1D.0xC33A -n reg -l nul
+        if $reg != $Mac1:
+            echo wolMagicPacket: Mac address1 mismatch. Local: $Mac1, DUT: $reg
+            test_result = -1
+        else:
+            readphyreg 0x1D.0xC33B -n reg -l nul
+            if $reg != $Mac2:
+                echo wolMagicPacket: Mac address2 mismatch. Local: $Mac2, DUT: $reg
+                test_result = -1
+
+if $test_result != 0:
+    echo _____________FAILED

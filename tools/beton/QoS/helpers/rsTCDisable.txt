@@ -1,0 +1,8 @@
+#Disable rate shapers
+#INPUT: tcArr - array of rings
+
+mac.tps.set descRateMode Q
+for tcNo in $tcArr:
+    mac.tps.rs $tcNo set enable False
+    mac.tps.rs $tcNo set int 0
+    mac.tps.rs $tcNo set frac 0

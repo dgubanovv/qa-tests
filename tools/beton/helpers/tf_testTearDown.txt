@@ -1,0 +1,17 @@
+shell echo [----------] Global test environment tear-down >> $runResults
+
+logTag = -l cli
+hideResult = 0
+
+l = len($testReport)
+passedTests = ($numTestsToRun - $l)
+shell echo [==========] $numTestsToRun tests from 1 test case ran.  >> $runResults
+shell echo [  PASSED  ] $passedTests test(s). >> $runResults
+if $l > 0:
+    shell echo [  FAILED  ] $l test(s), listed below: >> $runResults
+
+
+for testReportElem in $testReport:
+    name = $testReportElem[0]
+    echo [FAILED INFO] $testReportElem[1] >> $runResults
+    shell echo [  FAILED  ] $name >> $runResults

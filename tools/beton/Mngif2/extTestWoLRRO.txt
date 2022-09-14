@@ -1,0 +1,101 @@
+# ! Test for WoL queue verification
+# ! Config unicast filter for one packet and action = WoL.
+# ! Send packet from Tx,packet goes to MIF,do extraction and memory compare
+
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    rxRingNo = 0
+    txRingNo = 0
+    queue = 0
+    extType = rx
+    logTag = -l cli
+else:
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef extType:
+        extType = rx
+    ifndef logTag:
+        logTag = -l cli
+
+# Mac init
+mac.set loopback System Packet
+mac.init
+mac.txinit
+mac.txring[$txRingNo].enable
+mac.rxinit
+mac.rxring[$rxRingNo].enable
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+mac.isr.disable
+exec $(PWD)/helpers/enableRPF2.txt
+exec $(PWD)/helpers/versionSpecificInit.txt
+
+# Generate pecket
+pkt.new -n pkt1 -p 64
+pkt.layer -i $pkt1 -L 55 -t TCP sport=123 dport=1234
+pkt.layer -i $pkt1 -L 50 -t IP dst="192.168.0.2" src="192.168.0.1"
+pkt.layer -i $pkt1 -L 25 -t Ether type=0x800 dst="00:00:01:02:03:04" src="00:80:00:00:00:01"
+
+# Config filter
+mac.llhcache on
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llhcache off
+
+filterUnicastIndex = 0
+filterUnicastEnable = 1
+filterUnicastMngQueue = 0
+filterUnicastAction = 4
+filterUnicastMacAddr = [0x00,0x00,0x01,0x02,0x03,0x04]
+exec $(PWD)/helpers/filtersConfigurators/rxUnicastFilter.txt
+
+# Send packet
+mac.txring[$txRingNo].insert -i $pkt1 -b 64 -p 64
+mac.txring[$txRingNo].getdescval -T 1 -f DATA_BUF_ADDR -n pAddr $logTag
+mac.txring[$txRingNo].dumpbuf -T 1 --size 80
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+
+# Extract packet from WoL
+bufStr = ' '
+for byteCnt = 0; $byteCnt < 2048; byteCnt += 4:
+    # generate rising edge
+    mac.llh rpoRxWolReadSet 0
+    mac.llh rpoRxWolReadSet 1
+    mac.llh -v dataExtracted rpoWolQueuePacketDataGet
+    dataExtracted = ($dataExtracted & 0xFF) << 24 | ($dataExtracted & 0xFF00) << 8 | ($dataExtracted & 0xFF0000) >> 8 | ($dataExtracted & 0xFF000000) >> 24
+    bufStr = '$bufStr' + ' ' + hex($dataExtracted)
+    mac.llh -v eop rpoWolQueueEopGet
+    if $eop <> 0:
+        byteCnt += 4
+        break
+mac.llh rpoRxWolReadSet 0
+mac.llh -v valid rpoWolQueueDataValidGet
+if $valid > 0:
+    for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+        byteCnt = $byteCnt + 0 - 1
+else:
+    byteCnt = $byteCnt + 0 - 4
+
+mem.cmp -p $pAddr -s $byteCnt -V $bufStr -n compareResult $logTag
+if $compareResult != True:
+    finalReport = $finalReport + ['Memory compare failed']
+
+readreg 0x5040	
+mac.uninit
+exec $(PWD)/helpers/showTestResult.txt
+
+

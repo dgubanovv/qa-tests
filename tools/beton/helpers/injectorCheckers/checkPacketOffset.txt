@@ -1,0 +1,5 @@
+mac.llh -v packetOffset -C $injectionQueuePacketOffsetGet $queue
+if  $(packetOffset) != $expectedPacketOffset:
+    str = '$stringId Packet offset ( which is $packetOffset) for queue $queue not equal to expected( which is $expectedPacketOffset)'
+    echo $str
+    finalReport = $finalReport + ['$str']

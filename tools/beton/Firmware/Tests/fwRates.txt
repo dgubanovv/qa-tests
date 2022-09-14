@@ -1,0 +1,107 @@
+remoteMachine = atltest21
+remoteUser = aquantia
+remotePassword = 1
+remoteNICIndex = 9
+
+cmdEnableNC = wmic /node:$remoteMachine /user:$remoteUser /password:$remotePassword path win32_networkadapter where index=$remoteNICIndex call enable
+cmdDisableNC = wmic /node:$remoteMachine /user:$remoteUser /password:$remotePassword path win32_networkadapter where index=$remoteNICIndex call disable
+cmdEnableAutoNegotiation = wmic /node:$remoteMachine /user:$remoteUser /password:$remotePassword process call create "cmd /c reg add HKEY_LOCAL_MACHINE\SYSTEM\ControlSet001\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\0009 /v LinkSpeed /f /t reg_sz /d 65535"
+
+cmdLinkSpeed10GB = 'wmic /node:$remoteMachine /user:$remoteUser /password:$remotePassword nic where index=$remoteNICIndex get speed | find "10000000000"'
+cmdLinkSpeed5GB = 'wmic /node:$remoteMachine /user:$remoteUser /password:$remotePassword nic where index=$remoteNICIndex get speed | find "5000000000"'
+cmdLinkSpeed25GB = 'wmic /node:$remoteMachine /user:$remoteUser /password:$remotePassword nic where index=$remoteNICIndex get speed | find "2500000000"'
+cmdLinkSpeed1GB = 'wmic /node:$remoteMachine /user:$remoteUser /password:$remotePassword nic where index=$remoteNICIndex get speed | find "1000000000"'
+cmdLinkSpeed100MB = 'wmic /node:$remoteMachine /user:$remoteUser /password:$remotePassword nic where index=$remoteNICIndex get speed | find "100000000"'
+
+
+finalReport = []
+
+echo TEST : Rates
+############################################################################################
+echo Link Speed must be set to Autonegatiation on LINK PARTNER
+#set 100MB speed
+writereg 0x368 0x200002 -l nul
+#Checking link
+for i in range(1,100):
+    readreg 0x36c -n link -l nul
+    if $link == 0x200002:
+        hlink = hex($link)
+        echo Link is set to $hlink
+        break
+    pause 100 ms
+if $link != 0x200002:
+    finalReport += ['(1) 100MB link is not set. Actual : $link']
+
+for i in range(1,100):    
+    shell $cmdLinkSpeed100MB
+    if $errorlevel == 0:
+        echo Link is correct on Link partner 
+        break
+    pause 1 s
+if $errorlevel != 0:
+    finalReport += ['(2) 100MB link is not set on LINK PARTNER']
+
+#set 1G speed
+writereg 0x368 0x100002 -l nul
+#Checking link
+for i in range(1,100):
+    readreg 0x36c -n link -l nul
+    if $link == 0x100002:
+        hlink = hex($link)
+        echo Link is set to $hlink
+        break
+    pause 100 ms
+if $link != 0x100002:
+    finalReport += ['(3) 1GB link is not set. Actual : $link']
+for i in range(1,100):    
+    shell $cmdLinkSpeed1GB
+    if $errorlevel == 0:
+        echo Link is correct on Link partner 
+        break
+    pause 1 s
+if $errorlevel != 0:
+    finalReport += ['(4) 1GB link is not set on LINK PARTNER']
+    
+#set 2.5G speed
+writereg 0x368 0x80002 -l nul
+#Checking link
+for i in range(1,100):
+    readreg 0x36c -n link -l nul
+    if $link == 0x80002:
+        hlink = hex($link)
+        echo Link is set to $hlink
+        break
+    pause 100 ms
+if $link != 0x80002:
+    finalReport += ['(5) 2.5GB link is not set. Actual : $link']
+for i in range(1,100):    
+    shell $cmdLinkSpeed25GB
+    if $errorlevel == 0:
+        echo Link is correct on Link partner
+        break
+    pause 1 s
+if $errorlevel != 0:
+    finalReport += ['(6) 2.5GB link is not set on LINK PARTNER']
+    
+#set 5G speed
+writereg 0x368 0x20002 -l nul
+#Checking link
+for i in range(1,100):
+    readreg 0x36c -n link -l nul
+    if $link == 0x20002:
+        hlink = hex($link)
+        echo Link is set to $hlink
+        break
+    pause 100 ms
+if $link != 0x20002:
+    finalReport += ['(7) 5GB link is not set. Actual : $link']
+for i in range(1,100):    
+    shell $cmdLinkSpeed5GB
+    if $errorlevel == 0:
+        echo Link is correct on Link partner 
+        break
+    pause 1 s
+if $errorlevel != 0:
+    finalReport += ['(8) 5GB link is not set on LINK PARTNER']
+############################################################################################
+#exec $(PWD)/helpers/showTestResult.txt

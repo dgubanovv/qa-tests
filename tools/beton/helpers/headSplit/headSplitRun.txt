@@ -1,0 +1,50 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/helpers/headSplit/headSplitRun.txt $
+# $Revision: #3 $
+# $DateTime: 2016/05/03 05:26:32 $
+# $Author: dmitryb $
+#
+# Framework to simplify all HeadSplitBug writing
+
+mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+givenPacketLen = '$givenPacket'.count('0x')
+expectedPacketLen = $givenPacketLen
+mac.txring[$txRingNo].insert -b $givenPacketLen -p $givenPacketLen -f indexed_uniq_ramp
+mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+mem.put $givenPacket -s 1 -p $pAddr
+
+mac.txring[$txRingNo].dumpbuf -T 1 $logTag
+mac.txring[$txRingNo].commit
+mac.txring[$txRingNo].clean
+mac.rxring[$rxRingNo].clean
+
+mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet $rxRingNo
+if $rxHeadAfter == $rxHeadBefore:
+    finalReport += ["(0) The packet was lost"]
+else:
+    mac.txring[$txRingNo].status $logTag
+    mac.rxring[$rxRingNo].status $logTag
+    mac.rxring[$rxRingNo].dumpbuf -H 1 $logTag
+    mac.rxring[$rxRingNo].dumpdesc -H 1 $logTag
+    actualHeaderLen = -1
+    mac.rxring[$rxRingNo].getdescval -f HDR_LEN -n actualHeaderLen $logTag
+    if $actualHeaderLen != $expectedHeaderLen:
+        finalReport += ["(1) "+'$expectedMsg'+"; HDR_LEN expected = $expectedHeaderLen, actual = $actualHeaderLen"]
+    #
+    actualPacketLen = -1
+    mac.rxring[$rxRingNo].getdescval -f PKT_LEN -n actualPacketLen $logTag
+    if $actualPacketLen != $expectedPacketLen:
+        finalReport += ["(2) Packet's been corrupted; PKT_LEN expected = $expectedPacketLen, actual = $actualPacketLen"]
+    if $(actualHeaderLen) != 0:
+        packetType = -1
+        actualAtPayloadSplit = 0
+        mac.rxring[$rxRingNo].getdescval -f PKT_TYPE -n packetType $logTag
+        if (($packetType & 0x1C) == 0 ) or (($packetType & 0x1C) == 4):
+            actualAtPayloadSplit = 1
+        if $(actualAtPayloadSplit) != $expectedAtPayloadSplit:
+            finalReport += ["(3) "+'$expectedMsg'+"; PKT_TYPE = $packetType; expectedAtPayloadSplit = $expectedAtPayloadSplit, actualAtPayloadSplit = $actualAtPayloadSplit"]
+        actualL3Proto = ($l3Protocols[($packetType&0x3)])
+        actualL4Proto = ($l4Protocols[(($packetType&0x1C) >> 2)])
+        if "$actualL3Proto" != "$expectedL3Proto":
+            finalReport += ["(4) Incorrect L3 protocol: expected = $expectedL3Proto, actual = $actualL3Proto "]
+        if "$actualL4Proto" != "$expectedL4Proto":
+            finalReport += ["(5) Incorrect L4 protocol: expected = $expectedL4Proto, actual = $actualL4Proto "]

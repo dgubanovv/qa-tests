@@ -1,0 +1,494 @@
+
+#####################################################
+### testFW/wol/tests/wolMagicPacket.txt >
+#####################################################
+
+#####################################################
+### Config
+#####################################################
+
+Mac0 = 0x1700
+Mac1 = 0x00B6
+Mac2 = 0x8207
+
+test_result = 0
+
+#####################################################
+### WoL Constants
+#####################################################
+
+# DRV_MSG_PING
+drvMsgPing = 1
+# DRV_MSG_ARP
+devMsgArp = 2
+# DRV_MSG_INJECT
+drvMsgInject = 3
+# DRV_MSG_WOL_ADD
+drvMsgWolAdd = 4
+# DRV_MSG_WOL_REMOVE
+drvMsgWolRemove = 5
+# DRV_MSG_ENABLE_WAKEUP
+drvMsgEnableWakeup = 6
+# DRV_MSG_MSM
+drvMsgMsm = 7
+# DRV_MSG_PROVISIONING
+drvMsgProvisioning = 8
+# DRV_MSG_OFFLOAD_ADD
+drvMsgOffloadAdd = 9
+# DRV_MSG_OFFLOAD_REMOVE
+drvMsgOffloadRemove = 10
+
+ndisPMWoLPacketBitmapPattern = 0x1
+ndisPMWoLPacketMagicPacket = 0x2
+ndisPMWoLPacketIPv4TcpSyn = 0x3
+ndisPMWoLPacketIPv6TcpSyn = 0x04
+
+ndisPMProtocolOffloadIdIPv4ARP = 0x01
+ndisPMProtocolOffloadIdIPv6NS = 0x02
+
+aqPMWoLPacketArp = 0x10001
+aqPMWoLReasonIpv4PingPacket = 0x10002
+aqPMWoLReasonIpv6PingPacket = 0x10004
+aqPMWoLReasonLinkUp = 0x10005
+aqPMWoLReasonLinkDown = 0x10006
+
+#####################################################
+### Central state
+#####################################################
+
+#####################################################
+### testFW/wol/lib/wolCentralState.txt >
+#####################################################
+
+patternMaskWindows = 0
+patternMaskAquantia = 0
+patternMaskOther = 0
+offloadsMaskWindows = 0
+offloadsMaskAquantia = 0
+
+#####################################################
+### testFW/drvIface/getBaseAddress.txt >
+#####################################################
+
+BASEADDR = 0;
+
+readreg 0x334 -n BASEADDR -l cli
+
+addr = $BASEADDR
+
+#####################################################
+### < testFW/drvIface/getBaseAddress.txt
+#####################################################
+
+#####################################################
+### testFW/drvIface/drvMsgEnableWakeup.txt >
+#####################################################
+
+#drvMsgEnableWakeup
+
+addr = $BASEADDR
+
+writereg 0x328 $drvMsgEnableWakeup
+writereg 0x32c 0x80000000
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskWindows
+writereg 0x32c 0x80000004
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskAquantia
+writereg 0x32c 0x80000008
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskOther
+writereg 0x32c 0x8000000c
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskWindows
+writereg 0x32c 0x80000010
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskAquantia
+writereg 0x32c 0x80000014
+writereg 0x404 0x2
+
+#####################################################
+### < testFW/drvIface/drvMsgEnableWakeup.txt
+#####################################################
+
+
+expectedResponseDwordCount = 1
+
+#####################################################
+### testFW/drvIface/helperSendDrvMsg.txt >
+#####################################################
+
+transactionResult = 0
+
+addr = $BASEADDR
+
+readreg 0x33c -n id -l cli
+id = ($id &0xFFFF) + 1
+writereg 0x338 $id -l cli
+
+expectedResponseLen = $expectedResponseDwordCount * 4
+for loopNo=0; $loopNo < 100; loopNo += 1:
+    readreg 0x33c -n result -l cli
+    $result_transaction = ($result & 0xFFFF)
+    if $result_transaction == $id:
+        break
+
+if $loopNo == 100:
+    echo No response from FW
+    transactionResult = -1
+else:
+    if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+        echo Unexpected response length
+        transactionResult = -1
+    else:
+        for i = 0; $i < $expectedResponseDwordCount; i += 1:
+            mac.mcp.readmem $addr -n errcode -l cli
+            if $errcode != 0:
+                echo Response $i is not ok: $errcode $result
+                transactionResult = -1
+            addr = $addr + 4
+
+#####################################################
+### < testFW/drvIface/helperSendDrvMsg.txt
+#####################################################
+
+
+for patternId = 0; $patternId < 20; patternId += 1:
+    
+    #####################################################
+    ### testFW/drvIface/drvMsgWoLRemove.txt >
+    #####################################################
+
+    #drvMsgWoLRemove
+    
+    addr = $BASEADDR
+    
+    writereg 0x328 $drvMsgWolRemove
+    writereg 0x32c 0x80000000
+    writereg 0x404 0x2
+    
+    writereg 0x328 $patternId
+    writereg 0x32c 0x80000004
+    writereg 0x404 0x2
+    
+    #####################################################
+    ### < testFW/drvIface/drvMsgWoLRemove.txt
+    #####################################################
+
+    expectedResponseDwordCount = 1
+    
+    #####################################################
+    ### testFW/drvIface/helperSendDrvMsgSilent.txt >
+    #####################################################
+
+    transactionResult = 0
+    
+    addr = $BASEADDR
+    
+    readreg 0x33c -n id -l cli
+    id = ($id &0xFFFF) + 1
+    writereg 0x338 $id -l cli
+    
+    expectedResponseLen = $expectedResponseDwordCount * 4
+    for loopNo=0; $loopNo < 100; loopNo += 1:
+        readreg 0x33c -n result -l cli
+        $result_transaction = ($result & 0xFFFF)
+        if $result_transaction == $id:
+            break
+    
+    if $loopNo == 100:
+        echo No response from FW
+        transactionResult = -1
+    else:
+        if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+            echo Unexpected response length
+            transactionResult = -1
+        else:
+            for i = 0; $i < $expectedResponseDwordCount; i += 1:
+                mac.mcp.readmem $addr -n errcode -l cli
+                if $errcode != 0:
+                    transactionResult = -1
+                addr = $addr + 4
+    
+    #####################################################
+    ### < testFW/drvIface/helperSendDrvMsgSilent.txt
+    #####################################################
+
+
+#####################################################
+### < testFW/wol/lib/wolCentralState.txt
+#####################################################
+
+
+#####################################################
+### DRV_MSG_WOL_ADD
+#####################################################
+
+#####################################################
+### testFW/wol/lib/magicPacketAdd.txt >
+#####################################################
+
+#####################################################
+### testFW/drvIface/getBaseAddress.txt >
+#####################################################
+
+BASEADDR = 0;
+
+readreg 0x334 -n BASEADDR -l cli
+
+addr = $BASEADDR
+
+#####################################################
+### < testFW/drvIface/getBaseAddress.txt
+#####################################################
+
+
+#####################################################
+### write drvMsgWoLAdd header
+#####################################################
+
+priority             = 0
+packetType           = $ndisPMWoLPacketMagicPacket
+patternId            = 1
+nextWolPatternOffset = 0
+
+#####################################################
+### testFW/drvIface/drvMsgWolAdd.txt >
+#####################################################
+
+#drvMsgWoLAdd
+
+addr = $BASEADDR
+
+writereg 0x328 $drvMsgWolAdd
+writereg 0x32c 0x80000000
+writereg 0x404 0x2
+
+writereg 0x328 $priority
+writereg 0x32c 0x80000004
+writereg 0x404 0x2
+
+writereg 0x328 $packetType
+writereg 0x32c 0x80000008
+writereg 0x404 0x2
+
+writereg 0x328 $patternId
+writereg 0x32c 0x8000000c
+writereg 0x404 0x2
+
+writereg 0x328 $nextWolPatternOffset
+writereg 0x32c 0x80000010
+writereg 0x404 0x2
+
+#####################################################
+### < testFW/drvIface/drvMsgWolAdd.txt
+#####################################################
+
+
+#####################################################
+### write drvMsgWoLAdd.wolPattern.wolMagicPacket
+#####################################################
+
+$Mac = $Mac0 | ($Mac1 << 16)
+writereg 0x328 $Mac
+writereg 0x32c 0x80000014
+writereg 0x404 0x2
+
+writereg 0x328 $Mac2
+writereg 0x32c 0x80000018
+writereg 0x404 0x2
+
+#####################################################
+### execute DRV_MSG_WOL_ADD transaction
+#####################################################
+
+expectedResponseDwordCount = 1
+
+#####################################################
+### testFW/drvIface/helperSendDrvMsg.txt >
+#####################################################
+
+transactionResult = 0
+
+addr = $BASEADDR
+
+readreg 0x33c -n id -l cli
+id = ($id &0xFFFF) + 1
+writereg 0x338 $id -l cli
+
+expectedResponseLen = $expectedResponseDwordCount * 4
+for loopNo=0; $loopNo < 100; loopNo += 1:
+    readreg 0x33c -n result -l cli
+    $result_transaction = ($result & 0xFFFF)
+    if $result_transaction == $id:
+        break
+
+if $loopNo == 100:
+    echo No response from FW
+    transactionResult = -1
+else:
+    if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+        echo Unexpected response length
+        transactionResult = -1
+    else:
+        for i = 0; $i < $expectedResponseDwordCount; i += 1:
+            mac.mcp.readmem $addr -n errcode -l cli
+            if $errcode != 0:
+                echo Response $i is not ok: $errcode $result
+                transactionResult = -1
+            addr = $addr + 4
+
+#####################################################
+### < testFW/drvIface/helperSendDrvMsg.txt
+#####################################################
+
+result = $transactionResult
+
+#####################################################
+### < testFW/wol/lib/magicPacketAdd.txt
+#####################################################
+
+if $result != 0:
+    echo wolMagicPacket: Add filter failed
+    test_result = -1
+
+#####################################################
+### DRV_MSG_ENABLE_WAKEUP
+#####################################################
+
+#####################################################
+### testFW/wol/lib/wolEnableAllWakeups.txt >
+#####################################################
+
+# drvMsgEnableWakeup header
+patternMaskWindows = ((1 << (($ndisPMWoLPacketMagicPacket & 0xFFFF) - 1)) | (1 << (($ndisPMWoLPacketIPv4TcpSyn & 0xFFFF) - 1)) | (1 << (($ndisPMWoLPacketIPv6TcpSyn & 0xFFFF) - 1)))
+patternMaskAquantia = (  (1 << (($aqPMWoLPacketArp & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonIpv4PingPacket & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonIpv6PingPacket & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonLinkDown & 0xFFFFF) - 0x10001)) | (1 << (($aqPMWoLReasonLinkUp & 0xFFFFF) - 0x10001)))
+patternMaskOther = 0
+offloadsMaskWindows = 0
+offloadsMaskAquantia = 0
+
+#####################################################
+### testFW/drvIface/drvMsgEnableWakeup.txt >
+#####################################################
+
+#drvMsgEnableWakeup
+
+addr = $BASEADDR
+
+writereg 0x328 $drvMsgEnableWakeup
+writereg 0x32c 0x80000000
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskWindows
+writereg 0x32c 0x80000004
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskAquantia
+writereg 0x32c 0x80000008
+writereg 0x404 0x2
+
+writereg 0x328 $patternMaskOther
+writereg 0x32c 0x8000000c
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskWindows
+writereg 0x32c 0x80000010
+writereg 0x404 0x2
+
+writereg 0x328 $offloadsMaskAquantia
+writereg 0x32c 0x80000014
+writereg 0x404 0x2
+
+#####################################################
+### < testFW/drvIface/drvMsgEnableWakeup.txt
+#####################################################
+
+
+#### Run transaction
+expectedResponseDwordCount = 1
+
+#####################################################
+### testFW/drvIface/helperSendDrvMsg.txt >
+#####################################################
+
+transactionResult = 0
+
+addr = $BASEADDR
+
+readreg 0x33c -n id -l cli
+id = ($id &0xFFFF) + 1
+writereg 0x338 $id -l cli
+
+expectedResponseLen = $expectedResponseDwordCount * 4
+for loopNo=0; $loopNo < 100; loopNo += 1:
+    readreg 0x33c -n result -l cli
+    $result_transaction = ($result & 0xFFFF)
+    if $result_transaction == $id:
+        break
+
+if $loopNo == 100:
+    echo No response from FW
+    transactionResult = -1
+else:
+    if (($result & 0xFFFF0000) >> 16) != $expectedResponseLen:
+        echo Unexpected response length
+        transactionResult = -1
+    else:
+        for i = 0; $i < $expectedResponseDwordCount; i += 1:
+            mac.mcp.readmem $addr -n errcode -l cli
+            if $errcode != 0:
+                echo Response $i is not ok: $errcode $result
+                transactionResult = -1
+            addr = $addr + 4
+
+#####################################################
+### < testFW/drvIface/helperSendDrvMsg.txt
+#####################################################
+
+$result = $transactionResult
+
+#####################################################
+### < testFW/wol/lib/wolEnableAllWakeups.txt
+#####################################################
+
+if $result != 0:
+    echo wolMagicPacket: Enable filter failed
+    test_result = -1
+
+#####################################################
+### Validate
+#####################################################
+
+readphyreg 0x1D.0xC356 -n reg -l cli
+
+if $reg != 1:
+    echo wolMagicPacket: Packet detection is not enabled
+    test_result = -1
+else:
+    readphyreg 0x1D.0xC339 -n reg -l cli
+    if $reg != $Mac0:
+        echo wolMagicPacket: Mac address0 mismatch. Local: $Mac0, DUT: $reg
+        test_result = -1
+    else:
+        readphyreg 0x1D.0xC33A -n reg -l cli
+        if $reg != $Mac1:
+            echo wolMagicPacket: Mac address1 mismatch. Local: $Mac1, DUT: $reg
+            test_result = -1
+        else:
+            readphyreg 0x1D.0xC33B -n reg -l cli
+            if $reg != $Mac2:
+                echo wolMagicPacket: Mac address2 mismatch. Local: $Mac2, DUT: $reg
+                test_result = -1
+
+if $test_result != 0:
+    echo _____________FAILED
+
+#####################################################
+### < testFW/wol/tests/wolMagicPacket.txt
+#####################################################
+

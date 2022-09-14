@@ -1,0 +1,48 @@
+features:
+  flow_control:
+    requirement_list:
+      - id: DRV_FLOW_CONTROL_1
+        description: Flow control should be enabled for both symmetric and asymmetric pauses (RX/TX) by default.
+        products: [windows_ndis_driver, windows_xbox_driver, windows_fiji_driver, linux_driver, linux_forwarding_driver, linux_fiji_driver, macos_fiji_driver]
+      - id: DRV_FLOW_CONTROL_2
+        description: Linux CDC and macOS ECM Fiji drivers does not support flow control so default firmware settings should be applied.
+        products: [linux_cdc_fiji_driver, macos_ecm_fiji_driver]
+        note: See requirement FW_FLOW_CONTROL_8
+      - id: DRV_FLOW_CONTROL_3
+        description: It should be possible to enable flow control in state tx
+        severity: 3
+      - id: DRV_FLOW_CONTROL_4
+        description: It should be possible to enable flow control in state rx
+        severity: 3
+      - id: DRV_FLOW_CONTROL_5
+        description: It should be possible to enable flow control in state tx/rx
+        severity: 3
+      - id: DRV_FLOW_CONTROL_6
+        description: It should be possible to disable flow control
+      - id: DRV_FLOW_CONTROL_7
+        description: The state of flow control should not change, when changing the speed.
+        severity: 3
+  flow_control_advertised:
+    requirement_list:
+      - id: DRV_ADV_FLOW_CONTROL_1
+        description: Advertised FC setting is disabled for selected TX/TX for both DUT/LKP
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FIJI_DRIVER]
+      - id: DRV_ADV_FLOW_CONTROL_2
+        description: Advertised FC setting is symmetric for selected RX/RX for both DUT/LKP
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FIJI_DRIVER]
+      - id: DRV_ADV_FLOW_CONTROL_3
+        description: Advertised FC setting is symmetric for selected RX/TX for both DUT/LKP
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FIJI_DRIVER]
+      - id: DRV_ADV_FLOW_CONTROL_4
+        description: Advertised FC setting is disabled for selected disabled/disabled for both DUT/LKP
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FIJI_DRIVER]
+      - id: DRV_ADV_FLOW_CONTROL_5
+        description: Advertised FC setting is Transmit-only for selected RX/TX for DUT and TX for LKP
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FIJI_DRIVER]
+      - id: DRV_ADV_FLOW_CONTROL_6
+        description: Advertised FC setting is symmetric for selected RX/TX for DUT and RX for LKP
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FIJI_DRIVER]
+      - id: DRV_ADV_FLOW_CONTROL_7
+        description: Advertised FC setting is Symmetric Receive-only for selected TX for DUT and RX for LKP
+        products: [PROD_LINUX_DRIVER, PROD_LINUX_FIJI_DRIVER]
+

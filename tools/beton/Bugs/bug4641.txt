@@ -1,0 +1,130 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Bugs/bug4641.txt $
+# $Revision: #4 $
+# $DateTime: 2016/06/28 00:13:11 $
+# $Author: oxy $
+#
+# Bug4641 MSM: Octet counters must work
+
+finalReport = [] #mandatory clear, empty means tests passed.
+
+ifndef logTag:
+    logTag = -l cli
+ifndef rxRingNo:
+    rxRingNo = 0
+ifndef txRingNo:
+    txRingNo = 0
+
+mac.set loopback None $logTag #deep loopback
+
+mac.init
+mac.txinit
+mac.txring[$txRingNo].enable
+
+mac.rxinit
+mac.rxring[$rxRingNo].enable
+mac.rxring[$rxRingNo].fill
+mac.rxring[$rxRingNo].commit
+
+exec $(PWD)/helpers/workaroundBug4921.txt
+
+mac.llh macEnableSystemLoopbackSet 1
+
+givenMacAddrSrcStr = "[0xAA,0xBB,0xCC,0xDD,0xEE,0xFF]"
+givenMacAddrDstStrU= '[0xA0,0xB1,0xC1,0xD1,0xE1,0xF1]'
+givenMacAddrDstStrM= '[0xA1,0xB1,0xC1,0xD1,0xE1,0xF1]'
+givenMacAddrDstStrB= '[0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]'
+
+givenPacketTypes = ['U','M','B']
+
+expectedFramesU = 1
+expectedFramesM = 1
+expectedFramesB = 1
+expectedOctetsU = 60 
+expectedOctetsM = 74 
+expectedOctetsB = 106
+
+#fail check
+if 0: 
+    expectedFramesU = 2
+    expectedFramesM = 2
+    expectedFramesB = 2
+    expectedOctetsU = 61 
+    expectedOctetsM = 75 
+    expectedOctetsB = 107
+    
+#Create packets
+pkt.new -n pktU -p 18
+pkt.layer -i $(pktU) -L 60 -t ICMP
+pkt.layer -i $(pktU) -L 50 -t IP
+pkt.layer -i $(pktU) -L 25 -t Ether src=$givenMacAddrSrcStr type=0x800 dst=$givenMacAddrDstStrU
+
+pkt.new -n pktM -p 32
+pkt.layer -i $(pktM) -L 60 -t ICMP
+pkt.layer -i $(pktM) -L 50 -t IP
+pkt.layer -i $(pktM) -L 25 -t Ether src=$givenMacAddrSrcStr type=0x800 dst=$givenMacAddrDstStrM
+
+pkt.new -n pktB -p 64
+pkt.layer -i $(pktB) -L 60 -t ICMP
+pkt.layer -i $(pktB) -L 50 -t IP
+pkt.layer -i $(pktB) -L 25 -t Ether src=$givenMacAddrSrcStr type=0x800 dst=$givenMacAddrDstStrB
+
+mac.txring[$txRingNo].insert -i $(pktU) -b $expectedOctetsU
+mac.txring[$txRingNo].insert -i $(pktM) -b $expectedOctetsM
+mac.txring[$txRingNo].insert -i $(pktB) -b $expectedOctetsB
+mac.txring[$txRingNo].commit
+
+mac.txring[$txRingNo].clean
+mac.rxring[$rxRingNo].clean
+
+mac.txring[$txRingNo].status $logTag
+mac.rxring[$rxRingNo].status $logTag
+
+mac.llh -v rxFramesU regMacMsmRxUnicastFramesCounterGet
+mac.llh -v rxFramesM regMacMsmRxMulticastFramesCounterGet
+mac.llh -v rxFramesB regMacMsmRxBroadcastFramesCounterGet
+
+mac.llh -v rxOctetsU regMacMsmRxUnicastOctetsCounter0Get
+mac.llh -v rxOctetsM regMacMsmRxMulticastOctetsCounter1Get
+mac.llh -v rxOctetsB regMacMsmRxBroadcastOctetsCounter1Get
+
+
+mac.llh -v txFramesU regMacMsmTxUnicastFramesCounterGet
+mac.llh -v txFramesM regMacMsmTxMulticastFramesCounterGet
+mac.llh -v txFramesB regMacMsmTxBroadcastFramesCounterGet
+
+mac.llh -v txOctetsU regMacMsmTxUnicastOctetsCounter0Get
+mac.llh -v txOctetsM regMacMsmTxMulticastOctetsCounter1Get
+mac.llh -v txOctetsB regMacMsmTxBroadcastOctetsCounter1Get
+
+#Check for errors
+mac.llh -v txErrors regMacMsmTxErrorsCounterGet
+mac.llh -v rxErrors regMacMsmRxErrorsCounterGet
+
+#enable for debug
+if 0:
+    echo 
+    echo txFramesU = $txFramesU, rxFramesU = $rxFramesU
+    echo txFramesM = $txFramesM, rxFramesM = $rxFramesM
+    echo txFramesB = $txFramesB, rxFramesB = $rxFramesB
+    echo 
+    echo txOctetsU = $txOctetsU, rxOctetsU = $rxOctetsU
+    echo txOctetsM = $txOctetsM, rxOctetsM = $rxOctetsM
+    echo txOctetsB = $txOctetsB, rxOctetsB = $rxOctetsB
+    echo 
+    echo txErrors = $txErrors, rxErrors = $rxErrors
+    echo 
+
+for givenPacketType in $givenPacketTypes:
+    if $(txFrames$givenPacketType) != $(expectedFrames$givenPacketType) :
+        finalReport += ['(0) txFrame$givenPacketType != expectedFrames$givenPacketType']
+    if $(rxFrames$givenPacketType) != $(expectedFrames$givenPacketType) :
+        finalReport += ['(1) rxFrame$givenPacketType != expectedFrames$givenPacketType']
+    if $(txOctets$givenPacketType) != $(expectedOctets$givenPacketType) :
+        finalReport += ['(2) txOctets$givenPacketType != expectedOctets$givenPacketType']
+    if $(rxOctets$givenPacketType) != $(expectedOctets$givenPacketType) :
+        finalReport += ['(3) rxOctets$givenPacketType != expectedOctets$givenPacketType']
+
+#Show result
+exec $(PWD)/helpers/showTestResult.txt
+
+mac.uninit

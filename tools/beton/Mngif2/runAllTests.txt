@@ -1,0 +1,113 @@
+#run all tests
+#before run some test set value testName, and some values needed for test
+#and show result after running
+testReport = []
+delimeter = ----------------------------------------------------
+
+testName = $(SCRIPT_PATH)/extLargePacketTest2048.txt
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = tx
+queueActive = [1, 0]
+exec $(SCRIPT_PATH)/testRun.txt
+
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = rx
+queueActive = [1, 0]
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/extLargePacketTestMoreThan2048.txt
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = rx
+queueActive = [1, 0]
+exec $(SCRIPT_PATH)/testRun.txt
+
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = tx
+queueActive = [1, 0]
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/extOverflowTest.txt
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = tx
+queueActive = [1, 0]
+exec $(SCRIPT_PATH)/testRun.txt
+
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = rx
+queueActive = [1, 0]
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/extParityTest.txt
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = tx
+queueActive = [1, 0]
+exec $(SCRIPT_PATH)/testRun.txt
+
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = rx
+queueActive = [1, 0]
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/txExtArpFilterTest.txt
+txRingNo = 0
+queue = 0
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/txExtIpFilterTest.txt
+txRingNo = 0
+queue = 0
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/txExtMacAndIpFiltersTest.txt
+txRingNo = 0
+queue = 0
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/txExtMacFilterTest.txt
+txRingNo = 0
+#queue = 0
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/rxBroadcastFilterTest.txt
+txRingNo = 0
+rxRingNo = 0
+queue = 0
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/rxMulticastFilterTest.txt
+txRingNo = 0
+rxRingNo = 0
+queue = 0
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/rxUnicastFilterTest.txt
+txRingNo = 0
+rxRingNo = 0
+queue = 0
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+testName = $(SCRIPT_PATH)/rxVlanFilterTest.txt
+txRingNo = 0
+rxRingNo = 0
+queue = 0
+exec $(SCRIPT_PATH)/testRun.txt
+#----------------------------------------------------
+echo Result:
+l = len($testReport)
+echo $l tests Failed
+echo $delimeter
+for testReportElem in $testReport:
+    name = $testReportElem[0]
+    report = $testReportElem[1]
+    echo $name
+    for str in $report:
+        echo $str
+    echo $delimeter

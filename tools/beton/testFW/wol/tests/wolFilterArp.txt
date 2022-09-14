@@ -1,0 +1,12 @@
+result = 0x00
+
+echo Test "wolFilterArp"
+
+$IPv4Address = 0x11223344
+$flags = 0
+
+exec testFW/wol/lib/wolCentralState.txt
+exec testFW/wol/lib/wolFilterTestArp.txt
+
+if $result != 0:
+    echo _____________FAILED

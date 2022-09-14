@@ -1,0 +1,127 @@
+finalReport = []
+isr_count = 0
+mac.mcp.dbgBuffer -e
+mac.isr.regHandler -s mif3 -n isr_count
+mac.init
+rr 0x18
+
+r368_set_link_100M     = 0x00000020
+r36c_set_link_100M     = 0x84000018
+r370_chk_set_link_100M = 0x0
+r374_chk_set_link_100M = 0x0
+r368_drp_link_100M     = 0x00000f20
+r36c_drp_link_100M     = 0x80000f18
+r370_chk_drp_link_100M = 0x0
+r374_chk_drp_link_100M = 0x0
+
+r368_set_link_1G       = 0x00000120
+r36c_set_link_1G       = 0x84000108
+r370_chk_set_link_1G   = 0x0
+r374_chk_set_link_1G   = 0x0
+r368_drp_link_1G       = 0x00000f20
+r36c_drp_link_1G       = 0x80000f08
+r370_chk_drp_link_1G   = 0x0
+r374_chk_drp_link_1G   = 0x0
+
+r368_set_link_25G      = 0x00000320
+r36c_set_link_25G      = 0x84000308
+r370_chk_set_link_25G  = 0x0
+r374_chk_set_link_25G  = 0x0
+r368_drp_link_25G      = 0x00000f20
+r36c_drp_link_25G      = 0x80000f08
+r370_chk_drp_link_25G  = 0x0
+r374_chk_drp_link_25G  = 0x0
+
+r368_set_link_5G       = 0x00000720
+r36c_set_link_5G       = 0x84000708
+r370_chk_set_link_5G   = 0x0
+r374_chk_set_link_5G   = 0x0
+r368_drp_link_5G       = 0x00000f20
+r36c_drp_link_5G       = 0x80000f08
+r370_chk_drp_link_5G   = 0x0
+r374_chk_drp_link_5G   = 0x0
+
+r368_set_link_10G      = 0x00000f20
+r36c_set_link_10G      = 0x84000f08
+r370_chk_set_link_10G  = 0x0
+r374_chk_set_link_10G  = 0x0
+r368_drp_link_10G      = 0x00000f20
+r36c_drp_link_10G      = 0x80000f08
+r370_chk_drp_link_10G  = 0x0
+r374_chk_drp_link_10G  = 0x0
+
+# Link speed
+# Possible values '100M', '25G', '5G', '10G'
+# '1G' is currently impossible with the type of loopback we have in RDC
+ifndef link_speed:
+    link_speed = '100M'
+    undefine = $undefine link_speed
+
+mask = 0xfffffff0
+readreg 0x18 -n version -l nul
+ver_major = $version >> 24
+ver_minor = ($version >> 16) & 0xff
+if $ver_major == 2 and $ver_minor > 10:
+    # There is no EEE on 1G link speed starting from 2.11.x firmware
+    mask = 0xfffffef0
+
+pause_time = 4000
+if '$link_speed' == '10G':
+    pause_time = 6500
+
+echo Checking link speed $link_speed
+for i = 0; $i < 50; i += 1:
+    echo loop $i
+    prev_isr_count = $isr_count
+    echo Set loopback
+    writereg -l nul 0x368 $(r368_set_link_$link_speed)
+    writereg -l nul 0x36c $(r36c_set_link_$link_speed)
+    
+    pause $pause_time ms
+    if $isr_count <= $prev_isr_count:
+        echo No interrupt $isr_count
+    prev_isr_count = $isr_count
+    wrong = 0
+    for j = 0; $j < 10; j += 1:
+        readreg 0x368:0x374 -n link_status -l nul
+        if $link_status[0] != $link_status[2]:
+            st2 = hex($link_status[2])
+            echo Inactive link: register 0x370 == $st2
+            wrong += 1
+            break
+
+        if $link_status[1] & $mask != $link_status[3] and $link_status[1] != $link_status[3]:
+            st3 = hex($link_status[3])
+            echo Incorrect capabilities applied: register 0x374 == $st3
+            readreg 0x368:0x374
+            wrong += 1
+            break
+        pause 500 ms
+    if $wrong:
+        break
+    echo link is up... OK
+    echo Drop link
+    writereg -l nul 0x368 $(r368_drp_link_$link_speed)
+    writereg -l nul 0x36c $(r36c_drp_link_$link_speed)
+    pause 2000 ms
+    readreg 0x368:0x374 -n link_status -l nul
+    if $link_status[2] != 0x0:
+        st2 = hex($link_status[2])
+        echo Wrong active link: $st2
+        readreg 0x368:0x374
+        wrong += 2
+        break
+    if $link_status[3] != $(r374_chk_drp_link_$link_speed):
+        st3 = hex($link_status[3])
+        echo Wrong re-applied capabilities: $st3
+        readreg 0x368:0x374
+        wrong += 2
+        break
+    if $isr_count <= $prev_isr_count:
+        echo No interrupt $isr_count
+if $wrong:
+    finalReport += ['Failed at $link_speed. Wrong value = $wrong']
+
+mac.uninit
+mac.isr.unregHandler -s mif3
+exec $(PWD)/helpers/showTestResult.txt

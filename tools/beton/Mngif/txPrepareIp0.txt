@@ -1,0 +1,49 @@
+# Script for one packet extraction with IP filter
+
+hostAlreadyInitiated = False
+
+txRingNo = 0
+extReplicate = 0   # replicate after Extraction
+
+ipVersion = 4
+filter1 = 0x00010203
+filter2 = 0x04050607
+filter3 = 0x08090A0B
+filter4 = 0x0C0D0E0F
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq
+
+# Tx Extractor prepare
+
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+
+# Set corresponding filter enable and clear another
+
+readreg $txExtCtrlReg -n txExtCtrl
+txExtCtrl = $txExtCtrl & ~$txExtMACFilterMask
+txExtCtrl = $txExtCtrl | $txExtIPFilterMask
+txExtCtrl = $txExtCtrl & ~$txExtARPFilterMask
+ctrlMask = $txExtReplicateMask
+if $extReplicate == 1:
+    txExtCtrl = $txExtCtrl | $ctrlMask
+else:
+    txExtCtrl = $txExtCtrl & ~$ctrlMask
+writereg $txExtCtrlReg $txExtCtrl
+
+writereg $txExtIPFilter0Reg1 $filter1
+if $ipVersion == 6:
+    writereg $txExtIPFilter0Reg2 $filter2
+    writereg $txExtIPFilter0Reg3 $filter3
+    writereg $txExtIPFilter0Reg4 $filter4
+
+readreg $txExtStatus1Reg
+readreg $txExtStatus2Reg
+readreg $txExtStatus3Reg
+cmd

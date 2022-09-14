@@ -1,0 +1,72 @@
+mvm = False
+serialMapping = True
+
+mac.set loopback None
+
+numOfRings = 32
+ring_lst = [i for i in range($numOfRings)]
+
+wait_count = 5
+wait_timeout = 100
+
+#Set interrupt mode
+intmode = 'Multi-Vector' if ($mvm) else 'Single'
+mac.isr.set Mode $intmode
+
+for ring in $ring_lst:
+	if $ring < 10:
+		rx_src$ring = rx0$ring
+	else:
+		rx_src$ring = rx$ring
+		
+	if $serialMapping:
+		rx_vect$ring = $ring
+	else:
+		rx_vect$ring = random.randint(0,($numOfRings-1))
+	rx_cause$ring = $ring
+	
+	mac.rxring[$ring].set map2cause $(rx_cause$ring)
+	mac.rxring[$ring].set map2vector $(rx_vect$ring)
+    mac.isr.regHandler -s $(rx_src$ring) -c $(rx_cause$ring) -v $(rx_vect$ring) -t 10000000 -n rx_interrupt$ring
+    rx_interrupt$ring = 0
+    
+mac.init
+mac.rxinit
+for ring in $ring_lst:
+	mac.rxring[$ring].enable
+	mac.rxring[$ring].fill 1
+	mac.rxring[$ring].commit
+	mac.rxinjector[0].reset
+	mac.rxinjector[0].insert -r $ring -p 128
+	#mac.rxring[$ring].clean
+	#mac.rxring[$ring].dumpbuf -H 1 -l cli
+	pause 100 ms
+	mac.rxring[$ring].disable
+	
+for i = 0; $i < $wait_count; i += 1:
+    error = 0
+    for ring in $ring_lst:
+        if $(rx_interrupt$ring) != 1:
+            error = 1
+            break
+    if $error == 0:
+        break
+        
+    pause $wait_timeout ms
+	
+mac.uninit
+
+for ring in $ring_lst:
+    mac.isr.unregHandler -s $(rx_src$ring) -c $(rx_cause$ring) -v $(rx_vect$ring)
+	
+for ring in $ring_lst:
+	if $(rx_interrupt$ring) != 1:
+		rx_res = failed
+	else:
+		rx_res = passed
+	echo rx$ring Interrupt is $rx_res (var = $(rx_interrupt$ring))
+
+if $error > 0:
+    echo FAILED
+else:
+    echo OK

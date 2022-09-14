@@ -1,0 +1,65 @@
+# Feature: runs tests according to /Doc/software/HW-Test/Test_plan.xls 
+# Scenario: set $numOfDesc and $sp (packets to send) and calls noSplit.txt then 2Split.txt then 4Split.txt
+
+#max size of each descriptor for each test
+#test 1 (one descriptor)
+frag1Size1 = 2047
+
+#test 2 (two descriptors)
+frag2Size1 = 512
+frag2Size2 = 1535
+
+#test 3 (four descriptors)
+frag4Size1 = 24
+frag4Size2 = 64
+frag4Size3 = 256
+frag4Size4 = 1535
+
+if $frag == 1:
+	if $frag1Size1 * numOfDesc > tpb * 1024:
+		echo !!!!!! ALERT buffer size is too low !!!!!!
+
+if $frag == 2:
+	if ($frag2Size1 + $frag2Size2) * numOfDesc > tpb * 1024:
+		echo !!!!!! ALERT buffer size is too low !!!!!!
+
+if $frag == 4:
+	if ($frag4Size1 + $frag4Size2 + $frag4Size3 + $frag4Size4) * numOfDesc > tpb * 1024:
+		echo !!!!!! ALERT buffer size is too low !!!!!!
+
+for varSp = 0; $varSp < 1; varSp += 1:
+
+	if $varSp == 0:
+		numOfDesc = 1
+		sp = 16
+
+	if $varSp == 1:
+		numOfDesc = 1
+		sp = 1024
+
+	if $varSp == 2:
+		numOfDesc = 1
+		sp = 65536
+	
+	if $varSp == 3:
+		numOfDesc = 16
+		sp = 1024
+
+	if $varSp == 4:
+		numOfDesc = ($lastRingItem)
+		sp = 65536
+		
+	frag == 1
+	exec $scriptDir/handler.txt
+	if $error == 1:
+		break
+ 
+	frag == 2
+	exec $scriptDir/handler.txt
+	if $error == 1:
+		break
+
+	frag = 4
+	exec $scriptDir/handler.txt
+	if $error == 1:
+		break

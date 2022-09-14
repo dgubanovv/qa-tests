@@ -1,0 +1,56 @@
+#####################################################
+# Input args:
+#
+# flags
+# remoteIPv4Address
+# hostIPv4Address 
+# Mac0
+# Mac1
+# Mac2
+#
+# Returns
+# result
+#
+#####################################################
+
+exec testFW/wol/lib/wolConstants.txt
+exec testFW/drvIface/getBaseAddress.txt
+
+#####################################################
+### write drvMsgOffloadAdd header
+#####################################################
+
+priority                  = 0x10000000
+offloadType               = $ndisPMProtocolOffloadIdIPv4ARP 
+offloadId                 = 1
+nextProtocolOffloadOffset = 0
+
+exec testFW/drvIface/drvMsgOffloadAdd.txt
+
+#####################################################
+### write drvMsgOffloadAdd.wolOffload.ipv4Arp
+#####################################################
+
+mac.mcp.writemem $addr $flags -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $remoteIPv4Address -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv4Address -l nul
+addr = $addr + 4
+
+$Mac = $Mac0 | ($Mac1 << 16)
+mac.mcp.writemem $addr $Mac -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $Mac2 -l nul
+addr = $addr + 2
+
+#####################################################
+### execute DRV_MSG_OFFLOAD_ADD transaction
+#####################################################
+
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+result = $transactionResult

@@ -1,0 +1,16 @@
+#check error from status register
+#use global variables: queue, expectedIsReady, 
+#   expectedLostError, expectedIsInterrupt, expectedTruncationError, expectedOverflowError, 
+#   expectedParityError, expectedPacketCount, finalReport
+
+mac.llhcache on
+exec $(SCRIPT_PATH)/extractorCheckers/checkReady.txt
+exec $(SCRIPT_PATH)/extractorCheckers/checkLostError.txt
+exec $(SCRIPT_PATH)/extractorCheckers/checkInterrupt.txt
+exec $(SCRIPT_PATH)/extractorCheckers/checkTruncationError.txt
+exec $(SCRIPT_PATH)/extractorCheckers/checkOverflowError.txt
+exec $(SCRIPT_PATH)/extractorCheckers/checkParityError.txt
+exec $(SCRIPT_PATH)/extractorCheckers/checkPacketCount.txt
+mac.llhcache on
+    
+

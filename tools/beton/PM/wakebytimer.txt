@@ -1,0 +1,17 @@
+interval = 120000
+
+writereg 0x328 $interval
+writereg 0x32c 0x80000004
+writereg 0x0404 0xe2
+
+readreg 0x334 -n val -l nul
+val = $val + 4
+mac.mcp.readmem $val -n interval2 -l nul
+
+if $interval != $interval2:
+	echo Proper value was not written by mailbox
+else:
+	writereg 0x36c 0x0
+	pause 1 s
+	writereg 0x36c 0x20000000
+	echo Switch off computer and wait

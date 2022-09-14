@@ -1,0 +1,57 @@
+if $(counter$ring) + $j > ($(txRingSize$ring) - 1) / 2 or $lastCmp:
+	prev_tx_headptr$ring = $(curr_tx_headptr$ring)
+	prev_rx_headptr$ring = $(curr_rx_headptr$ring)
+
+	numOfFrames = ($(counter$ring) + 1)
+	mac.rxring[$ring].status -l rx
+
+	if $BP == 1:
+		mac.rxring[$ring].clean
+		mac.rxring[$ring].fill $numOfFrames
+		mac.rxring[$ring].commit
+
+	echo i = $i
+	mac.rxring[$ring].clean
+	
+	#Dump Rx Buffer
+	
+	#rxHead
+	mac.llh -v rxHead$ring rdmRxDescriptorHeadPointerGet $ring
+	rxHeadExpected$ring = (($(rxHeadExpected$ring) + $numOfFrames) % $(txRingSize$ring))
+	echo rxHead$ring == $(rxHead$ring)    [rxHeadExpected$ring == $(rxHeadExpected$ring)]
+	
+	#rxTail
+	mac.llh -v rxTail$ring rdmRxDescriptorTailPointerGet $ring
+	echo rxTail$ring == $(rxTail$ring)
+	
+	#txHead
+	mac.llh -v txHead$ring tdmTxDescriptorHeadPointerGet $ring
+	txHeadExpected$ring = (($(txHeadExpected$ring) + ($numOfFrames * $frag)) % $(txRingSize$ring))
+	echo txHead$ring == $(txHead$ring)    [txHeadExpected$ring == $(txHeadExpected$ring)]
+	
+	#txTail
+	mac.llh -v txTail$ring tdmTxDescriptorTailPointerGet $ring
+	echo txTail$ring == $(txTail$ring)
+
+	if $(rxHeadExpected$ring) != $(rxHead$ring):
+		error = 1
+		exit
+
+	#mac.rxring[$ring].dumpdesc -H $numOfFrames:1 -l dumprx
+	#mac.rxring[$ring].dumpbuf -H $numOfFrames:1 -l dumprx -a $(rxfile$ring) -t $mark
+
+	if $BP == 0:
+		mac.rxring[$ring].clean
+		mac.rxring[$ring].fill
+		mac.rxring[$ring].commit
+
+	#start from scratch
+	counter$ring = -1
+	
+	curr_tx_headptr$ring = $(txHead$ring)
+	curr_rx_headptr$ring = $(rxHead$ring)
+	
+	successfulPacketCount$ring += $(lastBatchCount$ring)
+	lastBatchCount$ring = 0
+	successfulTxCount$ring += ($numOfFrames * $frag)
+	successfulRxCount$ring += $numOfFrames

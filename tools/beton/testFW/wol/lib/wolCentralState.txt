@@ -1,0 +1,17 @@
+patternMaskWindows = 0
+patternMaskAquantia = 0
+patternMaskOther = 0
+offloadsMaskWindows = 0
+offloadsMaskAquantia = 0
+
+exec testFW/drvIface/getBaseAddress.txt
+exec testFW/wol/lib/wolConstants.txt
+exec testFW/drvIface/drvMsgEnableWakeup.txt
+
+expectedResponseDwordCount = 1
+exec testFW/drvIface/helperSendDrvMsg.txt
+
+for patternId = 0; $patternId < 20; patternId += 1:
+    exec testFW/drvIface/drvMsgWoLRemove.txt
+    expectedResponseDwordCount = 1
+    exec testFW/drvIface/helperSendDrvMsgSilent.txt

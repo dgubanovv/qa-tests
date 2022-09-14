@@ -1,0 +1,121 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Offloads/rxLroLong.txt $
+# $Revision: #2 $
+# $DateTime: 2016/07/22 01:35:19 $
+# $Author: dgubanov $
+#
+# Sends batch of short 240+54b TCP packets, which will be gathered on Rx in one normal 1494b packet
+
+# WW stuf {
+finalReport = []
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    logTag = -l cli
+    givenTxPacketCount = 6
+    givenTxHeaderLen = 54
+    givenTxPayloadLen = 1460
+    givenTxPacketLen = $givenTxHeaderLen + $givenTxPayloadLen
+	TPO2 = False
+	RPF2 = False
+else:
+    givenTxPacketCount = 6
+    givenTxHeaderLen = 54
+    givenTxPayloadLen = 1460
+    givenTxPacketLen = $givenTxHeaderLen + $givenTxPayloadLen
+    ifndef logTag:
+        logTag = -l cli
+# WW stuf }
+ifndef TPO2:
+    TPO2 = False 
+
+ifndef RPF2:
+    RPF2 = False 
+	
+expectedRxPacketCount = 5
+expectedRxHeaderLen = $givenTxHeaderLen
+expectedRxPayloadLen = $givenTxPacketCount * $givenTxPayloadLen
+expectedRxPacketLen = $expectedRxHeaderLen + $expectedRxPayloadLen
+
+mac.set loopback System Packet $logTag
+mac.init
+mac.txinit
+mac.rxinit
+mac.isr.disable
+
+if $TPO2:
+        exec $(PWD)/helpers/enableTPO2.txt 
+
+if $RPF2:
+        exec $(PWD)/helpers/enableRPF2.txt 	
+
+
+mac.txring[0].enable
+mac.txring[0].set PacketMark None
+mac.rxring[0].enable
+mac.rxring[0].fill
+mac.rxring[0].commit
+
+mac.llh rpoLroMaxNumberOfDescriptorsSet 3 0
+
+readreg 0x5030 -n bit5030
+bit5030 = ($bit5030 >> 1) << 1
+writereg 0x5030 $bit5030
+
+writereg 0x00005590 0xFFFFFFFF
+if 0: #llh bug
+    mac.llh rpoLroAckPacketDisableSet 1
+else:
+    readreg 0x00005594 -n val
+    val = $val| (1<<0xA)
+    writereg 0x00005594 $val
+
+mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet 0
+mac.llh rpoLroMaxNumberOfDescriptorsSet 3 0
+seqNo = 10
+for i = 0; $i < $givenTxPacketCount; i+=1:
+    pkt.new -n pkt$i -p $givenTxPayloadLen
+    pkt.layer -i $(pkt$i) -L 50 -t TCP seq=$seqNo flags=0
+    pkt.layer -i $(pkt$i) -L 30 -t IP 
+    pkt.layer -i $(pkt$i) -L 20 -t Ether
+	pkt.layer -i $(pkt$i) -L 50 seq=$seqNo       
+	mac.txring[0].insert -i $(pkt$i) -p $givenTxPacketLen
+	seqNo += $givenTxPayloadLen
+
+mac.txring[0].commit
+mac.txring[0].clean
+mac.txring[0].status 
+
+mac.rxring[0].clean
+mac.rxring[0].status 
+mac.llh -v rxHeadAfter rdmRxDescriptorHeadPointerGet 0
+actualRxPacketCount = ($rxHeadAfter - $rxHeadBefore )
+if $expectedRxPacketCount != $actualRxPacketCount:
+    finalReport += ["(0)Incorrect packet count, Expected = 1, actual = $actualRxPacketCount"]
+else:
+    mac.rxring[0].getdescval -f PKT_LEN -n actualRxPacketLen
+    if $expectedRxPacketLen != $actualRxPacketLen:
+        finalReport += ["(1)Incorrect packet len, Expected = $expectedRxPacketLen, actual = $actualRxPacketLen"]
+
+readreg 0x000055B4
+readreg 0x000055C0
+readreg 0x00005598
+readreg 0x00005594
+readreg 0x00005590
+readreg 0x000055A0
+
+#mac.rxring[0].dumpdesc
+
+mac.rxring[0].status
+
+mac.rxring[0].dumpdesc 0:$actualRxPacketCount
+
+readreg 0x7040
+readreg 0x5040
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

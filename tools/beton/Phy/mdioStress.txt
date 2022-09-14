@@ -1,0 +1,27 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Phy/mdioStress.txt $
+# $Revision: #2 $
+# $DateTime: 2016/04/16 03:58:27 $
+# $Author: oxy $
+
+readphyreg -p 0 1.2 -n prevVal0
+readphyreg -p 1 1.3 -n prevVal1
+readphyreg -p 2 1.5 -n prevVal2
+readphyreg -p 3 1.4 -n prevVal3
+
+for i = 0; $i < 100000; i += 1:
+    readphyreg -p 0 1.2 -n val0 -l nul
+    readphyreg -p 1 1.3 -n val1 -l nul
+    readphyreg -p 2 1.5 -n val2 -l nul
+    readphyreg -p 3 1.4 -n val3 -l nul
+    if $val0 != $prevVal0:
+        echo Incorrect value, prev = $prevVal0; current = $val0
+    if $val1 != $prevVal1: 
+        echo Incorrect value, prev = $prevVal1; current = $val1
+    if $val2 != $prevVal2:
+        echo Incorrect value, prev = $prevVal2; current = $val2
+    if $val3 != $prevVal3:
+        echo Incorrect value, prev = $prevVal3; current = $val3
+    prevVal0 = $val0
+    prevVal1 = $val1
+    prevVal2 = $val2
+    prevVal3 = $val3

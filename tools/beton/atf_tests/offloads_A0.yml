@@ -1,0 +1,38 @@
+test: Offloads - A0
+subtests:
+- name: Rx Header Split
+  script: Offloads/rxHeaderSplitTest.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Tx Zero UDP Checksum
+  script: Offloads/txZeroUDPChecksumOffload.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Tx Checksum Offload
+  script: Offloads/txChecksumOffload.txt
+  parameters:
+    txRingNo: '0'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Rx Fragmented UDP Checksum
+  script: Offloads/rxFragmentedUdpChecksumOffload.txt
+  parameters:
+    useVlan: 'True'
+    rxRingNo: '0'
+    test_num: '-1'
+- name: Rx Desc Field RSS_TYPE
+  script: Offloads/rxDescFieldRssType.txt
+  parameters:
+    maxtc: '8'
+    txRingNo: '0'
+    test_num: '-1'
+- name: RSS on 32 rings
+  script: Packet/rssCheck.txt
+  parameters:
+    maxtc: '8'
+    txRingNo: '0'
+    test_num: '-1'

@@ -1,0 +1,216 @@
+# Script for testing Checksum error feature of extraction on mng queue0 using mac filter
+
+hostAlreadyInitiated = False
+txRingNo = 0
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+
+# Tx Extractor prepare
+
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+
+readreg $txExtStatus2Reg -n status2Reg
+nPackets = $status2Reg & $txExtCntMask
+if $nPackets > 0:
+    echo Please run script on clear queue
+    exit
+
+# Set mode
+# Set corresponding filters enable and clear other
+
+readreg $txExtCtrlReg -n txExtCtrl
+txExtCtrl = $txExtCtrl & ~$txExtReplicateMask
+txExtCtrl = $txExtCtrl | $txExtMACFilterMask
+txExtCtrl = $txExtCtrl & ~$txExtIPFilterMask
+txExtCtrl = $txExtCtrl & ~$txExtARPFilterMask
+writereg $txExtCtrlReg $txExtCtrl
+
+macDa = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05]
+macDaStr = ' '
+for macDaElem in $macDa:
+    macDaStr = '$macDaStr' + ' ' + hex($macDaElem)
+
+macFilterLSW = (($macDa[2] << 24) & 0xFF000000) | (($macDa[3] << 16) & 0xFF0000) | (($macDa[4] << 8) & 0xFF00) | ($macDa[5] & 0xFF)
+macFilterMSW = (($macDa[0] << 8) & 0xFF00) | ($macDa[1] & 0xFF)
+
+writereg $txExtMACFilter0LSWReg $macFilterLSW
+writereg $txExtMACFilter0MSWReg $macFilterMSW 
+
+# Read status reg1 to self-clear errors
+readreg $txExtStatus1Reg
+
+# Read other status regs for information
+readreg $txExtStatus2Reg
+readreg $txExtStatus3Reg
+
+tcpPacket = 0x00 0x09 0x0f 0x82 0x34 0xdd 0x10 0xdd 0xb1 0xb0 0x37 0xd3 0x08 0x00 0x45 0x00 0x00 0x28 0x31 0x25 0x40 0x00 0x80 0x06 0x24 0x12 0xac 0x1b 0x1b 0x28 0x57 0xf0 0x86 0x65 0xd5 0x9e 0x00 0x50 0x51 0xbb 0x67 0x2b 0x18 0x3a 0x6c 0xe6 0x50 0x10 0x00 0xfc 0xf5 0x49 0x00 0x00
+
+udpPacket = 0x10 0xdd 0xb1 0xb0 0x37 0xd3 0x10 0xfe 0xed 0x02 0x32 0x59 0x08 0x00 0x45 0x00 0x00 0x34 0x4c 0x88 0x00 0x00 0x80 0x11 0x5f 0xa8 0xac 0x1b 0x1b 0x2a 0xac 0x1b 0x1b 0x28 0xc4 0x6c 0xe3 0x93 0x00 0x20 0xe9 0x10 0x00 0x00 0x00 0x00 0x41 0x0c 0x01 0x00 0xdf 0x20 0x00 0x17 0x24 0x6f 0x08 0x00 0x20 0x86 0x00 0x80 0x70 0xda 0x00 0x80
+
+icmpPacket = 0x00 0x09 0x0f 0x82 0x34 0xdd 0x10 0xdd 0xb1 0xb0 0x37 0xd3 0x08 0x00 0x45 0x00 0x00 0x3c 0x4b 0xea 0x00 0x00 0x80 0x01 0x43 0xf2 0xac 0x1b 0x1b 0x28 0x5d 0x9e 0x86 0x03 0x08 0x00 0x4d 0x53 0x00 0x01 0x00 0x08 0x61 0x62 0x63 0x64 0x65 0x66 0x67 0x68 0x69 0x6a 0x6b 0x6c 0x6d 0x6e 0x6f 0x70 0x71 0x72 0x73 0x74 0x75 0x76 0x77 0x61 0x62 0x63 0x64 0x65 0x66 0x67 0x68 0x69
+
+# 61 for ip.proto
+# 0xfe 0x23 0x1a - reserved
+# 0x3d 0x23 0xdb - any host internal protocol
+# 0x3f 0x23 0xd9 - any local network
+ipPacket = 0x00 0x09 0x0f 0x82 0x34 0xdd 0x10 0xdd 0xb1 0xb0 0x37 0xd3 0x08 0x00 0x45 0x00 0x00 0x28 0x31 0x25 0x40 0x00 0x80 0x3d 0x23 0xdb 0xac 0x1b 0x1b 0x28 0x57 0xf0 0x86 0x65 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe 0xfe
+
+arpPacket = 0xff 0xff 0xff 0xff 0xff 0xff 0x10 0xdd 0xb1 0xba 0xc6 0xaa 0x08 0x06 0x00 0x01 0x08 0x00 0x06 0x04 0x00 0x01 0x10 0xdd 0xb1 0xba 0xc6 0xaa 0xac 0x1b 0x1b 0x1f 0x00 0x00 0x00 0x00 0x00 0x00 0xac 0x1b 0x1b 0x0a 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+
+tcpChksumOffset = 0x32
+udpChksumOffset = 0x28
+icmpChksumOffset = 0x24
+ipChksumOffset = 0x18
+
+finalReport = [] # final report is useful when command line window has huge output
+
+# Select Queue
+txExtCtrl = $txExtCtrl & ~$txExtSelectQueueMask
+writereg $txExtCtrlReg $txExtCtrl
+txExtCtrl0 = $txExtCtrl & ~$txExtReadMask
+txExtCtrl1 = $txExtCtrl | $txExtReadMask
+
+# Multiple packets send
+validPackets = 5
+invalidPackets = 7
+for packetNo = 0; $packetNo < $validPackets + $invalidPackets; packetNo += 1:
+    if $packetNo < $validPackets:
+        validPacket = True
+        if $packetNo == 0:
+            packet = $tcpPacket
+            packetDesc = tcpPacket
+        elif $packetNo == 1:
+            packet = $udpPacket
+            packetDesc = udpPacket
+        elif $packetNo == 2:
+            packet = $icmpPacket
+            packetDesc = icmpPacket
+        elif $packetNo == 3:
+            packet = $ipPacket
+            packetDesc = ipPacket
+        else:
+            packet = $arpPacket
+            packetDesc = arpPacket
+    else:
+        validPacket = False
+        invalidPacketNo = $packetNo - $validPackets
+        if $invalidPacketNo == 0:
+            packet = $tcpPacket
+            packetDesc = tcpPacket with invalid L4 checksum
+            chksumOffset = $tcpChksumOffset
+        elif $invalidPacketNo == 1:
+            packet = $tcpPacket
+            packetDesc = tcpPacket with invalid L3 checksum
+            chksumOffset = $ipChksumOffset
+        elif $invalidPacketNo == 2:
+            packet = $udpPacket
+            packetDesc = udpPacket with invalid L4 checksum
+            chksumOffset = $udpChksumOffset
+        elif $invalidPacketNo == 3:
+            packet = $udpPacket
+            packetDesc = udpPacket with invalid L3 checksum
+            chksumOffset = $ipChksumOffset
+        elif $invalidPacketNo == 4:
+            packet = $icmpPacket
+            packetDesc = icmpPacket with invalid icmp checksum
+            chksumOffset = $icmpChksumOffset
+        elif $invalidPacketNo == 5:
+            packet = $icmpPacket
+            packetDesc = icmpPacket with invalid L3 checksum
+            chksumOffset = $ipChksumOffset
+        else:
+            packet = $ipPacket
+            packetDesc = ipPacket with invalid checksum
+            chksumOffset = $ipChksumOffset
+
+    packetLen = '$packet'.count('0x')
+    mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+    mac.txring[$txRingNo].getdescval -T 1 -f paddr -n pAddr
+    # Insert packet
+    mem.put $packet -s 1 -p $pAddr
+    # Overwrite eth.dst (allows test extending without manual packet modifying)
+    mem.put $macDaStr -s 1 -p $pAddr
+    if $validPacket == False:
+        # Overwrite checksum
+        addr = $pAddr + $chksumOffset
+        mem.get -n checksum -s 2 -p $addr
+        checksum = ~$checksum & 0xFFFF
+        mem.put $checksum -s 2 -p $addr
+    echo
+
+    mac.txring[$txRingNo].dumpdesc -T 1 -l dumptx
+    mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx
+    mac.txring[$txRingNo].commit
+
+    # Read packet from the queue
+    readreg $txExtStatus2Reg -n status2Reg
+    nPackets = $status2Reg & $txExtCntMask
+    if $nPackets != 1:
+        str = 'Wrong packet count $nPackets on $packetDesc read (1)'
+        echo $str
+        finalReport = $finalReport + ['$str']
+        break
+
+    bufStr = ' '
+    for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+        # generate rising edge
+        writereg $txExtCtrlReg $txExtCtrl0
+        writereg $txExtCtrlReg $txExtCtrl1
+        readreg $txExtDataReg -n dataExtracted
+        bufStr = '$bufStr' + ' ' + hex($dataExtracted)
+
+        readreg $txExtStatus2Reg -n status2Reg
+        eop = $status2Reg & $txExtEopMask
+        if $eop <> 0:
+            byteCnt += 4
+            break
+    writereg $txExtCtrlReg $txExtCtrl0
+
+    if $validPacket == True:
+        if ($status2Reg & $txExtChksumErrMask) != 0:
+            str = 'Checksum error is set on $packetDesc read (2)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+    else:
+        if ($status2Reg & $txExtChksumErrMask) == 0:
+            str = 'Checksum error is not set on $packetDesc read (2)'
+            echo $str
+            finalReport = $finalReport + ['$str']
+    
+    # Process data_vld field
+    valid = ($status2Reg & $txExtDataValidMask) >> $txExtDataValidShift
+    if $valid > 0:
+        for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+            byteCnt = ($byteCnt - 1)
+    else:
+        byteCnt = ($byteCnt - 4)
+
+    nPackets = $status2Reg & $txExtCntMask
+    if $nPackets != 0:
+        str = 'Wrong packet count $nPackets after $packetDesc read (3)'
+        echo $str
+        finalReport = $finalReport + ['$str']
+
+    # Check received data
+    # @note: is there any way to acquire mem.cmp result to stop next execution?
+    if $byteCnt != $packetLen:
+        str = 'Wrong byte count $byteCnt on $packetDesc read (4)'
+        echo $str
+        finalReport = $finalReport + ['$str']
+    mem.cmp -p $pAddr -s $byteCnt -V $bufStr
+
+mac.txring[$txRingNo].clean
+
+if len($finalReport) > 0:
+    echo
+    echo FinalReport:
+    for str in $finalReport:
+        echo $str
+echo Script done
+cmd

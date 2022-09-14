@@ -1,0 +1,9 @@
+#drvMsgOffloadRemove
+
+addr = $BASEADDR
+
+mac.mcp.writemem $addr $drvMsgOffloadRemove -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $patternId -l nul
+addr = $addr + 4

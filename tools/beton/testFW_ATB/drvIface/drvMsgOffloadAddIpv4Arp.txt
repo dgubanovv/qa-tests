@@ -1,0 +1,20 @@
+#drvMsgOffloadAddIpv4Arp
+
+exec testFW/drvIface/drvMsgOffloadAddHeader.txt
+
+mac.mcp.writemem $addr $flags -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $remoteIPv4Address -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $hostIPv4Address -l nul
+addr = $addr + 4
+
+mac0 = (($macAddress0 << 0) | ($macAddress1 << 8) | ($macAddress2 << 16) | ($macAddress3 << 24))
+mac.mcp.writemem $addr $mac0 -l nul
+addr = $addr + 4
+
+mac1 = ($macAddress4 << 0) | ($macAddress5 << 8)
+mac.mcp.writemem $addr $mac1 -l nul
+addr = $addr + 4

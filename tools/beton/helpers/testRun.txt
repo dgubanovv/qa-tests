@@ -1,0 +1,13 @@
+#run test by name and save report
+#IN: testName - full name by test script. Ex: $(SCRIPT_PATH)/someTest.txt
+#delimeter - any tests cli delimeter
+#INOUT testReport - to save test report
+echo [ RUN      ] $testName
+exec $path$testName
+echo 
+if len($finalReport)>0:
+    echo [  FAILED  ] $testName
+    testReport += [ ['$testName', $finalReport]]
+else:
+    echo [       OK ] $testName
+numTestsToRun += 1

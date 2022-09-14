@@ -1,0 +1,175 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Mngif2/extParityTest.txt $
+# $Revision: #11 $
+# $DateTime: 2016/08/11 02:22:39 $
+# $Author: dgubanov $
+#
+# Script for extraction with par_chk_sense on mng queue0 using mac filter
+
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    extType = tx
+    queueActive = [1, 0]
+    logTag = -l cli
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef extType:
+        extType = tx
+    ifndef queueActive:
+        queueActive = [1, 0]
+    ifndef logTag:
+        logTag = -l cli
+
+queue = 0
+truncatePackets = True
+packetLen = 128
+checkParityErrorEarly = False # check parity error at once
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    if '$extType' == 'rx':
+        mac.set loopback System Packet $logTag #deep loopback
+    else:
+        mac.set loopback None $logTag # No loopback
+    mac.init
+    if '$extType' == 'rx':
+        mac.rxinit
+        mac.rxring[$txRingNo].enable
+        mac.rxring[$txRingNo].fill
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+exec $(PWD)/helpers/enableTPO2.txt
+exec $(PWD)/helpers/enableRPF2.txt
+
+# Tx Extractor prepare
+
+if '$extType' == 'rx':
+    exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+else:
+    exec $(PWD)/helpers/tpoExtractorLlhNames.txt
+
+mac.llh -v packetCount $extractionQueuePacketCountGet $queue
+if $packetCount != 0:
+    finalReport = $finalReport + ['Please run script on clear queue']
+    exec $(PWD)/helpers/showTestResult.txt
+    exit
+
+# Set mode
+# Set corresponding filters enable and clear other
+
+if '$extType' == 'rx':
+    exec $(PWD)/helpers/configureRxExtFilters.txt
+else:
+    exec $(PWD)/helpers/configureTxExtFilters.txt
+
+# Send packet with txParChkSenseMask = 0 (default),
+# packet with txParChkSenseMask = 1 (to set parity error),
+# and then packet with txParChkSenseMask = 0 again
+packetToSend = 3
+for packetNo = 0; $packetNo < $packetToSend; packetNo += 1:
+    checkMask = 0
+    if $packetNo == 1:
+        mac.llh $pathInvertParityCheckSenceSet 1
+        checkMask = 1
+    elif $packetNo == 2:
+        mac.llh $pathInvertParityCheckSenceSet 0
+
+    # Packet Send
+
+    mac.txring[$txRingNo].insert -b $packetLen -p $packetLen -f indexed_uniq_ramp
+    mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+    mac.txring[$txRingNo].dumpdesc -T 1 -l dumptx $logTag
+    mac.txring[$txRingNo].dumpbuf -T 1 -l dumptx $logTag --size 80
+    mac.txring[$txRingNo].commit
+    mac.txring[$txRingNo].clean
+    mac.txring[$txRingNo].status $logTag
+
+    # Packet Read
+    
+    expectedPacketCount = 1
+    expectedIsReady = 1
+    expectedTruncationError = 0
+    expectedOverflowError = 0
+    expectedLostError = 0
+    expectedIsInterrupt = 1
+    expectedParityError = 0
+    stringId = '(1)'
+    exec $(PWD)/helpers/checkExtQueueErrors.txt
+    echo !!! $packetCount !!!
+    if $packetCount != 1:
+        break;
+
+    # Select Queue
+    mac.llh $extractionSelectSet $queue
+
+    bufStr = ' '
+    for byteCnt = 0; $byteCnt < 2048; byteCnt += 4: # use byteCnt limit to avoid endless loop
+        # generate rising edge
+        mac.llh $extractionReadSet 0
+        mac.llh $extractionReadSet 1
+        mac.llh -v dataExtracted $extractionQueuePacketDataGet
+        if '$extType' == 'rx':
+            dataExtracted = ($dataExtracted & 0xFF) << 24 | ($dataExtracted & 0xFF00) << 8 | ($dataExtracted & 0xFF0000) >> 8 | ($dataExtracted & 0xFF000000) >> 24
+        bufStr = '$bufStr' + ' ' + hex($dataExtracted)
+        mac.llh -v eop $extractionQueueEopGet
+        if $eop <> 0:
+            byteCnt += 4
+            break
+    mac.llh $extractionReadSet 0
+
+    # Process data_vld field
+    mac.llh -v valid $extractionQueueByteValidGet
+    if $valid > 0:
+        for workaround = 0; ($valid & 1) == 0; valid = $valid >> 1:
+            byteCnt = $byteCnt + 0 - 1
+    else:
+        byteCnt = $byteCnt + 0 - 4
+
+    mac.llh -v extOffset $extractionQueuePacketOffsetGet
+    if $extOffset != 0:
+        extOffsetStr = hex($extOffset)
+        finalReport = $finalReport + ['Wrong ext_offset $extOffsetStr after extraction; in iteration = $packetNo']
+    
+    stringId = '(3)'
+    expectedPacketCount = 0
+    expectedIsReady = 0
+    expectedTruncationError = 0
+    expectedOverflowError = 0
+    expectedLostError = 0
+    expectedIsInterrupt = 0
+    if ('$hw_options' == 'B0RRO') and ('$extType' == 'rx'):   # Fix for RRO         
+            expectedIsInterrupt = 0                         #
+    expectedParityError = $checkMask
+    exec $(PWD)/helpers/checkExtQueueErrors.txt
+    
+    if $checkMask == 1:
+        mac.llhcache on
+        expectedParityError = 0
+        stringId = '(4)'
+        exec $(PWD)/helpers/extractorCheckers/checkParityError.txt
+        
+    # Check received data
+    if $byteCnt != $packetLen:
+        finalReport = $finalReport + ['Wrong byte count $byteCnt extracted; in iteration = $packetNo']
+        
+    mem.cmp -p $pAddr -s $byteCnt -V $bufStr -n compareResult $logTag
+    if $compareResult != True:
+        finalReport = $finalReport + ['Memory compare failed']
+
+readreg 0x7040
+mac.uninit
+exec $(PWD)/helpers/showTestResult.txt

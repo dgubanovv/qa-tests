@@ -1,0 +1,19 @@
+#Rx ethertype filter configurator
+#Use global values: 
+#IN: filterEthertypeIndex - index of filter to configure
+#filterEthertypeEnable - enable (1) or disable (0) ethertype filter
+#filterUserPriorityEnable - match (1) or ignore (0) 802.1Q user-priority
+#filterUserPriority - 3bits priority
+#filterMngQueue - mng queue number (0 or 1)
+#filterEthertypeAction - 0=Discard, 1=Host, 2=Management, 3=Host & Management, 4=Wake-on-LAN, 5 to 7=Reserved
+#filterEthertype - 16 bits ether type
+
+mac.llhcache on
+mac.llh -C rpfEthertypeFilterEnableSet $filterEthertypeEnable $filterEthertypeIndex
+mac.llh -C rpfEthertypeUserPriorityEnableSet $filterUserPriorityEnable $filterEthertypeIndex
+mac.llh -C rpfEthertypeUserPrioritySet $filterUserPriority $filterEthertypeIndex
+#echo filterMngQueue = $filterMngQueue
+mac.llh -C rpfEthertypeManagementQueueSet $filterMngQueue $filterEthertypeIndex
+mac.llh -C rpfEthertypeFilterActionSet $filterEthertypeAction $filterEthertypeIndex
+mac.llh -C rpfEthertypeFilterSet $filterEthertype $filterEthertypeIndex
+mac.llhcache off

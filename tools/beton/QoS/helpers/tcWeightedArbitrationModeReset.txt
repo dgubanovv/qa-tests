@@ -1,0 +1,7 @@
+#reset to default tc arbitration mode
+#INPUT:tcArr - array of TC
+
+mac.tps.set descriptorArbitrationMode RR
+for tcNo in $tcArr:
+    mac.tps.tcdesc $tcNo set tcWeight 0
+    mac.tps.tcdesc $tcNo set tcMaxCredit 0

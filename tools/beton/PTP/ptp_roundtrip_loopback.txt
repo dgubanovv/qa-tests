@@ -1,0 +1,217 @@
+###############################################################################
+# Script settings
+###############################################################################
+iteration_count=5
+
+# Packet type
+# Possible values 'ptp_sync', 'ptp_delay_req'
+ifndef pkt_type:
+    pkt_type = ptp_sync
+    undefine = $undefine pkt_type
+echo pkt_type = $pkt_type
+
+ifndef pkt_count:
+    pkt_count = 1
+    undefine = $undefine pkt_count
+echo pkt_count = $pkt_count
+
+ifndef link_speed:
+    link_speed = 100M
+    undefine = $undefine link_speed
+echo link_speed = $link_speed
+
+ifndef loopback:
+    loopback = PHY NET
+    undefine = $undefine loopback
+echo loopback = $loopback
+
+eg_tx_ring = 0
+ptp_et = 0x88f7
+
+echo pkt_type = $pkt_type, et = $ptp_et
+
+max_tx_wait_count = 5
+tx_wait_interval = 200
+
+###############################################################################
+# Prepare non-chip related stuff
+###############################################################################
+undefine = undefine link_speed loopback i pkt_type pkt_count loopback max_tx_wait_count tx_wait_interval ptp_et eg_tx_ring iteration_count cur_itr round_trip ingress_ts egress_ts list_round_trip min_rt max_rt
+if '$pkt_type' == 'ptp_sync':
+    for i = 0; $i < $pkt_count; i += 1:
+        pkt.new -n pkt$i -f None
+        pkt.layer -i $(pkt$i) -L 10 -t Ether type=$ptp_et dst=[0x01,0x1B,0x19,00,00,00]
+        #pkt.layer -i $(pkt$i) -L 20 -t Dot1Q vlan=0x123 prio=1 type=$ptp_et
+        pkt.layer -i $(pkt$i) -L 30 -t ptp -T sync
+        pkt.layer -i $(pkt$i) -L 30 --corf 0x23 --orig_ts [0x12,0] --seqId 0x1231 --spi [0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0x00]
+        
+        undefine = $undefine pkt$i
+elif '$pkt_type' == 'ptp_delay_req':
+    for i in range($pkt_count):
+        pkt.new -n pkt$i -f None
+        pkt.layer -i $(pkt$i) -L 10 -t Ether type=$ptp_et dst=[0x01,0x1B,0x19,00,00,00]
+        #pkt.layer -i $(pkt$i) -L 20 -t Dot1Q vlan=0x123 prio=1 type=$ptp_et
+        pkt.layer -i $(pkt$i) -L 30 -t ptp -T delay_req
+        pkt.layer -i $(pkt$i) -L 30 --li_61 1 --cur_utc_of 0x12124 --seqId 0x1231234
+elif '$pkt_type' == 'regular':
+    for i in range($pkt_count):
+        pkt.new -n pkt$i -p 256 -f ramp
+        pkt.layer -i $(pkt$i) -L 40 -t TCP
+        pkt.layer -i $(pkt$i) -L 30 -t IP
+        pkt.layer -i $(pkt$i) -L 20 -t Ether
+
+echo Dump PTP packet
+for i = 0; $i < $pkt_count; i += 1:
+    pkt.dump -i $(pkt$i) -f HEX
+
+###############################################################################
+# Init mac
+###############################################################################
+mac.init
+mac.isr.disable
+mac.mcp.stall #Disable MAC MCP
+mac.txinit
+
+###############################################################################
+# Link up
+###############################################################################
+
+mac.set -l nul link        $link_speed # None, 100M, 1G, 2.5G, 5G, 10G, Auto
+mac.set -l nul loopback    $loopback
+mac.set -l nul fc          None # None, link, pfc
+if '$link_speed' in ['100M', '1G']:
+    mac.mpi.set mode       SGMII
+else:
+    mac.mpi.set mode       USXGMII
+
+#mac.phy.getlink
+mac.link Up
+mac.link -n linkstate -l nul
+if '$linkstate' != '$link_speed':
+    echo [FAILED] Error to make link up. Exiting script...
+    mac.txuninit
+    mac.uninit
+    exit
+
+###############################################################################
+# Configure PTP in Europa
+###############################################################################
+echo Enabling PHY PTP...
+#mac.phy.ptp.init
+wpr -l nul 0x3c600 0x1002
+wpr -l nul 0x3c612 0x0200
+wpr -l nul 0x3c60b 0x6
+wpr -l nul 0x3c60c 0xaaaa
+wpr -l nul 0x3c60d 0xaa40
+wpr -l nul 0x3c60a 0
+wpr -l nul 0x3c60a 0x8
+wpr -l nul 0x3c60a 0
+
+#mac.phy.ptp.cfg_eg
+wpr  -l nul 0x3c620 0x7122
+wpr  -l nul 0x3c621 0x31
+wpr  -l nul 0x3c622 0x3223
+wpr  -l nul 0x3c639 0xfff
+wpr  -l nul 0x3c63c 0x1000
+wpr  -l nul 0x3c63d 0x7
+wpr  -l nul 0x3c642 0x8100
+wpr  -l nul 0x3c647 0x7
+wpr  -l nul 0x3c648 0x7
+
+#mac.phy.ptp.cfg_ing
+wpr  -l nul 0x3e600 0x7122
+wpr  -l nul 0x3e601 0x31
+wpr  -l nul 0x3e602 0x3223
+wpr  -l nul 0x3e619 0xfff
+wpr  -l nul 0x3e61c 0x1000
+wpr  -l nul 0x3e61d 0x7
+wpr  -l nul 0x3e622 0x8100
+wpr  -l nul 0x3e627 0x7
+wpr  -l nul 0x3e628 0x7
+
+pause 1
+mac.phy.ptp.ts
+echo PHY PTP has been enabled
+
+###############################################################################
+# Prepare ring for data sending
+###############################################################################
+mac.txring[$eg_tx_ring].enable
+
+#echo tx_head_before = $tx_head_before
+
+###############################################################################
+# Prepare packet, send it
+###############################################################################
+min_rt = 0xffffffff
+max_rt = 0
+for cur_itr in range($iteration_count):
+    #echo Send PTP packet
+    mac.llh -v tx_head_before tdmTxDescriptorHeadPointerGet $eg_tx_ring
+
+    for i = 0; $i < $pkt_count; i += 1:
+        mac.txring[$eg_tx_ring].insert -i $(pkt$i)
+    mac.txring[$eg_tx_ring].commit
+
+    #pause 1
+    #mac.txring[$eg_tx_ring].clean
+    #dot_cnt = ($cur_itr+1)*40//$iteration_count
+    #dot $dot_cnt
+
+    mac.txring[$eg_tx_ring].status
+    #mac.mpi.msm.counters
+    for i in range($max_tx_wait_count):
+        #mac.txring[$eg_tx_ring].status
+        mac.txring[$eg_tx_ring].clean
+        mac.llh -v tx_head_after tdmTxDescriptorHeadPointerGet $eg_tx_ring
+        #echo tx_head_after = $tx_head_after
+        if $tx_head_before + $pkt_count == $tx_head_after:
+            echo PTP packets were sent OK
+            break
+        pause $tx_wait_interval ms
+    if $tx_head_before + $pkt_count != $tx_head_after:
+        echo [FAILED] Failed to sent PTP packets. Exiting...
+        mac.txuninit
+        mac.uninit
+        exit
+    
+
+    ###############################################################################
+    # Get timestamps
+    ###############################################################################
+    #echo Get timestamps
+    mac.phy.ptp.read_ts_eg -n egress_ts -l nul
+    mac.phy.ptp.read_ts_ing -n ingress_ts  -l nul
+
+    round_trip = int($ingress_ts - $egress_ts)
+    echo Egress TS = $egress_ts
+    echo Ingress TS = $ingress_ts; Round trip = $round_trip
+
+    if $cur_itr > 0:
+        list_round_trip=$list_round_trip,$round_trip
+    else:
+        list_round_trip=$round_trip
+
+    min_rt = ($min_rt if $min_rt < $round_trip else $round_trip)
+    max_rt = ($max_rt if $max_rt > $round_trip else $round_trip)
+echo Done
+list_round_trip=[ $list_round_trip ]
+echo $list_round_trip
+diff = ($max_rt - $min_rt)
+echo min=$min_rt, max = $max_rt, diff=$diff
+mac.phy.ptp.ts
+
+
+###############################################################################
+# Disable everything
+###############################################################################
+echo Disable...
+
+mac.txring[$eg_tx_ring].disable
+
+mac.link None
+
+mac.txuninit
+mac.uninit
+
+undef -n $undefine -l nul

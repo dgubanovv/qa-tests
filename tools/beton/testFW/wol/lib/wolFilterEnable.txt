@@ -1,0 +1,16 @@
+exec testFW/lib/constants.txt
+
+exec testFW/lib/getBaseAddress.txt
+
+# drvMsgEnableWakeup header
+patternMaskWindows = (1 << ($ndisPMWoLPacketIPv4TcpSyn & 0xFFFF))
+patternMaskAquantia = 0
+patternMaskOther = 0
+offloadsMaskWindows = 0
+offloadsMaskAquantia = 0
+
+exec testFW/lib/drvMsgEnableWakeup.txt
+
+#### Run transaction
+expectedResponseDwordCount = 1
+exec testFW/lib/helperSendDrvMsg.txt

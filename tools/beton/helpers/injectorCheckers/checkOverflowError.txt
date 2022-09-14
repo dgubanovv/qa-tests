@@ -1,0 +1,5 @@
+mac.llh -v overflowError -C $injectionQueueOverflowErrorGet $queue
+if  $(overflowError) != $expectedOverflowError:
+    str = '$stringId Overflow error bit for queue $queue not equal to expected (which is $expectedOverflowError)'
+    echo $str
+    finalReport = $finalReport + ['$str']

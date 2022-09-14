@@ -1,0 +1,55 @@
+# Script for one packet extraction with different MAC filters
+
+hostAlreadyInitiated = False
+
+txRingNo = 0
+extReplicate = 0   # replicate after Extraction
+
+pattern1 = 0x78563412
+pattern2 = 0xF0DEBC9A
+
+filterLSW0 = (($pattern1 << 8) & 0xFF000000) | (($pattern1 >> 8) & 0xFF0000) | (($pattern1 << 8) & 0xFF00) | (($pattern1 >> 8) & 0xFF)
+filterMSW0 = (($pattern1 << 8) & 0xFF00) | (($pattern1 >> 8) & 0xFF)
+
+filterLSW1 = (($pattern2 << 8) & 0xFF000000) | (($pattern2 >> 8) & 0xFF0000) | (($pattern2 << 8) & 0xFF00) | (($pattern2 >> 8) & 0xFF)
+filterMSW1 = (($pattern2 << 8) & 0xFF00) | (($pattern2 >> 8) & 0xFF)
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback MCP            # No loopback
+    mac.init
+
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq
+
+# Tx Extractor prepare
+
+exec $(SCRIPT_PATH)/txExtRegDefs.txt
+
+# Set MAC filter enable and clear IP enable
+
+readreg $txExtCtrlReg -n txExtCtrl
+txExtCtrl = $txExtCtrl | $txExtMACFilterMask
+txExtCtrl = $txExtCtrl | ($txExtMACFilterMask * 2)
+txExtCtrl = $txExtCtrl & ~$txExtIPFilterMask
+txExtCtrl = $txExtCtrl & ~($txExtIPFilterMask * 2)
+txExtCtrl = $txExtCtrl & ~$txExtARPFilterMask
+txExtCtrl = $txExtCtrl & ~($txExtARPFilterMask * 2)
+ctrlMask = $txExtReplicateMask | ($txExtReplicateMask * 2)
+if $extReplicate == 1:
+    txExtCtrl = $txExtCtrl | $ctrlMask
+else:
+    txExtCtrl = $txExtCtrl & ~$ctrlMask
+writereg $txExtCtrlReg $txExtCtrl
+
+writereg $txExtMACFilter0LSWReg $filterLSW0
+writereg $txExtMACFilter0MSWReg $filterMSW0
+
+writereg $txExtMACFilter1LSWReg $filterLSW1
+writereg $txExtMACFilter1MSWReg $filterMSW1
+
+readreg $txExtStatus1Reg
+readreg $txExtStatus2Reg
+readreg $txExtStatus3Reg
+cmd

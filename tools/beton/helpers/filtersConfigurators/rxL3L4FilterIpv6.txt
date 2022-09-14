@@ -1,0 +1,53 @@
+#Rx unicast filter configurator
+#Use global values: 
+#IN: filterIndex - index of filter to configure
+#filterEnable - enable (1) or disable (0) unicast filter
+#filterIpv6Enable -  IPv6 source and destination 128-bit address format shall be used
+#filterSrcAddressEnable - if enabled-compared
+#filterDstAddressEnable - if enabled-compared
+#filterSrcPortEnable - if enabled-compared
+#filterDstPortEnable - if enabled-compared
+#filterL4ProtoEnable - if enabled-compared
+#filterArpEnable - if enabled-compared
+#filterMngQueueEnable - enable mn queue assignment
+#filterMngQueue - mng queue
+#filterAction 0=Discard, 1=Host, 2=Management, 3=Host & Management, 4=Wake-on-LAN, 5 to 7=Reserved
+#filterL4Proto - 0=TCP, 1=UDP, 2=SCTP, 3=ICMP
+
+#filterL3SrcAddress - array of 4unit of 4byte address
+#filterL3DstAddress - array of 4unit of 4byte address
+#filterL3SrcPort - 2byte port
+#filterL3DstPort - 2byte port
+
+newIndex = $filterIndex*4
+
+
+mac.llhcache on
+mac.llh -C rpfL3L4FilterEnableSet $filterEnable $newIndex
+mac.llh -C rpfL3Ipv6EnableSet $filterIpv6Enable $newIndex
+mac.llh -C rpfL3SourceAddressEnableSet $filterSrcAddressEnable $newIndex
+mac.llh -C rpfL3DestinationAddressEnableSet $filterDstAddressEnable $newIndex
+
+
+mac.llh -C rpfL4SourcePortEnableSet $filterSrcPortEnable $newIndex
+mac.llh -C rpfL4DestinationPortEnableSet $filterDstPortEnable $newIndex
+mac.llh -C rpfL4ProtocolEnableSet $filterL4ProtoEnable $newIndex
+mac.llh -C rpfL3ArpFilterEnableSet $filterArpEnable $newIndex
+mac.llh -C rpfL3L4RxQueueEnableSet $filterMngQueueEnable $newIndex
+mac.llh -C rpfL3L4ManagementQueueSet $filterMngQueue $newIndex
+mac.llh -C rpfL3L4FilterActionSet $filterAction $newIndex
+mac.llh -C rpfL4ProtocolValueSet $filterL4Proto $newIndex
+
+
+for count = 0; $count < 4; count +=1:
+    index = $filterIndex*4 + $count
+    address = $filterL3SrcAddress[3-$count]
+    mac.llh -C rpfL3SourceAddressSet $address $index
+    
+    address = $filterL3DstAddress[3-$count]
+    mac.llh -C rpfL3DestinationAddressSet $address $index
+
+mac.llh -C rpfL4SourcePortSet $filterL3SrcPort $newIndex
+mac.llh -C rpfL4DestinationPortSet $filterL3DstPort $newIndex
+
+mac.llhcache off

@@ -1,0 +1,15 @@
+features:
+  cdrom:
+    requirement_list:
+      - id: FIJI_CDROM_WIN_10_X32
+        description: Fiji firmware should support CDROM option for Windows 10 x32 . A cdrom should appear in device list, and it should contain driver zip files.
+        products: [pacific_firmware, fiji_firmware]
+      - id: FIJI_CDROM_WIN_10_X64
+        description: Fiji firmware should support CDROM option for Windows 10 x64 . A cdrom should appear in device list, and it should contain driver zip files.
+        products: [pacific_firmware, fiji_firmware]
+      - id: FIJI_CDROM_WIN_8_1_X32
+        description: Fiji firmware should support CDROM option for Windows 8.1 x32 . A cdrom should appear in device list, and it should contain driver zip files.
+        products: [pacific_firmware, fiji_firmware]
+      - id: FIJI_CDROM_WIN_8_1_X64
+        description: Fiji firmware should support CDROM option for Windows 8.1 x64 . A cdrom should appear in device list, and it should contain driver zip files.
+        products: [pacific_firmware, fiji_firmware]

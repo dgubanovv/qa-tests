@@ -1,0 +1,436 @@
+#Check predefined parameters
+undefine = -n undefine hdrSize
+ifndef packetCount:
+    packetCount = 1
+    undefine = $undefine packetCount
+ifndef packetName:
+    packetName = pkt
+    undefine = $undefine packetName
+ifndef packetIndex:
+    packetIndex = 0
+
+hdrSize = 0
+#L2 parameters
+ifndef l2Gen:
+    l2Gen = 1            #1 - Ether, 2 - , 0 - No L2
+    undefine = $undefine l2Gen
+if $l2Gen > 0:
+    #Vlan insertion parameters
+    hdrSize += 14
+    ifndef l2layer:
+        l2layer = 20
+        undefine = $undefine l2layer
+    ifndef vlanGen:
+        vlanGen = 0     # 0 - No VLAN, 1 - Insert VLAN, 2 - Double VLAN
+        undefine = $undefine vlanGen
+    if $vlanGen > 0:
+        hdrSize += 4
+        ifndef vlanLayer:
+            vlanLayer = 30
+            undefine = $undefine vlanLayer
+        ifndef vlanTag:
+            ifndef vlanTagMin:
+                vlanTagMin = 0
+                undefine = $undefine vlanTagMin
+            ifndef vlanTagMax:
+                vlanTagMax = 4095
+                undefine = $undefine vlanTagMax
+
+        ifndef vlanPriority:
+            ifndef vlanPriorityMin:
+                vlanPriorityMin = 0
+                undefine = $undefine vlanPriorityMin
+            ifndef vlanPriorityMax:
+                vlanPriorityMax = 7
+                undefine = $undefine vlanPriorityMax
+
+        if $vlanGen > 1:
+            hdrSize += 4
+            ifndef vlan2Layer:
+                vlan2Layer = 35
+                undefine = $undefine vlan2Layer
+            ifndef vlan2Tag:
+                ifndef vlan2TagMin:
+                    vlan2TagMin = 0
+                    undefine = $undefine vlan2TagMin
+                ifndef vlan2TagMax:
+                    vlan2TagMax = 4095
+                    undefine = $undefine vlan2TagMax
+
+            ifndef vlan2Priority:
+                ifndef vlan2PriorityMin:
+                    vlan2PriorityMin = 0
+                    undefine = $undefine vlan2PriorityMin
+                ifndef vlan2PriorityMax:
+                    vlan2PriorityMax = 7
+                    undefine = $undefine vlan2PriorityMax
+
+canBuildPacket=True
+#L3 insertion parameters
+ifndef l3Gen:
+    l3Gen = 1            #0 - random, 1 - IPv4, 2 - IPv6, -1 - No L3
+    undefine = $undefine l3Gen
+if $l3Gen >= 0:
+    ifndef l3layer:
+        l3layer = 40
+        undefine = $undefine l3layer
+
+    ifndef l3src:
+        ifndef l3SrcNetMask:
+            l3SrcNetMask=16
+            undefine = $undefine l3SrcNetMask
+        ifndef l3SrcIPv6NetMask:
+            l3SrcIPv6NetMask = 10
+            undefine = $undefine l3SrcIPv6NetMask
+        ifndef l3SrcNetAddr:
+            l3SrcNetAddr="169.254.0.0"
+            undefine = $undefine l3SrcNetAddr
+        ifndef l3SrcIPv6NetAdd:
+            l3SrcIPv6NetAdd="fe80:0:0:0:0:0:0:0"
+            undefine = $undefine l3SrcIPv6NetAdd
+    ifndef l3Dst:
+        ifndef l3DstNetMask:
+            l3DstNetMask=16
+            undefine = $undefine l3DstNetMask
+        ifndef l3DstIPv6NetMask:
+            l3DstIPv6NetMask = 10
+            undefine = $undefine l3DstIPv6NetMask
+        ifndef l3DstNetAddr:
+            l3DstNetAddr="169.254.0.0"
+            undefine = $undefine l3DstNetAddr
+        ifndef l3DstIPv6NetAdd:
+            l3DstIPv6NetAdd="fe80:0:0:0:0:0:0:0"
+            undefine = $undefine l3DstIPv6NetAdd
+else:
+    ifdef l4Gen:
+        if $l4Gen>=0:
+            canBuildPacket = False
+
+ifndef l4Gen:
+    if $l3Gen>=0:
+        l4Gen = 1             #0 - random, 1 - TCP, 2 - UDP, -1 - No L4
+    else:
+        l4Gen = -1
+    undefine = $undefine l4Gen
+if $l4Gen >= 0:
+    ifndef l4layer:
+        l4layer = 60
+        undefine = $undefine l4layer
+    ifndef l4Src:
+        ifndef minl4Src:
+            undefine = $undefine minl4Src
+            minl4Src = 1
+        ifndef maxl4Src:
+            maxl4Src = 65535
+            undefine = $undefine maxl4Src
+    ifndef l4Dst:
+        ifndef minl4Dst:
+            minl4Dst = 1
+            undefine = $undefine minl4Dst
+        ifndef maxl4Dst:
+            maxl4Dst = 65535
+            undefine = $undefine maxl4Dst
+
+ifndef rssGen:
+    rssGen = -1        #-1 - no dependency, another(0-63) - one L3/L4 header, 
+    undefine = $undefine rssGen
+if $rssGen >= 0:
+    if $l3Gen == -1:
+        rssGen = -1
+        echo rssGen param will be ignored
+    ifndef rssMask:
+        rssMask = 0x3F
+        undefine = $undefine rssMask
+
+ifndef payloadLayer:
+    payloadLayer = 100
+    undefine = $undefine payloadLayer
+ifndef pktSize:
+    ifndef minPktSize:
+        minPktSize = 60 
+        undefine = $undefine minPktSize
+    ifndef maxPktSize:
+        maxPktSize = 1520
+        undefine = $undefine maxPktSize
+    
+if $canBuildPacket:
+    #Packet generation cycle
+    for currPkt = 0; $currPkt < $packetCount; currPkt += 1:
+        ifndef pktSize:
+            payLen = random.randint($minPktSize, $maxPktSize) - $hdrSize
+        else:
+            payLen = $pktSize - $hdrSize
+        pkt.new -n $(packetName)$(packetIndex) -f None
+        currPktID = $($packetName$packetIndex)
+        packetIndex += 1
+        #L2 Layering Preparation
+        if $l2Gen == 1:
+            l2Protcol = Ether
+            l2params = -t $l2Protcol
+            ifndef l2src:
+                for j = 0; $j < 6; j += 1:
+                    srcEther$j = format(random.randint(0x0, 0xFF), 'x')  #get random string without 0x in front
+                l2params = $l2params src="$srcEther0:$srcEther1:$srcEther2:$srcEther3:$srcEther4:$srcEther5"
+            else:
+                l2params = $l2params src=$l2src
+
+            ifndef l2dst:
+                for j = 0; $j < 6; j += 1:
+                    dstEther$j = format(random.randint(0x0, 0xFF), 'x') #get random string without 0x in front
+                l2params = $l2params dst="$dstEther0:$dstEther1:$dstEther2:$dstEther3:$dstEther4:$dstEther5"
+            else:
+                l2params = $l2params dst=$l2dst
+
+            if $vlanGen > 0:
+                ifdef vlanEtherType:
+                    l2params = $l2params type=$vlanEtherType
+            else:
+                ifdef l2EtherType:
+                    l2params = $l2params type=$l2EtherType
+            pkt.layer -i $currPktID -L $l2layer $l2params
+
+            if $vlanGen > 0:
+                vlanParams = -t Dot1Q
+                ifdef vlanTag:
+                    vlanParams = $vlanParams vlan=$vlanTag
+                else:
+                    vlanTagTmp = random.randint($vlanTagMin, $vlanTagMax)
+                    vlanParams = $vlanParams vlan=$vlanTagTmp
+
+                ifdef vlanPriority:
+                    vlanParams = $vlanParams prio=$vlanPriority
+                else:
+                    vlanPrioTmp = random.randint($vlanPriorityMin, $vlanPriorityMax)
+                    vlanParams = $vlanParams prio=$vlanPrioTmp
+
+                if $vlanGen > 1:
+                    ifdef vlan2EtherType:
+                        vlanParams = $vlanParams type=$vlan2EtherType
+                else:
+                    ifdef l2EtherType:
+                        vlanParams = $vlanParams type=$l2EtherType
+
+                pkt.layer -i $currPktID -L $vlanLayer $vlanParams
+
+                if $vlanGen > 1:
+                    vlan2Params = -t Dot1Q
+                    ifdef vlan2Tag:
+                        vlan2Params = $vlan2Params vlan=$vlan2Tag
+                    else:
+                        vlanTagTmp = random.randint($vlan2TagMin, $vlan2TagMax)
+                        vlan2Params = $vlan2Params vlan=$vlanTagTmp
+
+                    ifdef vlan2Priority:
+                        vlan2Params = $vlan2Params prio=$vlan2Priority
+                    else:
+                        vlanPrioTmp = random.randint($vlan2PriorityMin, $vlan2PriorityMax)
+                        vlan2Params = $vlan2Params prio=$vlanPrioTmp
+
+                    ifdef l2EtherType:
+                        vlan2Params = $vlan2Params type=$l2EtherType
+                    pkt.layer -i $currPktID -L $vlan2Layer $vlan2Params
+
+        #L3 Layering Preparation
+        if $l3Gen >= 0:
+            l3SrcAddr = "  #create string with concatenation
+            l3DstAddr = " #create string with concatenation
+            if $l3Gen == 0:
+                l3GenProto = random.randint(1, 2)
+            else:
+                l3GenProto = $l3Gen
+            if $l3GenProto == 1:
+                l3Protocol = IP
+                maxRandNum = 0xFF
+                strDivider = .
+                randNumCount = 4
+                formatSpec = 'd'
+                sizeOfElem = 8
+                ifndef l3Src:
+                    l3SrcCurrentNetAddr = $l3SrcNetAddr
+                    l3SrcCurrentNetMask = $l3SrcNetMask
+                ifndef l3Dst:
+                    l3DstCurrentNetAddr = $l3DstNetAddr
+                    l3DstCurrentNetMask = $l3DstNetMask
+                payLen -= 20
+            elif $l3GenProto == 2:
+                l3Protocol = IPv6
+                maxRandNum = 0xFFFF
+                strDivider = :
+                randNumCount = 8
+                formatSpec = 'x'
+                sizeOfElem = 16
+                ifndef l3Src:
+                    l3SrcCurrentNetAddr = $l3SrcIPv6NetAdd
+                    l3SrcCurrentNetMask = $l3SrcIPv6NetMask
+                ifndef l3Dst:
+                    l3DstCurrentNetAddr = $l3DstIPv6NetAdd
+                    l3DstCurrentNetMask = $l3DstIPv6NetMask
+                payLen -= 40
+            l3params = -t $l3Protocol
+            ifndef l3Src:
+                srcNetAddr = $l3SrcCurrentNetAddr.split("$strDivider")
+                netMaskTmp = $l3SrcCurrentNetMask
+                
+                for j = 0; $j < $randNumCount; j += 1:
+                    srcL3$j = random.randint(0x0, $maxRandNum)
+                    if $netMaskTmp>0:
+                        srcL3Tmp = $srcNetAddr[$j]
+                        if $l3GenProto == 2:
+                            srcL3Tmp = int($srcNetAddr[$j], 16)
+                        if $netMaskTmp >= $sizeOfElem:
+                            srcL3$j = $srcNetAddr[$j]
+                        else:
+                            srcL3$j = ($srcL3Tmp&($maxRandNum<<($sizeOfElem-$netMaskTmp)))| ($(srcL3$j)&($maxRandNum>>$netMaskTmp))
+                        $netMaskTmp = ($netMaskTmp-$sizeOfElem)
+                    srcL3$j = format($(srcL3$j), $formatSpec)
+                    if $j > 0:
+                        l3SrcAddr = $(l3SrcAddr)$(strDivider)$(srcL3$j)
+                    else:
+                        l3SrcAddr = $(l3SrcAddr)$(srcL3$j)
+                l3SrcAddr = $(l3SrcAddr)" #add final quotation character
+                l3params = $l3params src=$l3SrcAddr
+            else:
+                l3params = $l3params src=$l3Src
+
+            ifndef l3Dst:
+                dstNetAddr = $l3DstCurrentNetAddr.split("$strDivider")
+                netMaskTmp = $l3DstCurrentNetMask
+                for j = 0; $j < $randNumCount; j += 1:
+                    dstL3$j = random.randint(0x0, $maxRandNum)
+                    if $netMaskTmp>0:
+                        dstL3Tmp = $dstNetAddr[$j]
+                        if $l3GenProto == 2:
+                            dstL3Tmp = int($dstNetAddr[$j], 16)
+                        if $netMaskTmp >= $sizeOfElem:
+                            dstL3$j = $dstNetAddr[$j]
+                        else:
+                            dstL3$j = ($dstL3Tmp&($maxRandNum<<($sizeOfElem-$netMaskTmp)))| ($(dstL3$j)&($maxRandNum>>$netMaskTmp))
+                        $netMaskTmp = ($netMaskTmp-$sizeOfElem)
+                    dstL3$j = format($(dstL3$j), $formatSpec)
+                    if $j > 0:
+                        l3DstAddr = $(l3DstAddr)$(strDivider)$(dstL3$j)
+                    else:
+                        l3DstAddr = $(l3DstAddr)$(dstL3$j)
+                l3DstAddr = $(l3DstAddr)" #add final quotation character
+                l3params = $l3params dst=$l3DstAddr
+            else:
+                l3params = $l3params dst=$l3Dst
+
+            pkt.layer -i $currPktID -L $l3layer $l3params
+
+        #L4 layering Preparation
+        if $l4Gen >= 0:
+            if $l4Gen == 0:
+                j = random.randint(0, 2)
+                l4Protocol = ("TCP" if $j == 1 else "UDP")
+            else:
+                l4Protocol = ("TCP" if $l4Gen == 1 else "UDP")
+            if '$l4Protocol' == "TCP":
+                payLen -= 20
+            else:
+                payLen -= 8
+                
+            l4params = -t $l4Protocol
+            ifndef l4Src:
+                sport = random.randint($minl4Src, $maxl4Src)
+                l4params = $l4params sport=$sport
+            else:
+                l4params = $l4params sport=$l4Src
+            
+            ifndef l4Dst:
+                dport = random.randint($minl4Dst, $maxl4Dst)
+                l4params = $l4params dport=$dport
+            else:
+                l4params = $l4params dport=$l4Dst
+            pkt.layer -i $currPktID -L $l4layer $l4params
+        
+        ifndef noPayLoad:
+            pkt.layer -i $currPktID -L $payloadLayer -t HEX -p $payLen
+        
+        #rss and ring
+        if $rssGen>=0:
+            rssValue = $rssGen & $rssMask
+            pkt.rss -i $currPktID -n hashKey -l nul
+            hashFound=False
+            if ($hashKey & $rssMask) != $rssValue and $l3Gen>=0:
+                if $l4Gen>=0:
+                    ifndef l4Src:
+                        for j = $minl4Src; $j < $maxl4Src; j+=1:
+                            sport = random.randint($minl4Src, $maxl4Src)
+                            pkt.layer -i $currPktID -L $l4layer sport=$sport
+                            pkt.rss -i $currPktID -n hashKey -l nul
+                            if ($hashKey & $rssMask) == $rssValue:
+                                hashFound = True
+                                break;
+                    if not $hashFound:
+                        ifndef l4Dst:
+                            for j = $minl4Dst; $j < $maxl4Dst; j+=1:
+                                dport = random.randint($minl4Dst, $maxl4Dst)
+                                pkt.layer -i $currPktID -L $l4layer dport=$dport
+                                pkt.rss -i $currPktID -n hashKey -l nul
+                                if ($hashKey & $rssMask) == $rssValue:
+                                    hashFound = True
+                                    break;
+                if not $hashFound:
+                    ifndef l3Src:
+                        l3SrcAddr = "
+                        lastValInAddr=($randNumCount-1)
+                        netMaskTmp = ($l3SrcCurrentNetMask - $lastValInAddr*$sizeOfElem)
+                        echo netMaskTmp = $netMaskTmp
+                        for j = 0; $j < $lastValInAddr; j += 1:
+                            l3SrcAddr = $l3SrcAddr$(srcL3$j)$(strDivider)
+                        for j = 0; $j < $maxRandNum; j+=1:
+                            srcL3Tmp = random.randint(0x0, $maxRandNum)
+                            if $netMaskTmp > 0:
+                                srcL3Tmp = ($(srcL3$lastValInAddr)&($maxRandNum<<($sizeOfElem-$netMaskTmp)))| ($srcL3Tmp&($maxRandNum>>$netMaskTmp))
+                            echo srcL3Tmp = $srcL3Tmp
+                            l3SrcAddrTmp = $l3SrcAddr$srcL3Tmp"
+                            pkt.layer -i $currPktID -L $l3layer src=$l3SrcAddrTmp
+                            pkt.rss -i $currPktID -n hashKey -l nul
+                            if ($hashKey & $rssMask) == $rssValue:
+                                hashFound = True
+                                break;
+                                
+                if not $hashFound:
+                    ifndef l3Dst:
+                        l3DstAddr = "
+                        lastValInAddr=($randNumCount-1)
+                        netMaskTmp = ($l3DstCurrentNetMask - $lastValInAddr*$sizeOfElem)
+                        echo netMaskTmp = $netMaskTmp
+                        for j = 0; $j < $randNumCount-1; j += 1:
+                            l3DstAddr = $l3DstAddr$(dstL3$j)$(strDivider)
+                        for j = 0; $j < $maxRandNum; j+=1:
+                            dstL3Tmp = random.randint(0x0, $maxRandNum)
+                            if $netMaskTmp > 0:
+                                dstL3Tmp = ($(dstL3$lastValInAddr)&($maxRandNum<<($sizeOfElem-$netMaskTmp)))| ($dstL3Tmp&($maxRandNum>>$netMaskTmp))
+                            l3DstAddrTmp = $l3DstAddr$dstL3Tmp"
+                            pkt.layer -i $currPktID -L $l3layer dst=$l3DstAddrTmp
+                            pkt.rss -i $currPktID -n hashKey -l nul
+                            if ($hashKey & $rssMask) == $rssValue:
+                                hashFound = True
+                                break;
+                if not $hashFound:
+                    echo Can't tune rss
+else:
+    echo Can't build packet(s)
+
+undefine = $undefine payLen l3Protocol l3params maxRandNum strDivider randNumCount formatSpec l3SrcAddr l3DstAddr srcNetAddr dstNetAddr
+undefine = $undefine l3SrcCurrentNetMask l3DstCurrentNetMask l3SrcCurrentNetAddr l3DstCurrentNetAddr srcL3Tmp dstL3Tmp sizeOfElem l3GenProto
+for j=0;$j<$randNumCount;j+=1:
+    undefine = $undefine srcL3$j dstL3$j
+
+
+undefine = $undefine l2params l2Protcol
+for j=0;$j<6;j+=1:
+    undefine = $undefine srcEther$j dstEther$j
+
+undefine = $undefine vlanParams vlan2Params vlanPrioTmp vlanTagTmp
+undefine = $undefine l4Protocol l4params sport dport
+
+undefine = $undefine hashFound hashKey
+
+undefine = $undefine j rssValue netMaskTmp l3SrcAddrTmp l3DstAddrTmp canBuildPacket
+
+undefine = $undefine currPkt currPktID
+
+undef -l nul $undefine

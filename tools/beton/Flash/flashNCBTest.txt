@@ -1,0 +1,42 @@
+# ! Test for NCB blocks
+# ! Read NCBs, validate CRC16 checksum 
+finalReport = []
+
+# Load clx
+cldFile = $(PWD)/Mips/mipsFirmware/ATL-10G-A0_B0-1.5.10!EUR-v3.1.7-Atlantic_Nikki_XFI_SGMII_Efused!PCIROM-0.0.1!VPD-0.0.1!ID4560!NI.clx
+# cldFile = $(PWD)/Mips/mipsFirmware/ATL-10G-B0-1.5.4-INTERNAL!EUR-v3.1.7-Atlantic_Nikki_USX_Efused_Pause!PCIROM-0.0.1!VPD-0.0.1!ID4639!NI.clx
+# cldFile = D:/wa/AtlanticTestbench/Mips/mipsFirmware/ATL-10G-B0-USX-1.3.6!EUR-03.00-Candidate7-Jamaica_USX_NonEfused!PCIROM-1.1.0!VPD-0.0.1!ID1679!JS.clx
+flash.init
+flash.loadFile $cldFile
+
+
+ncbValid = False
+# Read NCB0
+flash.read -a 0x0 -n macConfig0
+ncb0CRChw = $macConfig0 & 0xFFFF
+ncb0Active = ($macConfig0 & 0xC0000000) >> 30
+if $ncb0Active == 2:
+    ncbValid = True
+    flash.read -a 0x000008 -n macConfig2
+    ncb0Size  = $macConfig2 & 0xFFFF
+    ncb0SizeDWORD = ($ncb0Size//4)
+    flash.read -a 0x0 -n allDataNCB0 -s $ncb0SizeDWORD
+    # calculate checksum here (except zero's DWORD)
+
+
+# Read NCB1
+flash.read -a 0x4000 -n macConfig0
+ncb1CRChw = $macConfig0 & 0xFFFF
+ncb1Active = ($macConfig0 & 0xC0000000) >> 30
+if $ncb0Active == 2:
+    ncbValid = True
+    flash.read -a 0x400008 -n macConfig2
+    ncb1Size  = $macConfig2 & 0xFFFF
+    ncb1SizeDWORD = ($ncb1Size//4)
+    flash.read -a 0x4000 -n allDataNCB1 -s $ncb1SizeDWORD
+    # calculate checksum here (except zero's DWORD)
+
+if not $ncbValid:
+    finalReport = $finalReport + ['(0) NCB is invalid']
+
+exec $PWD/helpers/showTestResult.txt

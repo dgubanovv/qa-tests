@@ -1,0 +1,27 @@
+timestamp = None
+allDefined = True
+
+ifndef wb_desc_dump:
+    echo Writeback descriptor dump is not definded. Please define variable wb_desc_dump
+    allDefined = False
+
+if $allDefined == True:
+    w1 = ($wb_desc_dump >> 0) & 0xffffffff
+    w2 = ($wb_desc_dump >> 32) & 0xffffffff
+    w3 = ($wb_desc_dump >> 64) & 0xffffffff
+    w4 = ($wb_desc_dump >> 96) & 0xffffffff
+
+    nsec_timestamp = $w2
+    sec_2f_26 = ($w1 & 0xFFC00000) >> 22
+    sec_25_1a = $w1 & 0xFFF
+    sec_19_a = ($w4 >> 16)
+    sec_9_0 = ($w3 & 0xFFC) >> 2
+    sec_timestamp = ($sec_2f_26 << 0x26) | ($sec_25_1a << 0x1a) | ($sec_19_a << 0xa) | ($sec_9_0)
+
+    timestamp = $sec_timestamp.$nsec_timestamp
+    timestamp_ns_int = $sec_timestamp * 10**9 + $nsec_timestamp
+    echo TIMESTAMP (FROM DESC): $timestamp
+else:
+    echo Not all variables are defined. Exiting script
+
+undef -n allDefined w1 w2 w3 w4 sec_timestamp nsec_timestamp sec_2f_26 sec_25_1a sec_19_a sec_9_0 -l nul

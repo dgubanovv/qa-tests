@@ -1,0 +1,3 @@
+#Changes default HeadSplit behaviour to make it WHQL compilant
+writereg 0x5104 0x3C
+

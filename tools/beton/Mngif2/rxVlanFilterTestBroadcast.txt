@@ -1,0 +1,265 @@
+# Script for one packet extraction with ARP filter
+ 
+finalReport = []
+hostAlreadyInitiated = False
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    txRingNo = 0
+    rxRingNo = 0
+    queue = 0
+    logTag = -l cli
+    RPF2 = True
+else:
+    ifndef txRingNo:
+        txRingNo = 0
+    ifndef rxRingNo:
+        rxRingNo = 0
+    ifndef queue:
+        queue = 0
+    ifndef logTag:
+        logTag = -l cli
+
+ifndef RPF2:
+    RPF2 = False
+    
+filterActionDiscard = 0
+filterActionHost = 1
+filterActionManagement = 2
+filterActionHostManagement = 3
+filterActionWoL = 4
+filterActionReserved = 5
+
+macAddrSrcStr = "10:dd:b1:e6:1e:a5"
+
+
+mac.set glb_reg_reset_dis False
+mac.set tx_reg_rst_dis False
+mac.set rx_reg_rst_dis False
+
+
+# Packet send prepare
+if $hostAlreadyInitiated == False:
+    mac.set loopback System Packet $logTag  #Depp loopback for testing Rx filters
+    mac.init
+    
+    mac.txinit
+    mac.txring[$txRingNo].enable    # Prepare Tx ring
+    mac.txring[$txRingNo].set PacketMark uniq $logTag
+    
+    mac.rxinit
+    mac.rxring[$rxRingNo].enable    # Prepare Rx ring
+    mac.rxring[$rxRingNo].fill
+    mac.rxring[$rxRingNo].commit
+    mac.isr.disable
+
+    
+ 
+if $RPF2:
+    exec $(PWD)/helpers/enableRPF2.txt
+    
+exec $(PWD)/helpers/versionSpecificInit.txt
+exec $(PWD)/helpers/workaroundBug3991.txt
+
+mac.rxring[$rxRingNo].get -n rxRingSize size
+#Configure filters
+
+exec $(PWD)/helpers/rpoExtractorLlhNames.txt
+
+mac.llhcache on
+mac.llh -C rpfL2BroadcastCountThresholdSet 1
+mac.llh -C rpfL2BroadcastFilterActionSet $filterActionHost
+mac.llh -C rpfL2BroadcastCountResetSet 0
+#??? SwapEnable - what is this?
+mac.llh -C rpfRxPathByteSwapEnableSet 0
+mac.llh -C rpfL2PromiscuousModeEnableSet 0
+mac.llh -C rpfL2BroadcastEnableSet 1
+
+mac.llh -C rpfVlanPromiscuousModeEnableSet 0
+mac.llh -C rpfDoubleVlanEnableSet 0
+mac.llh -C rpfVlanInnerEthertypeSet 0x8100
+mac.llhcache off
+
+# TODO: Unset queue in ATB for this TC
+# TODO: Auto create full test sequences
+
+#Format of test:
+#(vlan_discard_mask, vlan_host_mask, vlan_man_mask, vlan_hostman_mask, promiscuousModeEnable, vlanInnerEtherType, vlanManagementQueue)
+mac.llh rpfL2BroadcastEnableSet 1
+vlanTpids = [0x8200, 0x8300]
+# if tests = [] auto generate sequences
+tests = [ [0, 0, 0xFF, 0, 0, 0x8200, 0xAAAA], [0, 0, 0xFF, 0, 1, 0x8300, 0x55555], [0xFF, 0, 0, 0, 0, 0x8300, 0x55555], [0, 0xFF, 0, 0, 0, 0x8300, 0x55555], [0, 0, 0, 0xFF, 0, 0x8300, 0x55555] ]
+# tests = [[0xFF, 0, 0, 0, 0, 0x8300, 0x55555], [0, 0xFF, 0, 0, 0, 0x8300, 0x55555], [0, 0, 0, 0xFF, 0, 0x8300, 0x55555] ]
+
+if len($tests) == 0:
+    #auto create test sequences
+    for testAction = 0; $testAction < 4; testAction += 1:
+        for mask = 1; $mask <= 0xFFF; mask = ($mask << 1) | 1:
+            testElem = []
+            for count= 0; $count < 4; count += 1: 
+                if $count == $testAction:
+                    testElem = $testElem + [$mask]
+                else:
+                    testElem = $testElem + [0]
+            for promMode = 0; $promMode < 2; promMode += 1:
+                testElemWithPrMode = $testElem + [$promMode]
+                for vlanTpid in $vlanTpids:
+                    tmp = $testElemWithPrMode + [$vlanTpid]
+                    tests += [$tmp]
+
+filterVlanCount = 16
+testNumber = 0
+
+l4Protocols = ['ICMP']
+l3ProtoForL4 = [['IP', 'IPv6']]
+macAddrDstStr = "FF:FF:FF:FF:FF:FF"
+
+countL4Proto = 0
+for l4Proto in $l4Protocols:
+    l3Protocols = $l3ProtoForL4[$countL4Proto]
+    for l3Proto in $l3Protocols:
+        if '$l3Proto' == 'IPv6':
+            protoIcmpFullLen = 98
+        else:
+            protoIcmpFullLen = 78
+        for filterVlanIndex = 0; $filterVlanIndex < $filterVlanCount; filterVlanIndex += 1:
+            vlan = ($filterVlanIndex << 8) & 0xF00 | ($filterVlanIndex & 0xFF)
+            pkt.new -n pkt$filterVlanIndex$l3Proto$l4Proto -p 32
+            pkt.layer -i $(pkt$filterVlanIndex$l3Proto$l4Proto) -L 60 -t $l4Proto
+            pkt.layer -i $(pkt$filterVlanIndex$l3Proto$l4Proto) -L 50 -t $l3Proto
+            pkt.layer -i $(pkt$filterVlanIndex$l3Proto$l4Proto) -L 40 -t Dot1Q prio=6 type=0x800 vlan=$vlan
+            pkt.layer -i $(pkt$filterVlanIndex$l3Proto$l4Proto) -L 25 -t Ether src=$macAddrSrcStr dst=$macAddrDstStr type=0x8100
+    
+        for test in $tests:
+            tmp = 0
+            for elemIndex = 0; $elemIndex < 4; elemIndex += 1:
+                if $test[$elemIndex] != 0:
+                    if $tmp:
+                        finalReport += ['(1) Defined a lot of actions']
+                        break
+                    tmp = 1
+
+            if len($finalReport) > 0:
+                break
+            
+            promiscuousMode = $test[4]
+            mac.llh rpfVlanPromiscuousModeEnableSet $promiscuousMode
+            etherType = $test[5]
+            mac.llh rpfVlanInnerEthertypeSet $etherType
+            
+            filterVlanCfiEnable = 0
+            filterVlanRxQueueEnable = 0
+            filterVlanRxQueue = 0
+            filterVlanCfi = 0
+
+            # Set filter action according to the test definition
+            for filterVlanIndex = 0; $filterVlanIndex < $filterVlanCount; filterVlanIndex += 1:
+                filterVlanEnable = 0
+                filterVlanAction = $filterActionDiscard
+                
+                if ($test[0] & (1 << $filterVlanIndex)) != 0:
+                    filterVlanEnable = 1
+                    filterVlanAction = $filterActionDiscard
+                elif ($test[1] & (1 << $filterVlanIndex)) != 0:
+                    filterVlanEnable = 1
+                    filterVlanAction = $filterActionHost
+                elif ($test[2] & (1 << $filterVlanIndex)) != 0:
+                    filterVlanEnable = 1
+                    filterVlanAction = $filterActionManagement
+                elif ($test[3] & (1 << $filterVlanIndex)) != 0:
+                    filterVlanEnable = 1
+                    filterVlanAction = $filterActionHostManagement
+                #create another one vlanHeader with incorrect etherType
+                filterVlanManagementQueue = ($test[6] & (1 << $filterVlanIndex)) >> $filterVlanIndex
+                filterVlanID = $filterVlanIndex | ($filterVlanIndex << 8) & 0xF00
+                exec $(PWD)/helpers/filtersConfigurators/rxVlanFilter.txt
+                
+            # Send one packet for each filter, and extract it right after sending
+
+            packetNumbers = $filterVlanCount * 2
+            for filterVlanIndex = 0; $filterVlanIndex < $packetNumbers; filterVlanIndex += 1:
+                packetNum = ($filterVlanIndex / 2)
+                currentEtherType = $etherType
+                if $filterVlanIndex & 1:
+                    currentEtherType = $etherType + 1
+                    
+                pkt.layer -i $(pkt$packetNum$l3Proto$l4Proto) -L 25 type=$currentEtherType
+                
+                # Get Rx head before packet insertion
+                mac.llh -v rxHeadBefore rdmRxDescriptorHeadPointerGet $rxRingNo
+                # Insert packet and get buffer address
+                mac.txring[$txRingNo].insert -i $(pkt$packetNum$l3Proto$l4Proto) -b $protoIcmpFullLen
+                mac.txring[$txRingNo].status $logTag
+                mac.rxring[$rxRingNo].status $logTag
+                mac.txring[$txRingNo].getdescval -T 1 -f bufferAddress -n pAddr $logTag
+                
+                # Generate packet that match this filter and only this filter
+                
+                pkt.len -i $(pkt$packetNum$l3Proto$l4Proto) -n packetLen $logTag
+                mac.txring[$txRingNo].dumpbuf -T 1 $logTag --size $packetLen
+                mac.txring[$txRingNo].commit
+                mac.txring[$txRingNo].clean
+                mac.rxring[$rxRingNo].clean
+
+                mac.txring[$txRingNo].status $logTag
+                mac.rxring[$rxRingNo].status $logTag
+                toMng = (($test[2] & 1 << $packetNum) != 0) or (($test[3] & 1 << $packetNum) != 0)
+                if (($filterVlanIndex & 1 == 0 ) and $toMng):
+                    expectedPacketCount = 1
+                else:
+                    expectedPacketCount = 0
+                
+                # Check extractor right now
+                stringId = '(2)'
+                #finalReport += ['packet: $packetNum']
+                queue = ($test[6] & (1 << $packetNum)) >> $packetNum
+                # Should be removed soon
+                if '$hw_options' == 'A0':
+                    queue = 0
+                mac.llhcache on
+                exec $(PWD)/helpers/extractorCheckers/checkPacketCount.txt
+                if $packetCount == 1:
+                    exec $(PWD)/helpers/extractAndCompare.txt
+                #Check packet in rx ring
+                mac.llh -v rxHeadGood rdmRxDescriptorHeadPointerGet $rxRingNo
+                
+                toHostByPromiscuous = ($promiscuousMode == 1) and( ($filterVlanIndex & 1 != 0) or ($expectedPacketCount == 0) and ($test[0] & (1 << $filterVlanIndex / 2) == 0))
+                toHostByFilter = ($filterVlanIndex & 1 == 0 ) and ((($test[1] & (1 << $filterVlanIndex / 2)) != 0) or (($test[3] & (1 << $filterVlanIndex / 2)) != 0 ))
+                if ($toHostByFilter or $toHostByPromiscuous):
+                    if $rxHeadBefore == ($rxRingSize - 1):
+                        $rxHeadBefore = -1
+                    rxCount = $rxHeadGood + 0 - $rxHeadBefore
+                    if $rxCount != 1:
+                        finalReport += ['(3)Wrong packet number($rxCount) routed to host']
+                        break
+                        
+                    mac.rxring[$rxRingNo].clean
+                    mac.rxring[$rxRingNo].status $logTag
+
+                    mac.rxring[$rxRingNo].getdescval -H 1 -f bufferAddress -n rxAddr $logTag
+                    mac.rxring[$rxRingNo].getdescval -H 1 -f size -n rxPacketSize $logTag
+                    if $protoIcmpFullLen != $rxPacketSize:
+                        finalReport += ['(4)Wrong packet size on Rx']
+                        break
+                    cmpRes = False
+                    mem.cmp -p $pAddr -p2 $rxAddr -s $rxPacketSize -l nul -n cmpRes
+                    if $cmpRes == False:
+                        finalReport += ['(5)txPacket and rxPacket differs']
+                    mac.rxring[$rxRingNo].fill 1
+                    mac.rxring[$rxRingNo].commit 1
+                elif $rxHeadGood != $rxHeadBefore:
+                    echo '(6) Unexpected packet in Rx ring'
+                    finalReport += ['(6)Unexpected packet in Rx ring']
+                        break
+            testNumber += 1
+    countL4Proto += 1
+#finalReport += ['$l3Proto$l4Proto']
+readreg 0x5040 $logTag
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

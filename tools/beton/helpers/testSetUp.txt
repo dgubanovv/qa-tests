@@ -1,0 +1,8 @@
+echo [==========] Running 1 tests from 1 test case.
+testReport = []
+numTestsToRun = 0
+logTag = -l nul
+hideResult = 1
+test_num = 0
+hw_options = 'B0RPO'
+echo [----------] Global test environment set-up. 

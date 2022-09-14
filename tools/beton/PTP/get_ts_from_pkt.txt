@@ -1,0 +1,58 @@
+allDefined = True
+ifndef _link_speed:
+    mac.link -n _link_speed -l nul
+    mac.link -n _link_speed -l nul
+
+ifndef buffer_address:
+    echo Buffer address is not definded. Please define variable buffer_size
+    allDefined = False
+
+ifndef ptp_pkt_ts_offset:
+    echo Timestamp offset is not defined. Please define variable ptp_pkt_ts_offset
+    allDefined = False
+
+if '$_link_speed' == '10G':
+    offset = (1171 + 436)
+elif '$_link_speed' == '5G':
+    offset = (1367 + 360)
+elif '$_link_speed' == '2.5G':
+    offset = (2576 + 750)
+elif '$_link_speed' == '1G':
+    offset = (1445 + 185)
+elif '$_link_speed' == '100M':
+    offset = (6095 - 2150)
+else:
+    echo Wrong link speed get prev value!
+    #allDefined = False
+
+if $allDefined == True:
+    timestamp_size = 12
+
+    start_addr = $buffer_address + $ptp_pkt_ts_offset
+    end_addr   = $start_addr + $timestamp_size
+
+    timestamp_hex = []
+
+    for addr in range($start_addr, $end_addr):
+        mem.get -p $addr -s 1 -n data
+        timestamp_hex += [$data]
+
+    i = 0
+    ts_sec = 0
+    ts_ns = 0
+    for element in $timestamp_hex:
+        if 1 < $i < 8:
+            ts_sec = ($ts_sec << 8) + $element
+        elif $i > 7:
+            ts_ns = ($ts_ns << 8) + $element
+        i += 1
+    
+    if $offset > $ts_ns:
+        echo TIMESTAMP: $timestamp_hex - $ts_sec.$ts_ns, offset: $offset
+        ts_sec = ($ts_sec -1)
+        ts_ns = ($ts_ns + 1000000000 - $offset)
+    else:
+        ts_ns = ($ts_ns - $offset)
+    #echo ING offset $offset
+else:
+    echo Not all variables are defined. Exiting script

@@ -1,0 +1,34 @@
+finalReport = []
+
+echo TEST : Sleep Mode
+############################################################################################
+echo Link Speed must be set to Autonegatiation on LINK PARTNER
+#set 1G speed
+writereg 0x368 0x100002 -l nul
+#Checking link
+for i in range(1,100):
+    readreg 0x36c -n link -l nul
+    if $link == 0x100002:
+        hlink = hex($link)
+        echo PASS: Link is set to $hlink
+        break
+    pause 100 ms
+if $link != 0x100002:
+    echo FAIL: Required link is not set. Actual : $link
+    finalReport += ['(1) Required link is not set on DUT. Actual : $link']
+    
+#enter sleep mode
+writereg 0x368 0x4 -l nul
+#Checking link
+for i in range(1,100):
+    readreg 0x36c -n link -l nul
+    if $link == 0x200004:
+        hlink = hex($link)
+        echo PASS: Link is OK in sleep mode on DUT ($hlink)
+        break
+    pause 100 ms
+if $link != 0x200004:
+    echo FAIL: Link is not in sleep mode. Actual : $link
+    finalReport += ['(2) Link is not in sleep mode on DUT. Actual : $link']
+############################################################################################
+#exec $(PWD)/helpers/showTestResult.txt

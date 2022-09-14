@@ -1,0 +1,24 @@
+for queue = 0; $queue < 2; queue += 1:
+    mac.llhcache on
+    mac.llh -C $extractionQueueLimitSet 1 $queue
+    mac.llh -C $extractionQueueModeSet 0 $queue
+    queueInUse = $queueActive[$queue]
+    mac.llh -C $extractionMacFilterEnableSet $queueInUse $queue
+    mac.llh -C $extractionIpFilterEnableSet 0 $queue
+    mac.llh -C $extractionArpFilterEnableSet 0 $queue
+    mac.llhcache off
+
+macAddrFilter0 = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05]
+macAddrFilter1 = [0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F]
+
+for queue = 0; $queue < 2; queue += 1:
+    macAddrFilterStr$(queue) = ' '.join([hex(elem) for elem in $(macAddrFilter$queue)])
+    macFilterLSW$(queue) = (($(macAddrFilter$queue)[2] << 24) & 0xFF000000) | (($(macAddrFilter$queue)[3] << 16) & 0xFF0000) | (($(macAddrFilter$queue)[4] << 8) & 0xFF00) | ($(macAddrFilter$queue)[5] & 0xFF)
+    macFilterMSW$(queue) = (($(macAddrFilter$queue)[0] << 8) & 0xFF00) | ($(macAddrFilter$queue)[1] & 0xFF)
+    mac.llhcache on
+    mac.llh -C $extractionMacDestinationAddressLSW_Set $(macFilterLSW$(queue)) $queue
+    mac.llh -C $extractionMacDestinationAddressMSW_Set $(macFilterMSW$(queue)) $queue
+    mac.llhcache off
+
+queue = 0
+macAddrFilters = ['$macAddrFilterStr0', '$macAddrFilterStr1']

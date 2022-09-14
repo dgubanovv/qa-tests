@@ -1,0 +1,109 @@
+#####################################################
+# Input args:
+#
+# flags
+# IPv4SourceAddress
+# IPv4DestAddress
+#
+# Returns
+# result
+#
+#####################################################
+
+#####################################################
+### Init
+#####################################################
+
+reg1 = 0
+reg2 = 0
+
+exec testFW/wol/lib/wolConstants.txt
+exec testFW/drvIface/getBaseAddress.txt
+
+priority             = 0
+packetType           = $aqPMWoLReasonIpv4PingPacket 
+patternId            = 1
+nextWolPatternOffset = 0
+
+#####################################################
+### CRC Calculation
+#####################################################
+
+exec testFW/wol/lib/crc32/init.txt
+
+byte = 0x08
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x00
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x45
+exec testFW/wol/lib/crc32/addByte.txt
+
+byte = 0x01
+exec testFW/wol/lib/crc32/addByte.txt
+
+if $IPv4SourceAddress != 0:
+    IPv4Address = $IPv4SourceAddress
+    exec testFW/wol/lib/crc32/addIPv4.txt
+
+if $IPv4DestAddress != 0:
+    IPv4Address = $IPv4DestAddress
+    exec testFW/wol/lib/crc32/addIPv4.txt
+
+byte = 0x08
+exec testFW/wol/lib/crc32/addByte.txt
+
+#####################################################
+### Mask Calculation
+#####################################################
+
+exec testFW/wol/lib/mask/init.txt
+
+bitNumber = 12
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 13
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 14
+exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 23
+exec testFW/wol/lib/mask/setBit.txt
+
+if $IPv4SourceAddress != 0:
+    for bitNumber = 26; $bitNumber <= 29; bitNumber += 1:
+        exec testFW/wol/lib/mask/setBit.txt
+
+if $IPv4DestAddress != 0:
+    for bitNumber = 30; $bitNumber <= 33; bitNumber += 1:
+        exec testFW/wol/lib/mask/setBit.txt
+
+bitNumber = 34
+exec testFW/wol/lib/mask/setBit.txt
+
+#####################################################
+### Write header, drvMsgWoLAdd
+#####################################################
+
+exec testFW/drvIface/drvMsgWolAdd.txt
+
+#####################################################
+### Write wolPattern.wolIpv4Ping
+#####################################################
+
+mac.mcp.writemem $addr $flags -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv4SourceAddress -l nul
+addr = $addr + 4
+
+mac.mcp.writemem $addr $IPv4DestAddress -l nul
+addr = $addr + 4
+
+#####################################################
+### Exec and validate
+#####################################################
+
+exec testFW/wol/lib/wolSendEnableCheck.txt

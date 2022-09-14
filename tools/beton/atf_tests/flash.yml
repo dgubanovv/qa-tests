@@ -1,0 +1,20 @@
+test: Flash
+subtests:
+- name: NCB Blocks
+  script: Flash/flashNCBTest.txt
+  parameters:
+    test_num: '-1'
+- name: Get Flash ID
+  script: Flash/flashJedecId.txt
+  parameters:
+    test_num: '-1'
+- name: Selective Erase (odd blocks)
+  script: Flash/flashEraseSectorPage.txt
+  parameters:
+    flashSizeBytes: '0x200000'
+    blockSizeK: 4
+    test_num: '-1'
+- name: Flash Random Data Test
+  script: Flash/flashRandomDataTest.txt
+  parameters:
+    test_num: '-1'

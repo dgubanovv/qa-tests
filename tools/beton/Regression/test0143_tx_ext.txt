@@ -1,0 +1,77 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Regression/test0143_tx_ext.txt $
+# $Revision: #6 $
+# $DateTime: 2016/04/08 08:55:16 $
+# $Author: dgubanov $
+#
+#run all tests
+#before run some test set value testName, and some values needed for test
+#and show result after running
+testSetUp    = $(PWD)/helpers/testSetUp.txt
+testRunner   = $(PWD)/helpers/testRun.txt
+testTearDown = $(PWD)/helpers/testTearDown.txt
+path = $(PWD)/Mngif2/                          #Path to test scripts, for real could be Mngif2/ or Mips/ etc
+
+exec $testSetUp                                #Copy&Paste as many sections between test-separator-s as you need tests
+#----------------------------------------------------
+testName = extMinTest.txt
+txRingNo = 0
+queue = 0
+extType = tx
+exec $testRunner
+#------------------test-separator--------------------
+testName = extLargePacketTest2048.txt
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = tx
+queueActive = [1, 0]
+exec $testRunner
+#------------------test-separator--------------------
+testName = extLargePacketTestMoreThan2048.txt
+
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = tx
+queueActive = [1, 0]
+exec $testRunner
+#------------------test-separator--------------------
+testName = extOverflowTest.txt
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = tx
+queueActive = [1, 0]
+exec $testRunner
+#------------------test-separator--------------------
+testName = extParityTest.txt
+txRingNo = 0
+segCount = 1 #Number of segments to split packet onto
+extType = tx
+queueActive = [1, 0]
+exec $testRunner
+#------------------test-separator--------------------
+testName = txExtArpFilterTest.txt
+txRingNo = 0
+queue = 0
+exec $testRunner
+#------------------test-separator--------------------
+testName = txExtIpFilterTest.txt
+txRingNo = 0
+queue = 0
+exec $testRunner
+#------------------test-separator--------------------
+testName = txExtMacAndIpFiltersTest.txt
+txRingNo = 0
+queue = 0
+exec $testRunner
+#------------------test-separator--------------------
+testName = txExtMacFilterTest.txt
+txRingNo = 0
+#queue = 0
+exec $testRunner
+#------------------test-separator--------------------
+testName = tpoExtChecksumIpv6Test.txt
+txRingNo = 0
+queue = 0
+queueActive = [1, 0]
+exec $testRunner
+#------------------test-separator--------------------
+exec $testTearDown

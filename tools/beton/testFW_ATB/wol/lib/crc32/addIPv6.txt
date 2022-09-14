@@ -1,0 +1,9 @@
+for IPv6Address_Index = 0; $IPv6Address_Index < 4; IPv6Address_Index += 1:
+    byte = ($(IPv6Address$IPv6Address_Index) >> 0) & 0xFF
+    exec testFW/wol/lib/crc32/addByte.txt
+    byte = ($(IPv6Address$IPv6Address_Index) >> 8) & 0xFF
+    exec testFW/wol/lib/crc32/addByte.txt
+    byte = ($(IPv6Address$IPv6Address_Index) >> 16) & 0xFF
+    exec testFW/wol/lib/crc32/addByte.txt
+    byte = ($(IPv6Address$IPv6Address_Index) >> 24) & 0xFF
+    exec testFW/wol/lib/crc32/addByte.txt

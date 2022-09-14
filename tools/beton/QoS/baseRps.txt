@@ -1,0 +1,164 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/QoS/baseRps.txt $
+# $Revision: #8 $
+# $DateTime: 2016/11/30 02:25:33 $
+# $Author: stalanin $
+#
+#Base RPS test script
+hostAlreadyInitiated = False
+log.hw.disable
+
+ifndef logTag:
+    logTag = -l cli
+
+tpbsize = 160               # FPGA limitation
+rpbsize = 336               # FPGA limitation
+
+maxtc = 8
+tpbPerTcSize = ($tpbsize/$maxtc)
+rpbPerTcSize = ($rpbsize/($maxtc))
+echo rpbPerTcSize = $rpbPerTcSize
+mac.txpb[0:$maxtc].set -l nul size $tpbPerTcSize
+mac.rxpb[0:$maxtc].set -l nul size $rpbPerTcSize
+
+mac.set txDcbTcCount $maxtc $logTag
+mac.set rxDcbTcCount $maxtc $logTag
+
+ifndef outputFile:
+    outputFile = $LOG_PATH/out.txt
+ifndef outputFileParsed:
+    outputFileParsed = $LOG_PATH/outParsed.txt
+
+ifndef basePacketLength:
+    basePacketLength = 1024
+ifndef packetCount:
+    packetCount = 350
+ifndef targetByteCount:
+    targetByteCount=64
+
+ramSize = 0x7800
+
+rings = 0,9
+#txRings = 0,1,2,3
+txRingSize = 1024
+ringsArr = [$rings]
+
+rxRingSize = 1024
+
+log.hw disable
+tcArr = [0,2]
+weights=[64, 256]
+maxCredits=[64, 256]
+mac.rps.set dataArbitrationMode WSP
+i=0
+
+
+for tcNo in $tcArr:
+    curWeigth = $weights[$i]
+    curMaxCredit = $maxCredits[$i]
+    mac.rps.tcdata[$tcNo].set tcWeight $curWeigth
+    mac.rps.tcdata[$tcNo].set tcMaxCredit $curMaxCredit
+    i+=1
+    
+if $hostAlreadyInitiated == False:
+    mac.set loopback System DMA
+    mac.init
+    
+    for txRingNo in $ringsArr:
+        mac.txring[$txRingNo].set PacketMark None -l nul
+        mac.txring[$txRingNo].set size $txRingSize -l nul
+    mac.txinit
+    mac.txring[$rings].enable    # Prepare Tx ring
+
+    for rxRingNo in $ringsArr:
+        mac.rxring[$rxRingNo].set size $rxRingSize -l nul
+        
+    mac.rxinit
+    mac.rxring[$rings].enable    # Prepare Rx ring
+    for rxRingNo in $ringsArr:
+        mac.rxring[$rxRingNo].fill
+        mac.rxring[$rxRingNo].commit 3
+    mac.rps.apply .
+    mac.isr.disable
+    mac.mcp.bootLoadCld $SCRIPT_PATH/atlantic_Ram.cld
+
+#parity error w/a: doesn\t propagate parity err.
+exec $SCRIPT_PATH/../helpers/workaroundBug4921.txt
+   
+#readreg 0x7200
+#readreg 0x7300  
+
+# w/a 4671
+writereg 0x5050 0x01000002 
+# appliyng RPS WSP
+writereg 0x6000 0x1
+    
+mac.llh regGlobalMicroprocessorScratchPadSet 0x00006808 1
+#mac.llh regGlobalMicroprocessorScratchPadSet 0x8808 2
+mac.llh regGlobalMicroprocessorScratchPadSet 1 0
+
+mac.llh tpsTxPacketSchedulerVmTargetByteCountProfileSet $targetByteCount 0
+mac.llh rpsRxPacketSchedulerTcTargetByteCountProfileSet $targetByteCount 0
+
+
+#mac.llh -v curArbMode rpsRxPacketSchedulerDataArbitrationModeGet
+#echo curArbMode = $curArbMode
+#for tcNo in $tcArr:
+#    mac.llh -v curWeight rpsRxPacketSchedulerDataTcWeightGet $tcNo
+#    mac.llh -v curMaxCredit rpsRxPacketSchedulerDataTcMaxCreditGet $tcNo
+#    echo tcNo = $tcNo: curWeight=$curWeight, curMaxCredit=$curMaxCredit
+
+pause 1 s
+
+for txRingNo in $ringsArr:
+    packetLength = ($basePacketLength & 0xFFFFFFE0 )| $txRingNo
+    echo $packetLength
+    for i = 0; $i < $packetCount; i += 1:
+        mac.txring[$txRingNo].insert -b $packetLength -p $packetLength -f indexed_uniq_ramp
+
+readMux -s 256 main 0x7700 0x7704 -l nul
+
+mac.llhcache invalidate
+for txRingNo in $ringsArr:
+    mac.txring[$txRingNo].commit -c
+mac.llhcache flush
+
+pause 1 s
+for tcNo in $tcArr:
+    mac.llhcache invalidate
+    mac.llh -v isEmpty -C rpbRxBufferEmptyGet $tcNo
+    mac.llh -v isHigh -C rpbRxBufferHighGet $tcNo
+    mac.llh -v isReady -C rpbRxBufferReadyGet $tcNo
+    
+    echo tcNo = $tcNo: isEmpty = $isEmpty, isHigh = $isHigh, isReady = $isReady
+mac.llhcache invalidate
+for rxRingNo in $ringsArr:
+    mac.rxring[$rxRingNo].commit -c
+mac.llhcache flush
+
+pause 3 s
+
+readMux -s 256 main 0x7700 0x7704 -l nul
+
+mac.txring[$rings].clean
+mac.rxring[$rings].clean
+mac.txring[0:32].status $logTag
+echo
+mac.rxring[0:32].status $logTag
+
+mac.llh -v baseAddr regGlobalMicroprocessorScratchPadGet 4
+baseAddr = ($baseAddr - 0x80000000)
+
+mac.llh -v pCount regTxDmaStatisticsCounter1Get
+exec $SCRIPT_PATH/helpers/readSingleValues.txt
+#exec $SCRIPT_PATH/helpers/readDoubleValues.txt
+echo $values[]
+
+outputFileName=$outputFile
+byteCountValIndex=0
+exec $SCRIPT_PATH/helpers/calcRingNumByByteCount.txt
+
+schedParseLog $outputFile -o $outputFileParsed
+echo See output in $outputFileParsed
+mac.uninit
+
+log.hw.enable

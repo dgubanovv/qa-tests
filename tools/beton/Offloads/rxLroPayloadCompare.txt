@@ -1,0 +1,608 @@
+# $File: //depot/icm/proj/Atlantic/rev1.0/software/Software/Test/AtlanticTestbench/Offloads/rxLroPayloadCompare.txt $
+# $Revision: #9 $
+# $DateTime: 2016/11/21 06:52:47 $
+# $Author: stalanin $
+#
+# TODO:
+# Randomize packetSequence list
+# Make MAC addresses for each flow unique
+
+debugMode = False
+error = False
+
+ifndef test_num:
+    test_num_ndef = True
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    seed = 1
+    flowCount = 8
+    logTag = -l cli
+    TPO2 = False
+    RPF2 = False
+
+ifndef seed:
+    seed = random.randint(0, 2 ** 32 - 1)
+ifndef TPO2:
+    TPO2 = False 
+ifndef RPF2:
+    RPF2 = False
+
+temp = random.seed($seed)
+
+
+finalReport = []
+
+ifndef test_num:
+    test_num_ndef = True
+
+ifndef test_num_ndef:
+    test_num_ndef = False
+
+if $test_num_ndef:
+    echo !!!DEFAULT PARAMS APPLIED!!!
+    flowCount = 8
+    logTag = -l cli
+    TPO2 = False
+    RPF2 = False
+    useIPv6 = True
+    useUsualPackets = False
+    maxPacketCountPerFlow = 10
+else:
+    ifndef flowCount:
+        flowCount = 8
+    ifndef logTag:
+        logTag = -l cli
+    ifndef useIPv6:
+        finalReport += ['Variable useIPv6 is not defined!']
+    ifndef useUsualPackets:
+        finalReport += ['Variable useUsualPackets is not defined!']
+    ifndef maxPacketCountPerFlow:
+        finalReport += ['Variable maxPacketCountPerFlow is not defined!']
+ 
+ifndef TPO2:
+    TPO2 = False 
+ 
+ifndef RPF2:
+    RPF2 = False
+
+# Initial variables
+# flowCount = 16
+# useUsualPackets = False # XXX: True/False
+useVlan = False
+useDoubleVlan = False
+# useIPv6 = True # XXX: True/False
+# maxPacketCountPerFlow = 10 # XXX: check various values >= 2
+minPayloadSize = 1
+maxPacketSize = 16352 # XXX: maybe use single values, not a range as of now
+#maxPacketSize = 1540
+
+# Headers
+l2HeaderSize = 14
+vlanHeaderSize = 4
+doubleVlanHeaderSize = 4
+l3HeaderSize4 = 20
+l3HeaderSize6 = 40
+l4HeadeSize = 20
+
+headerSize4 = $l2HeaderSize + $l3HeaderSize4 + $l4HeadeSize
+headerSize6 = $l2HeaderSize + $l3HeaderSize6 + $l4HeadeSize
+
+# Minor variables
+usualFlowNo = 100
+minTcpPort = 0
+maxTcpPort = 65535
+recvTc = 0
+mac.get rxDcbTcCount -n rxTc -l nul
+
+# Variables defined
+
+flowNumbers = range($flowCount)
+if $useUsualPackets:
+    flowNumbers += [$usualFlowNo]
+
+packetSequence = []
+
+totalFlowCount = len($flowNumbers)
+txRings = random.sample(range(32), $totalFlowCount)
+rxRings = []
+
+counter = 0
+for flowNo in $flowNumbers:
+    txPayload_flow$flowNo = []
+    rxPayload_flow$flowNo = []
+    
+    txPacektCount_flow$flowNo = random.randint(1, ($maxPacketCountPerFlow)) # Probably add +1
+    ringNo_flow$flowNo = $txRings[$counter]
+    
+    macAddressSrc_flow$flowNo = '"' + ':'.join(map(str, (hex(random.randint(0, 0xff))[2:].zfill(2) for _ in range(6)))) + '"'
+    macAddressDst_flow$flowNo = '"' + ':'.join(map(str, (hex(random.randint(0, 0xff))[2:].zfill(2) for _ in range(6)))) + '"'
+    
+    if $useIPv6:
+        useIPv6_flow$flowNo = random.choice([True, False])
+    else:
+        useIPv6_flow$flowNo = False
+    
+    if $(useIPv6_flow$flowNo):
+        etherType_flow$flowNo = 0x86DD
+        headerSize_flow$flowNo = $headerSize6
+        ipAddressSrc_flow$flowNo = '"' + ':'.join(map(str, (hex(random.randint(0, 0xffff))[2:].zfill(4) for _ in range(8)))) + '"'
+        ipAddressDst_flow$flowNo = '"' + ':'.join(map(str, (hex(random.randint(0, 0xffff))[2:].zfill(4) for _ in range(8)))) + '"'
+    else:
+        etherType_flow$flowNo = 0x800
+        headerSize_flow$flowNo = $headerSize4
+        ipAddressSrc_flow$flowNo = '"' + '.'.join(map(str, (random.randint(0, 255) for _ in range(4)))) + '"'
+        ipAddressDst_flow$flowNo = '"' + '.'.join(map(str, (random.randint(0, 255) for _ in range(4)))) + '"'
+    
+    portSrc_flow$flowNo = random.randint($minTcpPort, $maxTcpPort)
+    portDst_flow$flowNo = random.randint($minTcpPort, $maxTcpPort)
+    
+    seqNo = random.randint(0, (2 ** 32) - 1)
+    headerSize = $(headerSize_flow$(flowNo))
+    
+    macAddressSrc = $(macAddressSrc_flow$(flowNo))
+    macAddressDst = $(macAddressDst_flow$(flowNo))
+    
+    ipAddressSrc = $(ipAddressSrc_flow$(flowNo))
+    ipAddressDst = $(ipAddressDst_flow$(flowNo))
+    
+    etherType = $(etherType_flow$(flowNo))
+    
+    portSrc = $(portSrc_flow$(flowNo))
+    portDst = $(portDst_flow$(flowNo))
+    
+    packetSequence += [$flowNo] * $(txPacektCount_flow$flowNo) #! NEED TO RANDOMIZE THIS SEQUENCE
+    for packetNo in range(0, $(txPacektCount_flow$flowNo)):
+        identifier = flow$(flowNo)_packet$(packetNo)
+        packetIdentifier = pkt_$(identifier)
+        
+        txPacketSize_$(identifier) = random.randint(($minPayloadSize + $headerSize), $maxPacketSize)
+        txPacketPayloadSize = $(txPacketSize_$(identifier)) - $headerSize
+        txPacketPayloadSize = ($txPacketPayloadSize)
+        
+        txPayload_flow$flowNo += [i % 256 for i in range(0, $txPacketPayloadSize)]
+        
+        pkt.new -n $(packetIdentifier) -p $txPacketPayloadSize -f ramp
+        pkt.layer -i $($packetIdentifier) -L 40 -t TCP seq=$seqNo flags=0 sport=$portSrc dport=$portDst
+        if $(useIPv6_flow$flowNo):
+            pkt.layer -i $($(packetIdentifier)) -L 30 -t IPv6 src=$ipAddressSrc dst=$ipAddressDst
+        else:
+            pkt.layer -i $($(packetIdentifier)) -L 30 -t IP src=$ipAddressSrc dst=$ipAddressDst
+        pkt.layer -i $($(packetIdentifier)) -L 20 -t Ether type=$etherType src=$macAddressSrc dst=$macAddressDst
+        
+        seqNo += $txPacketPayloadSize
+        seqNo %= (2 ** 32)
+        
+        if ($packetNo == 0):
+            pkt.rss -i $($(packetIdentifier)) -n hashKey_flow$flowNo
+            simple1 = $recvTc * (4 if $rxTc > 4 else 8)
+            simple2 = (0x3 if $rxTc > 4 else 0x7)
+            simple3 = $(hashKey_flow$(flowNo)) & $simple2
+            rssRing_flow$flowNo = $simple1 + $simple3
+            rxRings += [$(rssRing_flow$flowNo)]
+        
+    counter += 1
+
+# Starting main loop
+
+validValuesList = [1, 2, 3, 4, 6, 7, 8] # Ask Egor P why it doesn't work with value of 5
+
+for txRing in $txRings:
+    txBufferSize_$txRing = random.randint(1, 8) * 1024
+    txBufferSize_$txRing = random.choice($validValuesList) * 1024
+    mac.txring[$txRing].set bufSize $(txBufferSize_$txRing)
+    mac.txring[$txRing].set maxDmaSize $(txBufferSize_$txRing)
+    mac.txring[$txRing].set size 512
+    mac.txring[$txRing].get size -n txSize_$txRing $logTag
+
+for rxRing in $rxRings:
+    rxBufferSize_$rxRing = random.randint(1, 8) * 1024
+    rxBufferSize_$rxRing = random.choice($validValuesList) * 1024
+    mac.rxring[$rxRing].set bufSize $(rxBufferSize_$rxRing)
+    mac.rxring[$rxRing].set maxDmaSize $(rxBufferSize_$rxRing)
+    mac.rxring[$rxRing].set size 512
+    mac.rxring[$rxRing].get size -n rxSize_$rxRing $logTag
+    rxRingProceed_$rxRing = False
+
+mac.set loopback System Packet $logTag
+mac.rfc.rss.enable
+
+if ($debugMode):
+    #inFileName = txLRO_$i.cap
+    outFileName = rxLRO.cap
+    
+    #txStream = txStream0
+    rxStream = rxStream0
+    
+    #mac.txring[0:32].stream.new -d pcap -f $inFileName -t $txStream
+    mac.rxring[$rxRing].stream.new -d pcap -f $outFileName -t $rxStream
+
+mac.init
+mac.txinit
+mac.rxinit
+mac.isr.disable
+
+if $TPO2:
+    exec $(PWD)/helpers/enableTPO2.txt
+
+if $RPF2:
+    exec $(PWD)/helpers/enableRPF2.txt
+
+for txRing in $txRings:
+    mac.txring[$txRing].enable
+    mac.txring[$txRing].set PacketMark None
+
+lroEnableMask = 0
+lroMinPayloadOfFirstPacket = random.randint(0, 31)
+
+mac.llh rpoLroMinPayloadOfFirstPacketSet $lroMinPayloadOfFirstPacket
+
+for rxRing in $rxRings:
+    lroEnableMask = $lroEnableMask | (1 << $rxRing)
+    
+    if $(rxRingProceed_$(rxRing)) == False:
+        mac.rxring[$rxRing].enable
+        mac.rxring[$rxRing].fill
+        mac.rxring[$rxRing].commit
+    
+        maxNumberOfDescriptors_$rxRing = random.randint(0, 3)
+        mac.llh rpoLroMaxNumberOfDescriptorsSet $rxRing $(maxNumberOfDescriptors_$rxRing)
+    
+        rxRingProceed_$rxRing = True
+
+if ($debugMode):
+    mac.rxring[$rxRing].stream.run -d -t $rxStream
+    #mac.txring[$ringNo].stream.run -t $txStream
+
+readreg 0x5030 -n bit5030
+bit5030 = ($bit5030 >> 1) << 1
+writereg 0x5030 $bit5030
+
+writereg 0x5590 $lroEnableMask
+
+# NEED TO SET lro_q_ses_lmt ([D:C]), lro_tot_dsc_lmt ([6:5]) in 0x5594
+
+counter = 0
+
+for flowNo in $flowNumbers:
+    txRing = $txRings[$counter]
+    rxRing = $rxRings[$counter]
+    
+    payloadProceed_flow$flowNo = 0
+    
+    bufferSize = $(txBufferSize_$(txRing))
+    rxBufferSize = $(rxBufferSize_$(rxRing))
+    headerSize = $(headerSize_flow$(flowNo))
+    
+    txHeadExpected_$txRing = 0
+    txSize = $(txSize_$(txRing))
+    
+    for packetNo in range(0, $(txPacektCount_flow$flowNo)):
+        identifier = flow$(flowNo)_packet$(packetNo)
+        packetIdentifier = pkt_$(identifier)
+        
+        txPacketSize = $(txPacketSize_$(identifier))
+        txPacketPayloadSize = $(txPacketSize_$(identifier)) - $headerSize
+        txPacketPayloadSize = ($txPacketPayloadSize)
+        
+        offset = 0
+        eop = 0
+        realBufferSize = $bufferSize
+        
+        segments = (1 + ($txPacketPayloadSize // $bufferSize)) + (1 if (($txPacketPayloadSize % $bufferSize) != 0) else 0)
+        
+        if $(txHeadExpected_$(txRing)) + $segments < $txSize:
+            for segment in range(0, $segments):
+                if $segment == ($segments - 1):
+                    eop = 1
+                    bufferSize = ($txPacketPayloadSize % $bufferSize)
+                    if $bufferSize == 0:
+                        break
+                if $segment == 0:
+                    mac.txring[$txRing].insert -i $($(packetIdentifier)) -p $txPacketSize -b $headerSize --eop 0
+                    txHeadExpected_$txRing += 1
+                    bufferSize = $headerSize
+                else:
+                    mac.txring[$txRing].insert -i $($(packetIdentifier)) -p $txPacketSize -b $bufferSize -O $offset --eop $eop
+                    txHeadExpected_$txRing += 1
+                if $segment != ($segments - 1):
+                    offset += $bufferSize
+                elif $segment != 0:
+                    offset += ($txPacketPayloadSize % $bufferSize)
+                elif $segment == 0:
+                    offset += $headerSize
+                bufferSize = $realBufferSize
+                #mac.txring[$txRing].dumpdesc -T 1
+        else:
+            echo SOMETHING MIGHT GO WRONG (NOT ENOUGH SPACE IN TDM BUFFER)
+            break
+    
+    counter += 1
+
+doUninit = True
+
+for txRing in $txRings:
+    mac.txring[$txRing].commit
+    mac.txring[$txRing].clean
+    mac.llh -v txHeadActual_$txRing tdmTxDescriptorHeadPointerGet $txRing
+    actualTxHead = $(txHeadActual_$(txRing))
+    expectedTxHead = $(txHeadExpected_$(txRing))
+    if $expectedTxHead != $actualTxHead:
+        finalReport += ['Error on TX ring: $txRing. Expectation: $expectedTxHead. Actual: $actualTxHead']
+        #mac.txring[$txRing].status
+        doUninit = False
+
+pause 1 s
+rxRingsUnique = []
+
+for rxRing in $rxRings:
+    if not($rxRing in $rxRingsUnique):
+        rxRingsUnique += [$rxRing]
+
+for rxRing in $rxRingsUnique:
+    mac.rxring[$rxRing].clean
+    mac.llh -v rxHeadActual_$rxRing rdmRxDescriptorHeadPointerGet $rxRing
+    
+    #mac.rxring[$rxRing].dumpdesc -H $(rxHeadActual_$rxRing):1
+    
+    packet = 0
+    segment = 0
+    
+    for descriptor in range(0, $(rxHeadActual_$rxRing)):
+        position = ($(rxHeadActual_$rxRing) - $descriptor)
+        
+        mac.rxring[$rxRing].getdescval -H $position -f eop -n eop -l nul
+        mac.rxring[$rxRing].getdescval -H $position -f bufferAddress -n addr -l nul
+        mac.rxring[$rxRing].getdescval -H $position -f HDR_LEN -n headerSize -l nul
+        mac.rxring[$rxRing].getdescval -H $position -f PKT_LEN -n packetSize -l nul
+
+        # TODO: Check equality of actual and expected header size and packet size
+        
+        if ($eop == 0):
+            if ($segment == 0):
+                payloadSizeInThisBuffer = ($(rxBufferSize_$rxRing) - $headerSize)
+            else:
+                payloadSizeInThisBuffer = $(rxBufferSize_$rxRing)
+        else:
+            if ($segment == 0):
+                payloadSizeInThisBuffer = ($packetSize - $headerSize)
+            else:
+                payloadSizeInThisBuffer = ($packetSize - $segment * ($(rxBufferSize_$rxRing)))
+        
+        if $segment == 0:
+            undef -n thisFlow mdByte0 mdByte1 mdByte2 mdByte3 mdByte4 mdByte5 -l nul
+            #checksum = 0
+            startAddr = ($addr + $headerSize)
+            
+            # Define flow which this packet belongs to. We use MAC address to do this
+            currentMacAddressList = []
+            for addrMAC in range($addr, ($addr + 6)):
+                mem.get -p $addrMAC -s 1 -n data
+                data = (hex($data)[2:]).zfill(2)
+                currentMacAddressList += ['$data']
+
+            # TODO: Do this mopre elegant way
+            mdByte0 = $currentMacAddressList[0]
+            mdByte1 = $currentMacAddressList[1]
+            mdByte2 = $currentMacAddressList[2]
+            mdByte3 = $currentMacAddressList[3]
+            mdByte4 = $currentMacAddressList[4]
+            mdByte5 = $currentMacAddressList[5]
+            currentMacAddress = "$mdByte0:$mdByte1:$mdByte2:$mdByte3:$mdByte4:$mdByte5"
+            
+            for flowNo in $flowNumbers:
+                if $(macAddressDst_flow$(flowNo)) == $currentMacAddress:
+                    thisFlow = $flowNo
+                    break
+                
+            ifndef thisFlow:
+                thisFlow = 0
+                echo SOMETHING MIGHT GO WRONG (FLOW NOT IDENTIFIED)
+                echo LOOKING FOR MAC ADDRESS: $currentMacAddress
+                for flowNo in $flowNumbers:
+                    echo FLOW $flowNo MAC ADDRESS: $(macAddressDst_flow$(flowNo))
+            
+            etherType = $(etherType_flow$(thisFlow))
+            ipv6 = True if ($etherType == 34525) else False
+            
+            if $ipv6:
+                separator = ':'
+                len = 8
+                base = 16
+            else:
+                separator = '.'
+                len = 4
+                base = 10
+            
+            # TCP pseudo header
+            ipAddressSrc = $(ipAddressSrc_flow$(flowNo))
+            ipAddressDst = $(ipAddressDst_flow$(flowNo))
+            # IP addresses
+            phIpAddrSrcList = $ipAddressSrc.split($separator)
+            phIpAddrDstList = $ipAddressDst.split($separator)
+            
+            phIpAddrSrcListNew = []
+            phIpAddrDstListNew = []
+            
+            for ii in range(0, $len):
+                phIpAddrSrcListNew += [int($phIpAddrSrcList[$ii], $base)]
+                phIpAddrDstListNew += [int($phIpAddrDstList[$ii], $base)]
+            phIpAddrSrcList = $phIpAddrSrcListNew
+            phIpAddrDstList = $phIpAddrDstListNew
+            undef -n phIpAddrSrcListNew phIpAddrDstListNew -l nul
+            payloadLimit = ($packetSize - $headerSize)
+            
+            # Reserved
+            phReserved = 0
+            # Protocol
+            phProtocol = 6
+            # TCP Length
+            
+            tcpHeaderStartAddr = $addr + $headerSize - $l4HeadeSize
+            tcpHeaderEndAddr = $tcpHeaderStartAddr + $l4HeadeSize
+            tcpHeader = []
+            
+            if not $ipv6:
+                ipHeaderStartAddr = $addr + $l2HeaderSize
+                ipHeaderEndAddr = $ipHeaderStartAddr + $l3HeaderSize4
+                ipHeader = []
+            
+                ipOriginalChecksum = []
+                
+                for byte in range($ipHeaderStartAddr, $ipHeaderEndAddr):
+                    mem.get -p $byte -s 1 -n data
+                    if ($byte == $ipHeaderStartAddr + 10) or ($byte == $ipHeaderStartAddr + 11):
+                        ipOriginalChecksum += [$data]
+                        data = 0
+                    ipHeader += ['$data']
+                
+                ipOriginalChecksum = ($ipOriginalChecksum[0] << 8) + $ipOriginalChecksum[1]
+                #echo ORIGINAL IP CHECKSUM: $ipOriginalChecksum
+                
+                # Calculating IP checksum
+                checksum = 0
+                len = len($ipHeader)
+                for index in range(0, $len, 2):
+                    thisByte = $ipHeader[$index]
+                    nextByte = $ipHeader[$index + 1]
+                    checksum += $thisByte << 8 | $nextByte
+                
+                checksum = bin($checksum)[2:].zfill(20)
+                checksum = '$checksum'
+                checksum = int($checksum[4:], 2) + int($checksum[:4], 2)
+                checksum = (2 ** 16) + (~($checksum))
+                #echo CALCULATED CHECKSUM: $checksum
+                
+                if $checksum != $ipOriginalChecksum:
+                    string = IP checksum invalid for packet in flow: $flowNo. Expected checksum: $checksum, packet checksum: $ipOriginalChecksum. Packet size: $packetSize
+                    finalReport += ['$string']
+                    error = True
+                    break 
+                
+            tcpOriginalChecksum = []
+            for byte in range($tcpHeaderStartAddr, $tcpHeaderEndAddr):
+                # Set TCP checksum to all zeroes
+                mem.get -p $byte -s 1 -n data
+                if ($byte == $tcpHeaderStartAddr + 16) or ($byte == $tcpHeaderStartAddr + 17):
+                    tcpOriginalChecksum += [$data]
+                    data = 0
+                tcpHeader += ['$data']
+            tcpOriginalChecksum = ($tcpOriginalChecksum[1] << 8) + $tcpOriginalChecksum[0]
+        
+        else:
+            startAddr = $addr
+        
+        endAddr = ($startAddr + $payloadSizeInThisBuffer)
+        
+        for addr in range($startAddr, $endAddr):
+            mem.get -p $addr -s 1 -n data
+            rxPayload_flow$thisFlow += [$data]
+        
+        if $eop == 1:
+            checksum = 0
+            
+            phTCPLength = $packetSize - $headerSize + $l4HeadeSize
+            payloadLimit = ($packetSize - $headerSize)
+            #echo PACKET SIZE: $packetSize
+            # TCP padding
+            phTCPPadding = False if ($payloadLimit % 2 == 0) else True
+            
+            packet += 1
+            segment = 0
+            rxPayload = $(rxPayload_flow$(thisFlow))
+            
+            # Calculating TCP segment checksum
+            if $ipv6:
+                for element in $phIpAddrSrcList + $phIpAddrDstList:
+                    checksum += (($element & 0xFF) << 8) | (($element & 0xFF00) >> 8)
+            else:
+                checksum += ($phIpAddrSrcList[1] << 8) | $phIpAddrSrcList[0]
+                checksum += ($phIpAddrSrcList[3] << 8) | $phIpAddrSrcList[2]
+                checksum += ($phIpAddrDstList[1] << 8) | $phIpAddrDstList[0]
+                checksum += ($phIpAddrDstList[3] << 8) | $phIpAddrDstList[2]
+            #echo CHECKSUM AFTER IP ADDRESSES: $checksum
+            
+            phProtocol = bin($phProtocol)[2:].zfill(16)
+            phProtocol = '$phProtocol'
+            phProtocol = (int($phProtocol[8:16], 2) << 8) | int($phProtocol[0:8], 2)
+            checksum += $phProtocol
+            #echo CHECKSUM AFTER PROTOCOL: $checksum
+            
+            if $ipv6:
+                phTCPLength = bin($phTCPLength)[2:].zfill(32)
+                phTCPLength = '$phTCPLength'
+                checksum += int($phTCPLength[24:32] + $phTCPLength[16:24], 2)
+                checksum += int($phTCPLength[8:16] + $phTCPLength[0:8], 2)
+                
+            else:
+                phTCPLength = bin($phTCPLength)[2:].zfill(16)
+                phTCPLength = '$phTCPLength'
+                phTCPLength = int($phTCPLength[8:16] + $phTCPLength[0:8], 2)
+                checksum += $phTCPLength
+            #echo CHECKSUM AFTER TCP LEN: $checksum
+            
+            for ii in range(0, ($l4HeadeSize), 2):
+                thisByte = $tcpHeader[$ii]
+                nextByte = $tcpHeader[$ii + 1]
+                checksum += ($nextByte << 8) | $thisByte
+            #echo CHECKSUM AFTER TCP HEADER: $checksum
+            
+            if $phTCPPadding:
+                rxPayload += [0]
+                #echo APPLYING PADDING
+                payloadLimit += 1
+            
+            a = $(payloadProceed_flow$(thisFlow))
+            b = $a + $payloadLimit
+            realPayload = $rxPayload[$a:$b]
+            
+            #echo RX PAYLOAD: $realPayload
+            #echo PAYLOAD LIMIT: $payloadLimit
+            
+            for ii in range(0, ($payloadLimit - 1), 2):
+                thisByte = $realPayload[$ii]
+                nextByte = $realPayload[($ii + 1)]
+                checksum += (($nextByte << 8) | $thisByte)
+            #echo CHECKSUM AFTER PAYLOAD: $checksum
+            
+            if $phTCPPadding:
+                payloadProceed_flow$thisFlow += $payloadLimit - 1
+            else:
+                payloadProceed_flow$thisFlow += $payloadLimit
+            
+            for ii in range(0, 4):
+                if not($checksum >> 16):
+                    break
+                else:
+                    checksum = ($checksum & 0xFFFF) + ($checksum >> 16)
+            checksum = (2 ** 16) + (~($checksum))
+            
+            if $checksum != $tcpOriginalChecksum:
+                string = TCP checksum invalid for packet in flow: $flowNo. Expected checksum: $checksum, packet checksum: $tcpOriginalChecksum. Padding: $phTCPPadding. Packet size: $packetSize. IPv6: $ipv6
+                finalReport += ['$string']
+                error = True
+                break
+        elif $eop == 0:
+            segment += 1
+    if $error:
+        break
+
+for flowNo in $flowNumbers:
+    leftList = $(rxPayload_flow$(flowNo))
+    rightList = $(txPayload_flow$(flowNo))
+    if $leftList != $rightList:
+        finalReport += ['Payload is corrupted for flow: $flowNo']
+        break
+
+if $finalReport != []:
+    finalReport += ['Seed: $seed']
+
+if ($debugMode):
+    mac.rxring[$rxRing].stream.close -t $rxStream
+    #mac.txring[$ringNo].stream.close -t $txStream
+    mac.rxring[$rxRing].stream.stop -t $rxStream
+
+exec $(PWD)/helpers/showTestResult.txt
+mac.uninit

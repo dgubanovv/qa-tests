@@ -1,0 +1,81 @@
+ # ! Test IRAM/DRAM 64k memory shutdown 
+
+finalReport = []
+ifndef test_num:
+    # default param values for manual run
+    echo !!!DEFAULT PARAMS APPLIED!!!
+
+mac.init
+writereg 0x50c 0x3
+
+
+iramStart = 0x1FC00000
+iramEnd = 0x1FC10000
+dramStart = 0x1fb00000
+dramEnd =  0x1fb10000    
+    
+REG1 = 0x000032A8
+REG2 = 0x000032D8
+REG3 = 0x00003308
+
+# readreg $REG1 -n reg1
+# readreg $REG2 -n reg2
+# readreg $REG3 -n reg3
+# if ($reg1 != 0) or  ($reg2 != 0xffffffff) or ($reg3 != 0xffffffff):
+    # finalReport += ['(0) Wrong initial values in registers']
+
+
+valueREG1 = 0x0fff00ff
+valueREG2 = 0xf000ff00
+valueREG3 = 0xf000ff00
+
+# Stop MCP
+mac.mcp.stall
+pause 1
+
+
+writereg $REG1 $valueREG1    
+writereg $REG2 $valueREG2  
+writereg $REG3 $valueREG3  
+pause 1
+
+
+# Try to write/read to iram/dram:
+value = ($iramEnd - 4)
+mac.mcp.writemem $value 0x4
+pause 1
+mac.mcp.readmem $value -n valueAfter
+if $valueAfter != 0x4:
+    finalReport += ['(1) Wrong value read']
+
+value = ($dramStart + 4)
+mac.mcp.writemem $value 0x8
+pause 1
+mac.mcp.readmem $value -n valueAfter
+if $valueAfter != 0x8:
+    finalReport += ['(2) Wrong value read']    
+    
+
+# Try to write out of mem
+mac.mcp.readmem $iramEnd -n valueBefore
+if $valueBefore != 0xffffffff:
+    finalReport += ['(3) Wrong value read']  
+
+mac.mcp.writemem $iramEnd 0x1
+pause 1
+mac.mcp.readmem $iramEnd -n valueAfter
+if $valueAfter != $valueBefore:
+    finalReport += ['(4) Wrong value read']  
+
+mac.mcp.readmem $dramEnd -n valueBefore
+if $valueBefore != 0xffffffff:
+    finalReport += ['(5) Wrong value read']  
+
+mac.mcp.writemem $dramEnd 0x1
+pause 1
+mac.mcp.readmem $dramEnd -n valueAfter
+if $valueAfter != $valueBefore:
+    finalReport += ['(6) Wrong value read']      
+    
+mac.uninit    
+exec $(PWD)/helpers/showTestResult.txt    

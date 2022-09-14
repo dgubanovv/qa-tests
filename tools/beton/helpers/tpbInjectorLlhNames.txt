@@ -1,0 +1,13 @@
+injectionQueueFullGet = tpbTxInjectionQueueFullGet
+injectionQueueTruncationErrorGet = tpbTxInjectionQueueTruncationErrorGet
+injectionQueueParityErrorGet = tpbTxInjectionQueueParityErrorGet
+injectionQueuePacketOffsetGet = tpbTxInjectionQueuePacketOffsetGet
+injectionQueueOverflowErrorGet = tpbTxInjectionQueueOverflowErrorGet
+
+pathParityCheckSenseSet = tpoTpbTdmTxPathInvertParityCheckSenseSet
+
+injectionQueueResetSet = tpbTxInjectionQueueResetSet
+injectionSelectSet = tpbTxInjectionSelectSet
+injectionPacketSopSet = tpbTxInjectionPackeSopSet
+injectionPacketDataSet = tpbTxInjectionPacketDataSet
+injectionPacketEopSet = tpbTxInjectionPacketEopSet

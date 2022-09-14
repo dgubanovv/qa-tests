@@ -1,0 +1,254 @@
+
+undef = _link_speed max_tx_wait_count max_rx_wait_count undef en_boosters booster_state
+
+ifndef ptp_reinit:
+    ptp_reinit = False
+    undef = $undef ptp_reinit
+
+if not $ptp_reinit:
+    echo PTP Reinit disabled
+else:
+    echo Reinit PTP
+    mac.link Down -l nul
+    mac.set link $setlink -l nul
+    mac.link Up
+
+mac.phy.ptp.ts
+mac.mpi.ptp.ts
+
+rr 0x368:0x37c
+
+ifdef fifo:
+    wpr 0x3c486 0x84c0
+    wpr 0x3c486 0x84c8
+    wpr 0x3c486 0x84c0
+
+    wpr 0x3e480 0x84c0
+    wpr 0x3e480 0x84c8
+    wpr 0x3e480 0x84c0
+
+    wpr 0x3c4a2 0xc48
+
+    wpr 0x3c49e 0x0
+    wpr 0x3c49e 0x8000
+    wpr 0x3c49e 0x0
+
+    wpr 0x3c499 0x0
+    wpr 0x3c499 0x8000
+    wpr 0x3c499 0x0
+
+rpr 0x3c486 0x3e480 0x3c4a2 0x3c49e 0x3c499
+# TODO add bost support for future
+en_boosters = True
+booster_state = False
+
+max_tx_wait_count = 300
+max_rx_wait_count = 300
+timeout = 50
+
+ifndef iteration_count:
+    iteration_count = 4
+    undef = iteration_count $undef
+
+ifndef slave:
+    undef = slave $undef
+    ifndef master:
+        echo Var master or slave should be defined
+        exit
+    slave = (not $master)
+    
+
+echo Is it slave? $slave
+mac.rxring[$ing_ptp_ring].fill
+mac.rxring[$ing_ptp_ring].commit
+
+mac.rxring[$eg_ts_ring].fill
+mac.rxring[$eg_ts_ring].commit
+
+mac.llh -v egPtpTsHeadBefore rdmRxDescriptorHeadPointerGet $eg_ts_ring -l nul
+mac.llh -v ingPtpTsHeadBefore rdmRxDescriptorHeadPointerGet $ing_ptp_ring -l nul
+
+mac.phy.ptp.ts
+
+output_list =
+if $slave:
+    undef = slv_delta $undef
+    trgt_file_name = slave_$link_speed.csv
+    shell echo cur_itr, ing_time, eg_time, slv_delta > $trgt_file_name
+    sec_timestamp = 0
+    nsec_timestamp = 0
+else:
+    pause 4 #Addition sync
+    undef = mst_delta $undef
+    trgt_file_name = master_$link_speed.csv
+    shell echo cur_itr, eg_time, ing_time, mst_delta > $trgt_file_name
+    mac.txring[$eg_ptp_ring].insert -i $pkt0 -c 1
+    mac.txring[$eg_ptp_ring].commit
+    for i in range($max_tx_wait_count):
+        mac.llh -v egPtpTsHeadAfter rdmRxDescriptorHeadPointerGet $eg_ts_ring -l nul
+        mac.txring[$eg_ptp_ring].clean
+        mac.rxring[$eg_ts_ring].clean
+
+        egPtpTsRcv = ($egPtpTsSize + $egPtpTsHeadAfter - $egPtpTsHeadBefore) % $egPtpTsSize
+
+        if $egPtpTsRcv == 1:
+            break
+        #echo Waiting Egress TS.
+        pause $timeout ms
+        #mac.phy.ptp.ts
+
+    if $egPtpTsRcv != 1:
+        echo Something is wrong! Cannot receive egress TS.
+        exit
+    
+    mac.rxring[$eg_ts_ring].getdescval -H 1 -f qwords --field_idx 0 -n wb_desc_val_lsqw -l nul
+    mac.rxring[$eg_ts_ring].getdescval -H 1 -f qwords --field_idx 1 -n wb_desc_val_msqw -l nul
+    wb_desc_val = ($wb_desc_val_msqw << 64) + $wb_desc_val_lsqw
+    #wb_desc_val_hex = hex($wb_desc_val)
+    #echo wb_desc_val $wb_desc_val_hex
+    exec get_ts_from_desc.txt
+    echo Master Egress PTP TS for iteration 00000: $sec_timestamp $nsec_timestamp ns
+    
+    mac.rxring[$eg_ts_ring].fill
+    mac.rxring[$eg_ts_ring].commit
+
+min_delta = 0xffffffff
+max_delta = 0
+get_ptp_eg_ts_from_desc=True
+undef = cur_itr cur_itr_str next_itr_str egPtpTsRcv ingPtpTsRcv sec_timestamp nsec_timestamp ts_sec ts_ns get_ptp_eg_ts_from_desc $undef min_delta max_delta
+
+for cur_itr in range($iteration_count):
+    getch -n key #-l cli
+    if $key == ord('q'):
+        echo Quit
+        break
+
+    if $cur_itr == 0:
+        echo Boost disabled!
+        mac.txring[0].boost -e 0
+    elif $cur_itr == $(iteration_count)/2:
+        echo Boost enabled!
+        mac.txring[0].boost -e 1
+
+    cur_itr_str = str($cur_itr).zfill(5)
+    next_itr_str = str($cur_itr + 1).zfill(5)
+    # Receive packet
+    for i in range($max_rx_wait_count):
+        mac.llh -v ingPtpTsHeadAfter rdmRxDescriptorHeadPointerGet $ing_ptp_ring -l nul
+        mac.rxring[$ing_ptp_ring].clean
+        ingPtpTsRcv = ($ingPtpTsSize + $ingPtpTsHeadAfter - $ingPtpTsHeadBefore) % $ingPtpTsSize
+
+        if $ingPtpTsRcv == 1:
+            break
+        #echo Waiting Ingress TS.
+        pause $timeout ms
+        #mac.phy.ptp.ts
+
+    if $ingPtpTsRcv != 1:
+        echo Something is wrong! Cannot receive ingress PTP packet with TS.
+        exit
+
+    mac.rxring[$ing_ptp_ring].getdescval -H 1 -f bufferAddress -n buffer_address -l nul
+    mac.rxring[$ing_ptp_ring].getdescval -H 1 -f PKT_LEN -n packet_len -l nul
+    exec get_ts_from_pkt.txt
+    if $ts_sec * 1000000000 + $ts_ns < $sec_timestamp * 1000000000 + $nsec_timestamp:
+        echo Drop PTP counter: prev value $sec_timestamp s $nsec_timestamp ns, new value $ts_sec s $ts_ns ns
+        #mac.phy.ptp.ts
+        #exit
+
+    #if $slave:
+        #echo Slave Ingress PTP TS for iteration $cur_itr_str: $ts_sec $ts_ns ns.
+        #pass
+    if not $slave:
+        mst_delta = ($ts_sec - $sec_timestamp) * 1000000000 + $ts_ns - $nsec_timestamp
+        ts_ns_str = str($ts_ns).zfill(9)
+        #echo Master Ingress PTP TS for iteration $cur_itr_str: $ts_sec $ts_ns_str ns. Delta: $mst_delta ns
+        echo Master TS delta for iteration $cur_itr_str: $mst_delta ns
+        ing_time = ($ts_sec * 1000000000 + $ts_ns)
+        eg_time = ($sec_timestamp * 1000000000 + $nsec_timestamp)
+        #shell echo $cur_itr, $eg_time, $ing_time, $mst_delta >> master_$link_speed.csv
+        output_list = '$(output_list)'+'($cur_itr, $eg_time, $ing_time, $(mst_delta)),'
+        min_delta = min($min_delta, $mst_delta)
+        max_delta = max($max_delta, $mst_delta)
+        if $cur_itr == $iteration_count - 1:
+            break
+
+    mac.rxring[$ing_ptp_ring].fill
+    mac.rxring[$ing_ptp_ring].commit
+
+    #Send packet
+    mac.llh -v egPtpTsHeadBefore rdmRxDescriptorHeadPointerGet $eg_ts_ring -l nul
+    #mac.llh -v ingPtpTsHeadBefore rdmRxDescriptorHeadPointerGet $ing_ptp_ring -l nul
+    ingPtpTsHeadBefore = $ingPtpTsHeadAfter
+
+    mac.txring[$eg_ptp_ring].insert -i $pkt0 -c 1
+    mac.txring[$eg_ptp_ring].commit
+    for i in range($max_tx_wait_count):
+        mac.llh -v egPtpTsHeadAfter rdmRxDescriptorHeadPointerGet $eg_ts_ring -l nul
+        mac.txring[$eg_ptp_ring].clean
+        mac.rxring[$eg_ts_ring].clean
+
+        egPtpTsRcv = ($egPtpTsSize + $egPtpTsHeadAfter - $egPtpTsHeadBefore) % $egPtpTsSize
+
+        if $egPtpTsRcv == 1:
+            break
+        #echo Waiting Egress TS.
+        pause $timeout ms
+        #mac.phy.ptp.ts
+
+    if $egPtpTsRcv != 1:
+        echo Something is wrong! Cannot receive egress TS.
+        exit
+    
+    mac.rxring[$eg_ts_ring].getdescval -H 1 -f qwords --field_idx 0 -n wb_desc_val_lsqw -l nul
+    mac.rxring[$eg_ts_ring].getdescval -H 1 -f qwords --field_idx 1 -n wb_desc_val_msqw -l nul
+    wb_desc_val = ($wb_desc_val_msqw << 64) + $wb_desc_val_lsqw
+    #wb_desc_val_hex = hex($wb_desc_val)
+    #echo wb_desc_val $wb_desc_val_hex
+
+    exec get_ts_from_desc.txt
+    if $ts_sec * 1000000000 + $ts_ns > $sec_timestamp * 1000000000 + $nsec_timestamp:
+        echo Drop PTP counter: prev value $ts_sec s $ts_ns ns, new value $sec_timestamp s $nsec_timestamp ns
+        #mac.phy.ptp.ts
+        exit
+
+    if $slave:
+        slv_delta = ($sec_timestamp - $ts_sec) * 1000000000 + $nsec_timestamp - $ts_ns
+        #echo Slave Egress PTP TS for iteration $cur_itr_str: $sec_timestamp $nsec_timestamp ns. Delta: $slv_delta ns
+        echo Slave TS delta for iteration $cur_itr_str: $slv_delta ns
+        ing_time = ($ts_sec * 1000000000 + $ts_ns)
+        eg_time = ($sec_timestamp * 1000000000 + $nsec_timestamp)
+        #shell echo $cur_itr, $ing_time, $eg_time, $slv_delta >> slave_$link_speed.csv
+        output_list = '$(output_list)'+'($cur_itr, $ing_time, $eg_time, $(slv_delta)),'
+		min_delta = min($min_delta, $slv_delta)
+        max_delta = max($max_delta, $slv_delta)
+    #else:
+        #echo Master Egress PTP TS for iteration $next_itr_str: $sec_timestamp $nsec_timestamp ns
+    
+    mac.rxring[$eg_ts_ring].fill
+    mac.rxring[$eg_ts_ring].commit
+
+#mac.phy.ptp.ts
+
+output_list = [$output_list]
+for i in $output_list:
+    out_line='%d, %d, %d, %d' % $i
+    shell echo $out_line >> $trgt_file_name
+
+echo End test for speed $link_speed
+d = ($max_delta - $min_delta)
+echo min: $min_delta, max: $max_delta, diff: $d
+
+if not $ptp_reinit:
+    echo PTP Reinit disabled
+else:
+    echo Reinit PTP
+    mac.link Down -l nul
+    mac.set link $setlink -l nul
+    mac.link Up
+
+undef -n $undef d -l nul
+
+
+#rpr 0x3c486 0x3e480 0x3c4a2 0x3c49e 0x3c499 0x1e4000 0x1e7000
+#mac.mcp.readmem 0x1fb16e40 -s 0x80
